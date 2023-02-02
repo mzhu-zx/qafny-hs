@@ -23,5 +23,6 @@ main =
     do s <- readFile src
        case pipeline s of
          Left e -> die e
-         Right t -> -- Txt.writeFile tgt t
-           print  t
+         Right t -> 
+           Txt.writeFile tgt t
+           -- print  t
