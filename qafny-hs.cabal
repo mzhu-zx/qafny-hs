@@ -42,6 +42,9 @@ library
   build-depends:
       array
     , base >=4.7 && <5
+    , lens
+    , mtl
+    , text
   default-language: Haskell2010
 
 executable qafny-hs-exe
@@ -57,7 +60,10 @@ executable qafny-hs-exe
   build-depends:
       array
     , base >=4.7 && <5
+    , lens
+    , mtl
     , qafny-hs
+    , text
   default-language: Haskell2010
 
 test-suite qafny-hs-test
@@ -74,5 +80,8 @@ test-suite qafny-hs-test
   build-depends:
       array
     , base >=4.7 && <5
+    , lens
+    , mtl
     , qafny-hs
+    , text
   default-language: Haskell2010

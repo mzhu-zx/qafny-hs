@@ -1,4 +1,7 @@
+{-# LANGUAGE TypeSynonymInstances, FlexibleInstances #-}
+
 module Qafny.AST where
+import Data.Text (Text, intersperse, pack, intercalate, singleton)
 
 data Ty = TNat
         | TInt
@@ -28,6 +31,7 @@ data Exp = ENum Int
          | EOp1 Op1 Exp
          | EOp2 Op2 Exp Exp
          | EForall Binding (Maybe Exp) Exp
+         | EDafny String
          deriving (Show, Eq)
 
 type Returns = [Binding]
@@ -35,15 +39,25 @@ type Requires = [Exp]
 type Ensures = [Exp]
 
 data Toplevel = QMethod Var Bindings Returns Requires Ensures [Stmt]
+              | QDafny String
               deriving (Show, Eq)
               -- | QFunction Var Bindings Ty
 
-data Stmt = QAssert Exp
-          | QCall Exp [Exp]
-          | QVar Binding (Maybe Exp)
-          | QAssign Var
+data Stmt = SAssert Exp
+          | SCall Exp [Exp]
+          | SVar Binding (Maybe Exp)
+          | SAssign Var
           deriving (Show, Eq)
 
-newtype QDafny = QDafny { toDafny :: String }
-  
 type AST = [Toplevel]
+
+class DafnyPrinter a where
+  texify :: a -> Text
+
+instance DafnyPrinter AST where
+  texify = intercalate (singleton '\n') . map texify
+
+ 
+instance DafnyPrinter Toplevel where
+  texify (QDafny s) = pack s
+  texify _          = undefined

@@ -1,34 +1,38 @@
 {
-module Qafny.Parser(AST, parse) where
+module Qafny.Parser(scanAndParse) where
 import qualified Qafny.Lexer as L
 import Qafny.AST
+import Control.Monad
+
 }
 
-%name qafny
+%name runParser
 %tokentype { L.Token }
 %error { parseError }
-%monad { Either String }{ >>= }{ return }
+%monad { Parser }{ >>= }{ return }
 
 %token
-dafny { L.TDafny $$ }
+dafny                  { L.TDafny $$ }
 
 %%
 AST
-  : dafny { [QDafny $1] }
+  : Toplevels          { $1 }
 
--- Toplevel
---   : "method" 
-
--- Binding
---   : 
+Toplevels
+  : Toplevel           { [$1] }
+  | Toplevels Toplevel { $2 : $1 }
+  
+Toplevel
+  :  dafny             { QDafny $1 }
 
 {
+type Parser a = Either String a
 
-parseError :: [L.Token] -> Either String a
-parseError [] = Left "End of Token List"
+parseError :: [L.Token] -> Parser a
+parseError [] = Left "Expect more tokens"
 parseError xs = Left $ show $ take 1 xs
 
-parse :: String -> Either String AST
-parse s = do ts <- L.runScanner s
-             qafny $ take 1 ts
+scanAndParse :: String -> Parser AST
+scanAndParse = runParser <=< L.runScanner
+
 }
