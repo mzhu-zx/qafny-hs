@@ -38,17 +38,4 @@ runScanner = return . alexScanTokens
 pushToken f p = f
 emit t p s = t 
 
-/* pushToken f =  token (\(_, _, _, s) _ -> [f s]) */
-
-
-/* runScanner :: String -> Either String [Token] */
-/* runScanner s = runAlex s $ */
-/*   do let loop toks = do t <- alexMonadScan */
-/*                         if t == [] */
-/*                         then return toks */
-/*                         else loop (t ++ toks) */
-/*      loop [] */
-
-/* alexEOF = pure []  */
-
 }
