@@ -4,22 +4,59 @@ module Qafny.Lexer(runScanner, Token (..)) where
 
 %wrapper "posn"
 
+$alpha = [a-zA-Z]
+$digit = 0-9
+
 @dafny = \#(~\n)*\n
+@id = ($alpha) ($alpha | $digit | \_ | \')*
 
 token :-
   $white+          ;
-  method           { emit $  TMethod }
   @dafny           { pushToken $ TDafny . takeWhile (/= '\n') . tail }
+  @id              { pushToken $ TId }
+  method           { emit $  TMethod }
+  ensures          { emit $  TEnsures }
+  requires         { emit $  TRequires }
+  \|               { emit $  TBar }
+  \(               { emit $  TLPar }
+  \)               { emit $  TRPar }
+  \{               { emit $  TLBrace }
+  \}               { emit $  TRBrace }
+  returns          { emit $  TReturns }
+  nat              { emit $  TNat  }
+  int              { emit $  TInt  }
+  bool             { emit $  TBool }
+  seq              { emit $  TSeq  }
+  nor              { emit $  TNor  }
+  had              { emit $  THad  }
+  ch               { emit $  TCH   }
+  \,               { emit $  TComma }
+  \:               { emit $  TColon }
 {
 
 data Token = TDafny String
-           | TRequire
+           | TRequires
            | TEnsures
            | TMethod
            | TAssert
+           | TLPar
+           | TRPar
+           | TLBrace
+           | TRBrace
            | TForall
            | TBar
            | TEOF
+           | TReturns
+           | TNat
+           | TInt
+           | TBool
+           | TSeq
+           | TNor
+           | THad
+           | TCH
+           | TId String
+           | TComma
+           | TColon
            deriving (Show, Eq)
 
 -- alexScanTokens str = go (alexStartPos, '\n', [], str)

@@ -14,7 +14,7 @@ data Ty = TNat
 
 type Var = String
 
-data Binding = Binding (Var, Ty)
+data Binding = Binding Var Ty
              deriving (Show, Eq)
 
 type Bindings = [Binding]
