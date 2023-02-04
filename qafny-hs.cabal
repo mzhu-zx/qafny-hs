@@ -1,6 +1,6 @@
 cabal-version: 1.12
 
--- This file has been generated from package.yaml by hpack version 0.35.0.
+-- This file has been generated from package.yaml by hpack version 0.35.1.
 --
 -- see: https://github.com/sol/hpack
 
@@ -42,6 +42,7 @@ library
   build-depends:
       array
     , base >=4.7 && <5
+    , containers
     , lens
     , mtl
     , text
@@ -60,6 +61,7 @@ executable qafny-hs-exe
   build-depends:
       array
     , base >=4.7 && <5
+    , containers
     , lens
     , mtl
     , qafny-hs
@@ -80,6 +82,7 @@ test-suite qafny-hs-test
   build-depends:
       array
     , base >=4.7 && <5
+    , containers
     , lens
     , mtl
     , qafny-hs

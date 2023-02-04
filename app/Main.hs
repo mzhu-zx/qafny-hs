@@ -15,6 +15,8 @@ pipeline s =
 
 main :: IO ()
 main = 
+  -- let src = "./test/Resource/DeutschJozsa.qfy"
+  --     tgt = "./test/Resource/DeutschJozsa.dfy" 
   let src = "./test/Resource/3.qfy"
       tgt = "./test/Resource/3.dfy" 
   in
@@ -23,6 +25,11 @@ main =
          Left e -> die e
          Right t -> 
            Txt.writeFile tgt t
+
+loadDefaultFile :: IO String
+loadDefaultFile = 
+  let src = "./test/Resource/3.qfy" in
+    readFile src
 
 -- main :: IO ()
 -- main = 

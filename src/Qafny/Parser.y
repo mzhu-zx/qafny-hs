@@ -3,7 +3,6 @@ module Qafny.Parser(scanAndParse) where
 import qualified Qafny.Lexer as L
 import Qafny.AST
 import Control.Monad
-import Debug.Trace
 }
 
 %name runParser
@@ -84,9 +83,9 @@ ty
   | "int"                   { TInt }
   | "bool"                  { TBool }
   | "seq" '<' ty '>'        { TSeq $3 }
-  | "nor"                   { TNor }
-  | "had"                   { THad }
-  | "ch"                    { TCH }
+  | "nor"                   { TQ $ TNor }
+  | "had"                   { TQ $ THad }
+  | "ch"                    { TQ $ TCH }
 
 expr
   : digits                  { ENum $1 }

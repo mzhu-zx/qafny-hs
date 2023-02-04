@@ -2,18 +2,22 @@
 
 module Qafny.AST where
 
-import           Data.Text.Lazy(Text, singleton)
+import           Data.Text.Lazy(Text)
 import qualified Data.Text.Lazy.Builder as TB
-
+-- import           GHC.List(foldl')
 
 data Ty = TNat
         | TInt
         | TBool
         | TSeq Ty
-        | TNor
-        | THad
-        | TCH
+        | TQ QTy
+        | TMethod Var [Ty] [Ty] -- parameter and return types
         deriving (Show, Eq)
+
+data QTy = TNor
+         | THad
+         | TCH
+         deriving (Show, Eq)
 
 type Var = String
 
@@ -86,7 +90,7 @@ instance DafnyPrinter Binding where
 
 instance DafnyPrinter Bindings where
   build [] = build ""
-  build (x:xs)  = foldr (\y ys -> build y <> build ", " <> ys) (build x) xs
+  build (x:xs) = foldl (\ys y -> ys  <> build ", " <> build y) (build x) xs
 
 instance DafnyPrinter Toplevel where
   build (QDafny s) = build s 
