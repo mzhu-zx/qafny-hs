@@ -58,7 +58,9 @@ data Toplevel = QMethod Var Bindings Returns Requires Ensures Body
 data Stmt = SAssert Exp
           | SCall Exp [Exp]
           | SVar Binding (Maybe Exp)
-          | SAssign Var
+          | SAssign Var Exp
+          | SDafny String
+          | SIf Exp [Stmt]
           deriving (Show, Eq)
 
 type AST = [Toplevel]

@@ -1,4 +1,5 @@
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TypeSynonymInstances, FlexibleInstances, FlexibleContexts #-}
 module Qafny.Codegen where
 
 import Qafny.AST
@@ -23,8 +24,11 @@ $(makeLenses ''TState)
 
 type Gen a = ExceptT String (StateT TState Identity) a
 
-gen :: AST -> Gen AST
-gen = return
+class Codegen a where
+  gen :: a -> Gen a
+
+instance Codegen AST where  
+  gen = return
 
 -- Compute types of methods from the toplevel
 collectMethodTypes :: AST -> [Ty]

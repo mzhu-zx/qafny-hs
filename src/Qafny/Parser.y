@@ -31,9 +31,15 @@ dafny      { L.TDafny $$  }
 "nor"      { L.TNor       }
 "had"      { L.THad       }
 "ch"       { L.TCH        }
+"var"      { L.TVar  }
+"if"       { L.TIf  }
+"assert"   { L.TAssert    }
 id         { L.TId $$     }
 ','        { L.TComma     }
 ':'        { L.TColon     }
+';'        { L.TSemi      }
+"=="       { L.TEq        }
+":="       { L.TAssert    }
 
 %%
 AST
@@ -86,6 +92,24 @@ ty
   | "nor"                   { TQ $ TNor }
   | "had"                   { TQ $ THad }
   | "ch"                    { TQ $ TCH }
+
+block
+  : '{' stmts '}'           { $2 }
+
+stmts
+  : stmts_                  { reverse $1 }
+
+stmts_ 
+  : stmt                    { [$1] }
+  | stmts_ stmt             { $2 : $1 }
+ 
+
+stmt
+  : "assert" expr ';'           { SAssert $2 }
+  | "var" binding ';'           { SVar $2 Nothing }
+  | "var" binding ":=" expr ';' { SVar $2 (Just $4) }
+  | id ":=" expr ';'            { SAssign $1 $3  }
+  | "if" expr block             { SIf $2 $3 }
 
 expr
   : digits                  { ENum $1 }

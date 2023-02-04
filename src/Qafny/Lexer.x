@@ -9,6 +9,8 @@ $digit = 0-9
 
 @dafny = \#(~\n)*
 @id = ($alpha) ($alpha | $digit | \_ | \')*
+@assign = (:=)
+@eq = (==)
 
 token :-
   $white+          ;
@@ -17,6 +19,7 @@ token :-
   ensures          { emit $  TEnsures }
   requires         { emit $  TRequires }
   returns          { emit $  TReturns }
+  assert           { emit $  TAssert }
   nat              { emit $  TNat  }
   int              { emit $  TInt  }
   bool             { emit $  TBool }
@@ -24,8 +27,12 @@ token :-
   nor              { emit $  TNor  }
   had              { emit $  THad  }
   ch               { emit $  TCH   }
+  var              { emit $  TVar   }
+  if               { emit $  TIf   }
   @id              { pushToken $ TId }
   $digit           { pushToken $ TLitInt . read }
+  @assign          { emit $  TAssign }
+  @eq              { emit $  TEq }
   \|               { emit $  TBar }
   \(               { emit $  TLPar }
   \)               { emit $  TRPar }
@@ -35,6 +42,7 @@ token :-
   \>               { emit $  TRAng      }
   \,               { emit $  TComma }
   \:               { emit $  TColon }
+  \;               { emit $  TSemi }
 {
 
 data Token = TDafny String
@@ -63,6 +71,11 @@ data Token = TDafny String
            | TId String
            | TComma
            | TColon
+           | TAssign
+           | TEq
+           | TSemi
+           | TVar
+           | TIf
            deriving (Show, Eq)
 
 -- alexScanTokens str = go (alexStartPos, '\n', [], str)

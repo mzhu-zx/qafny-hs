@@ -15,8 +15,6 @@ pipeline s =
 
 main :: IO ()
 main = 
-  -- let src = "./test/Resource/DeutschJozsa.qfy"
-  --     tgt = "./test/Resource/DeutschJozsa.dfy" 
   do s <- readFile src
      writeOrReport $ pipeline s
      where writeOrReport (Right txt) = Txt.writeFile tgt txt
@@ -29,6 +27,8 @@ loadDefaultFile =
   let src = "./test/Resource/3.qfy" in
     readFile src
 
+-- let src = "./test/Resource/DeutschJozsa.qfy"
+--     tgt = "./test/Resource/DeutschJozsa.dfy" 
 -- main :: IO ()
 -- main = 
 --   let src = "./test/Resource/2.qfy"
