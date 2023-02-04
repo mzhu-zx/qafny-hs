@@ -84,6 +84,7 @@ instance DafnyPrinter AST where
 
 instance DafnyPrinter Ty where
   build TNat = build "nat"
+  build _    = undefined 
 
 instance DafnyPrinter Binding where
   build (Binding x t) = build x <> build " : " <> build t
@@ -94,9 +95,9 @@ instance DafnyPrinter Bindings where
 
 instance DafnyPrinter Toplevel where
   build (QDafny s) = build s 
-  build (QMethod id bds rets reqs ens block) =
+  build (QMethod idt bds rets reqs ens block) =
     build "method" <> space <>
-    build id <> space <>
+    build idt <> space <>
     build '(' <> build bds <> build ')' <>
     buildRets rets
     where buildRets [] = build ""
