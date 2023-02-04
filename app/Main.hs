@@ -10,21 +10,19 @@ import Qafny.AST
 pipeline :: String -> Either String Text
 pipeline s =
   do ast <- scanAndParse s 
-     let ir = runGen $ gen ast
+     ir <- runGen $ gen ast
      return $ texify ir
 
 main :: IO ()
 main = 
   -- let src = "./test/Resource/DeutschJozsa.qfy"
   --     tgt = "./test/Resource/DeutschJozsa.dfy" 
-  let src = "./test/Resource/3.qfy"
-      tgt = "./test/Resource/3.dfy" 
-  in
-    do s <- readFile src
-       case pipeline s of
-         Left e -> die e
-         Right t -> 
-           Txt.writeFile tgt t
+  do s <- readFile src
+     writeOrReport $ pipeline s
+     where writeOrReport (Right txt) = Txt.writeFile tgt txt
+           writeOrReport (Left e) = putStrLn ("[Error] " ++ e)
+           src = "./test/Resource/3.qfy"
+           tgt = "./test/Resource/3.dfy" 
 
 loadDefaultFile :: IO String
 loadDefaultFile = 

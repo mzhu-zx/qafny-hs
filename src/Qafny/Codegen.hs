@@ -4,6 +4,8 @@ module Qafny.Codegen where
 import Qafny.AST
 import Data.Map
 import Data.Functor.Identity
+import Control.Monad.State
+import Control.Monad.Except
 
 import Control.Lens.TH
 
@@ -14,9 +16,13 @@ data TState = TState
   , _sEnv :: Map Session QTy
   }
 
+initTState :: TState
+initTState = TState { _kEnv = mempty, _sEnv = mempty }  
+
 $(makeLenses ''TState)
 
-type Gen a = Identity a
+type Gen a = ExceptT String (StateT TState Identity) a
+
 gen :: AST -> Gen AST
 gen = return
 
@@ -28,5 +34,5 @@ collectMethodTypes a = [ TMethod idt (bdTypes ins) (bdTypes outs)
 bdTypes :: Bindings -> [Ty]
 bdTypes b = [t | Binding _ t <- b]
 
-runGen :: Identity a -> a
-runGen = runIdentity 
+runGen :: Gen a -> Either String a
+runGen = runIdentity . (flip evalStateT) initTState . runExceptT
