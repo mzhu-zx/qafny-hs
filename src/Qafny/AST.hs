@@ -1,7 +1,10 @@
-{-# LANGUAGE TypeSynonymInstances, FlexibleInstances #-}
+{-# LANGUAGE TypeSynonymInstances, FlexibleInstances, FlexibleContexts #-}
 
 module Qafny.AST where
-import Data.Text (Text, intersperse, pack, intercalate, singleton)
+
+import           Data.Text.Lazy(Text, singleton)
+import qualified Data.Text.Lazy.Builder as TB
+
 
 data Ty = TNat
         | TInt
@@ -35,10 +38,15 @@ data Exp = ENum Int
          deriving (Show, Eq)
 
 type Returns = [Binding]
+
+data Conds = Requires Exp
+           | Ensures Exp
+
 type Requires = [Exp]
 type Ensures = [Exp]
+type Body = [Stmt]
 
-data Toplevel = QMethod Var Bindings Returns Requires Ensures [Stmt]
+data Toplevel = QMethod Var Bindings Returns Requires Ensures Body
               | QDafny String
               deriving (Show, Eq)
               -- | QFunction Var Bindings Ty
@@ -51,13 +59,51 @@ data Stmt = SAssert Exp
 
 type AST = [Toplevel]
 
+line :: TB.Builder
+line = TB.singleton '\n'
+
+space :: TB.Builder
+space = TB.singleton ' '
+
+
 class DafnyPrinter a where
-  texify :: a -> Text
+  build :: a -> TB.Builder
+
+instance DafnyPrinter Char where
+  build = TB.singleton
+  
+instance DafnyPrinter String where
+  build = TB.fromString
 
 instance DafnyPrinter AST where
-  texify = intercalate (singleton '\n') . map texify
+  build = foldr (\x xs -> build x <> line <> xs) line
 
- 
+instance DafnyPrinter Ty where
+  build TNat = build "nat"
+
+instance DafnyPrinter Binding where
+  build (Binding x t) = build x <> build " : " <> build t
+
+instance DafnyPrinter Bindings where
+  build [] = build ""
+  build (x:xs)  = foldr (\y ys -> build y <> build ", " <> ys) (build x) xs
+
 instance DafnyPrinter Toplevel where
-  texify (QDafny s) = pack s
-  texify _          = undefined
+  build (QDafny s) = build s 
+  build (QMethod id bds rets reqs ens block) =
+    build "method" <> space <>
+    build id <> space <>
+    build '(' <> build bds <> build ')' <>
+    buildRets rets
+    where buildRets [] = build ""
+          buildRets r  = build " returns " <>
+                         build '(' <> build r <> build ')'
+
+instance DafnyPrinter Exp where
+  build = undefined
+
+buildRequires :: Requires -> TB.Builder
+buildRequires = foldr (\x xs -> build "requires" <> build x <> build '\n' <> xs) (build "")
+
+texify :: DafnyPrinter a => a -> Text
+texify = TB.toLazyText . build

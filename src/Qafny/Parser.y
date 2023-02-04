@@ -3,7 +3,7 @@ module Qafny.Parser(scanAndParse) where
 import qualified Qafny.Lexer as L
 import Qafny.AST
 import Control.Monad
-
+import Debug.Trace
 }
 
 %name runParser
@@ -12,14 +12,16 @@ import Control.Monad
 %monad { Parser }{ >>= }{ return }
 
 %token
+digits     { L.TLitInt $$ }
 dafny      { L.TDafny $$  }
-ident      { L.TId $$      }
 "method"   { L.TMethod    }
 "ensures"  { L.TEnsures   }
 "requires" { L.TRequires  }
 '|'        { L.TBar       }
 '('        { L.TLPar      }
 ')'        { L.TRPar      }
+'<'        { L.TLAng      }
+'>'        { L.TRAng      }
 '{'        { L.TLBrace    }
 '}'        { L.TRBrace    }
 "returns"  { L.TReturns   }
@@ -30,12 +32,13 @@ ident      { L.TId $$      }
 "nor"      { L.TNor       }
 "had"      { L.THad       }
 "ch"       { L.TCH        }
+id         { L.TId $$     }
 ','        { L.TComma     }
 ':'        { L.TColon     }
 
 %%
 AST
-  : toplevels               { $1 }
+  : toplevels               { reverse $1 }
 
 toplevels
   : toplevel                { [$1] }
@@ -43,36 +46,59 @@ toplevels
   
 toplevel
   :  dafny                  { QDafny $1 }
-  | "method" id '(' bindings ')' "returns" '(' bindings ')'  
-                            { QMethod $2 $4 $8 [] [] [] }
+  | "method" id '(' bindings ')'
+    requireEnsures 
+                            { let (rs, es) = $6 in 
+                                  QMethod $2 $4 [] rs es [] }
+  | "method" id '(' bindings ')' "returns" '(' bindings ')'
+    requireEnsures 
+                            { let (rs, es) = $10 in 
+                                  QMethod $2 $4 $8 rs es [] }
+
+requireEnsures
+  : conds                   { (reverse [e | (Requires e) <- $1], 
+                               reverse [e | (Ensures  e) <- $1]) }
+
+conds
+  : {- empty -}             { [] }
+  | conds cond              { $2 : $1 }
+
+cond
+  : "requires" expr         { Requires $2 }
+  | "ensures" expr          { Ensures $2 }
+
 
 bindings
-  : binding                 { [$1] }
-  | bindings ',' binding    { $2 : $1 }
+  : bindings_               { reverse $1 }
+
+bindings_
+  : {- empty -}             { [] }
+  | binding                 { [$1] }
+  | bindings_ ',' binding   { $3 : $1 }
 
 binding
   : id ':' ty               { Binding $1 $3 }
-
-id
-  : ident                   { $1 }
 
 ty
   : "nat"                   { TNat }
   | "int"                   { TInt }
   | "bool"                  { TBool }
-  | "seq" ty                { TSeq $2 }
+  | "seq" '<' ty '>'        { TSeq $3 }
   | "nor"                   { TNor }
   | "had"                   { THad }
   | "ch"                    { TCH }
+
+expr
+  : digits                  { ENum $1 }
+
 
 {
 type Parser a = Either String a
 
 parseError :: [L.Token] -> Parser a
-parseError [] = Left "Expect more tokens"
-parseError xs = Left $ show $ take 1 xs
+parseError [] = Left "Parser Error: Expect more tokens"
+parseError xs = Left $ "Parser Error: " ++ (show $ xs)
 
 scanAndParse :: String -> Parser AST
 scanAndParse = runParser <=< L.runScanner
-
 }

@@ -7,21 +7,15 @@ module Qafny.Lexer(runScanner, Token (..)) where
 $alpha = [a-zA-Z]
 $digit = 0-9
 
-@dafny = \#(~\n)*\n
+@dafny = \#(~\n)*
 @id = ($alpha) ($alpha | $digit | \_ | \')*
 
 token :-
   $white+          ;
-  @dafny           { pushToken $ TDafny . takeWhile (/= '\n') . tail }
-  @id              { pushToken $ TId }
+  @dafny           { pushToken $ TDafny . tail }
   method           { emit $  TMethod }
   ensures          { emit $  TEnsures }
   requires         { emit $  TRequires }
-  \|               { emit $  TBar }
-  \(               { emit $  TLPar }
-  \)               { emit $  TRPar }
-  \{               { emit $  TLBrace }
-  \}               { emit $  TRBrace }
   returns          { emit $  TReturns }
   nat              { emit $  TNat  }
   int              { emit $  TInt  }
@@ -30,17 +24,29 @@ token :-
   nor              { emit $  TNor  }
   had              { emit $  THad  }
   ch               { emit $  TCH   }
+  @id              { pushToken $ TId }
+  $digit           { pushToken $ TLitInt . read }
+  \|               { emit $  TBar }
+  \(               { emit $  TLPar }
+  \)               { emit $  TRPar }
+  \{               { emit $  TLBrace }
+  \}               { emit $  TRBrace }
+  \<               { emit $  TLAng      }
+  \>               { emit $  TRAng      }
   \,               { emit $  TComma }
   \:               { emit $  TColon }
 {
 
 data Token = TDafny String
+           | TLitInt Int
            | TRequires
            | TEnsures
            | TMethod
            | TAssert
            | TLPar
            | TRPar
+           | TLAng
+           | TRAng
            | TLBrace
            | TRBrace
            | TForall

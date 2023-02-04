@@ -1,0 +1,2 @@
+method DeutschJozsa (a : nat)
+
