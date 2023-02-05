@@ -2,7 +2,7 @@ module Main (main) where
 
 import Qafny.Parser(scanAndParse)
 import Qafny.Codegen(gen, runGen)
-import System.Exit
+-- import System.Exit
 import Data.Text.Lazy
 import qualified Data.Text.Lazy.IO as Txt
 import Qafny.AST

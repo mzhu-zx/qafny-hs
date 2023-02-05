@@ -39,7 +39,9 @@ id         { L.TId $$     }
 ':'        { L.TColon     }
 ';'        { L.TSemi      }
 "=="       { L.TEq        }
-":="       { L.TAssert    }
+":="       { L.TAssign    }
+"*="       { L.TApply     }
+
 
 %%
 AST
@@ -52,13 +54,13 @@ toplevels
 toplevel
   :  dafny                  { QDafny $1 }
   | "method" id '(' bindings ')'
-    requireEnsures 
+    requireEnsures block
                             { let (rs, es) = $6 in 
-                                  QMethod $2 $4 [] rs es [] }
+                                  QMethod $2 $4 [] rs es $7 }
   | "method" id '(' bindings ')' "returns" '(' bindings ')'
-    requireEnsures 
+    requireEnsures block
                             { let (rs, es) = $10 in 
-                                  QMethod $2 $4 $8 rs es [] }
+                                  QMethod $2 $4 $8 rs es $11 }
 
 requireEnsures
   : conds                   { (reverse [e | (Requires e) <- $1], 
@@ -100,20 +102,23 @@ stmts
   : stmts_                  { reverse $1 }
 
 stmts_ 
-  : stmt                    { [$1] }
+  : {- empty -}             { [] }
   | stmts_ stmt             { $2 : $1 }
  
 
 stmt
   : "assert" expr ';'           { SAssert $2 }
-  | "var" binding ';'           { SVar $2 Nothing }
   | "var" binding ":=" expr ';' { SVar $2 (Just $4) }
+  | "var" binding ';'           { SVar $2 Nothing }
   | id ":=" expr ';'            { SAssign $1 $3  }
   | "if" expr block             { SIf $2 $3 }
+  | id "*=" expr ';'            { SApply $1 $3  }
+  | dafny                       { SDafny $1 }
+
 
 expr
   : digits                  { ENum $1 }
-
+  | id                      { EId $1 }
 
 {
 type Parser a = Either String a

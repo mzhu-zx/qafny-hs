@@ -10,10 +10,13 @@ $digit = 0-9
 @dafny = \#(~\n)*
 @id = ($alpha) ($alpha | $digit | \_ | \')*
 @assign = (:=)
+@apply = (\*=)
 @eq = (==)
+@comment = \/\/(~\n)*
 
 token :-
   $white+          ;
+  @comment         ;
   @dafny           { pushToken $ TDafny . tail }
   method           { emit $  TMethod }
   ensures          { emit $  TEnsures }
@@ -32,6 +35,7 @@ token :-
   @id              { pushToken $ TId }
   $digit           { pushToken $ TLitInt . read }
   @assign          { emit $  TAssign }
+  @apply           { emit $  TApply }
   @eq              { emit $  TEq }
   \|               { emit $  TBar }
   \(               { emit $  TLPar }
@@ -43,6 +47,7 @@ token :-
   \,               { emit $  TComma }
   \:               { emit $  TColon }
   \;               { emit $  TSemi }
+
 {
 
 data Token = TDafny String
@@ -76,6 +81,7 @@ data Token = TDafny String
            | TSemi
            | TVar
            | TIf
+           | TApply
            deriving (Show, Eq)
 
 -- alexScanTokens str = go (alexStartPos, '\n', [], str)
