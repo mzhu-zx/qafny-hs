@@ -96,7 +96,7 @@ ty
   | "ch"                    { TQ $ TCH }
 
 block
-  : '{' stmts '}'           { $2 }
+  : '{' stmts '}'           { Block $2 }
 
 stmts
   : stmts_                  { reverse $1 }

@@ -1,5 +1,6 @@
 {-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE TypeSynonymInstances, FlexibleInstances, FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances, FlexibleContexts #-}
+
 module Qafny.Codegen where
 
 import Qafny.AST
@@ -7,8 +8,10 @@ import Data.Map
 import Data.Functor.Identity
 import Control.Monad.State
 import Control.Monad.Except
-
 import Control.Lens.TH
+import Control.Lens
+
+import Data.Bifunctor
 
 type Session = Var
 
@@ -16,6 +19,7 @@ data TState = TState
   { _kEnv :: Map Var Ty
   , _sEnv :: Map Session QTy
   }
+  deriving Show
 
 initTState :: TState
 initTState = TState { _kEnv = mempty, _sEnv = mempty }  
@@ -38,5 +42,8 @@ collectMethodTypes a = [ TMethod idt (bdTypes ins) (bdTypes outs)
 bdTypes :: Bindings -> [Ty]
 bdTypes b = [t | Binding _ t <- b]
 
-runGen :: Gen a -> Either String a
-runGen = runIdentity . (flip evalStateT) initTState . runExceptT
+runGen :: Gen a -> (Either String a, TState)
+runGen = fuseError . runIdentity . flip runStateT initTState . runExceptT
+  where
+    fuseError :: (Either String a, TState) -> (Either String a, TState)
+    fuseError (e, st) = (first (++ "\nCodeGen State:\n" ++ show st) e, st)

@@ -1,4 +1,4 @@
-{-# LANGUAGE TypeSynonymInstances, FlexibleInstances, FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances, FlexibleContexts #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 module Qafny.AST where
@@ -51,9 +51,11 @@ data Conds = Requires Exp
 
 type Requires = [Exp]
 type Ensures = [Exp]
-type Body = [Stmt]
 
-data Toplevel = QMethod Var Bindings Returns Requires Ensures Body
+newtype Block = Block [Stmt]
+  deriving (Show, Eq)
+
+data Toplevel = QMethod Var Bindings Returns Requires Ensures Block
               | QDafny String
               deriving (Show, Eq)
               -- | QFunction Var Bindings Ty
@@ -63,7 +65,7 @@ data Stmt = SAssert Exp
           | SVar Binding (Maybe Exp)
           | SAssign Var Exp
           | SDafny String
-          | SIf Exp [Stmt]
+          | SIf Exp Block
           | SApply Var Exp -- invoke quantum op
           deriving (Show, Eq)
 
@@ -75,10 +77,10 @@ newtype Builder_ f = Builder { doBuild :: Reader Int f}
 type Builder = Builder_ TB.Builder
 
 instance Semigroup Builder where
-  x <> y = liftM2  (<>) x y
+  (<>) = liftM2 (<>)
 
 instance Monoid Builder where
-  mempty = return mempty
+  mempty = pure mempty
 
 line :: Builder
 line = return $ TB.singleton '\n'
@@ -101,14 +103,14 @@ withBraces :: Builder -> Builder
 withBraces s = build "{\n" <> s <> build "}\n"
 
 byCat :: DafnyPrinter a => [a] -> Builder
-byCat = foldr ((<>) . build) (mempty)
+byCat = foldr ((<>) . build) mempty
 
 withIncr2 :: Builder -> Builder
-withIncr2 b = local (+ 2) b
+withIncr2 = local (+ 2)
 
 getIndent :: Builder_ String
 getIndent = do n <- ask
-               return $ take n (repeat ' ')
+               return $ replicate n ' '
 
 instance DafnyPrinter Char where
   build = return . TB.singleton
@@ -141,7 +143,7 @@ instance DafnyPrinter Toplevel where
     buildRets rets <> line <>
     buildRequires reqs <> 
     buildEnsures ens <>
-    withBraces (withIncr2 (byCat block))
+    build block
     where buildRets [] = mempty
           buildRets r  = build " returns " <>
                          withParens (byComma r)
@@ -160,6 +162,12 @@ instance DafnyPrinter Stmt where
 instance DafnyPrinter Exp where
   build (ENum n) = build $ show n
   build (EId s) = build s
+  build e = build "// undefined: " <> build (show e)
+  
+
+instance DafnyPrinter Block where
+  build (Block b) = withBraces (withIncr2 (byCat b))
+
 
 buildRequires :: Requires -> Builder
 buildRequires = buildConds "requires"
@@ -168,8 +176,8 @@ buildEnsures :: Ensures -> Builder
 buildEnsures = buildConds "ensures"
 
 buildConds :: String -> Requires -> Builder
-buildConds s = foldr (\x xs -> build s <> build x <> build '\n' <> xs) (mempty)
+buildConds s = foldr (\x xs -> build s <> build x <> build '\n' <> xs) mempty
 
 
 texify :: DafnyPrinter a => a -> Text
-texify = TB.toLazyText .  ((flip runReader) 0) . doBuild . build
+texify = TB.toLazyText .  flip runReader 0 . doBuild . build
