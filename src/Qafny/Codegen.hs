@@ -6,38 +6,51 @@ module Qafny.Codegen where
 
 import           Qafny.AST
 import           Data.Functor.Identity
-import           Control.Monad.State
+import           Control.Monad.RWS
 import           Control.Monad.Except
 import           Control.Lens.TH
 import           Control.Lens
 import           Data.Bifunctor
 import qualified Data.Map.Strict as Map 
 
-data TState = TState
+data TEnv = TEnv
   { _kEnv :: Map.Map Var Ty
-  , _sEnv :: Map.Map Session QTy
+  }
+
+data TState = TState
+  {_sEnv :: Map.Map Session QTy
   }
 
 $(makeLenses ''TState)
+$(makeLenses ''TEnv)
 
 instance Show TState where
-  show st = "  Kind Environment" ++ show (st ^. kEnv) ++
-            "\n  Session Environment" ++ show (st ^. sEnv)
+  show st = "  Kind Environment" ++ show (st ^. sEnv)
+
+instance Show TEnv where
+  show st = "  Session Environment" ++ show (st ^. kEnv)
+            
+
+initTEnv :: TEnv
+initTEnv = TEnv { _kEnv = mempty }  
 
 initTState :: TState
-initTState = TState { _kEnv = mempty, _sEnv = mempty }  
+initTState = TState { _sEnv = mempty }  
+
+--------------------------------------------------------------------------------
+-- General 
+--------------------------------------------------------------------------------
+type Transform a = ExceptT String (RWS TEnv () TState) a
 
 --------------------------------------------------------------------------------
 -- Codegen 
 --------------------------------------------------------------------------------
 
-type Gen a = ExceptT String (StateT TState Identity) a
-
 class Codegen a where
-  gen :: a -> Gen a
+  gen :: a -> Transform a
 
 instance Codegen AST where  
-  gen ast = do kEnv .= Map.fromList (collectMethodTypes ast)
+  gen ast = do let kEnv = Map.fromList (collectMethodTypes ast)
                return ast 
 
 -- Compute types of methods from the toplevel
@@ -52,15 +65,13 @@ bdTypes b = [t | Binding _ t <- b]
 -- Typing 
 --------------------------------------------------------------------------------
 
-type Infer t = ExceptT String (StateT TState Identity) t
-
 class Typing a t where
-  typing :: a -> Infer t
+  typing :: a -> Transform t
 
 instance Typing Exp Ty where
   typing (ENum _)  = return TNat
   typing (EVar x)  =
-    do k <- use (kEnv . at x)
+    do k <- asks (view $ kEnv . at x)
        maybe (unknownVariableError x) return k 
   typing e = throwError $ "Typing for "  ++ show e ++ " is unimplemented!"
 
@@ -68,16 +79,16 @@ instance Typing Exp Ty where
 --------------------------------------------------------------------------------
 -- Error Reporting
 --------------------------------------------------------------------------------
-unknownVariableError :: String -> Infer a
+unknownVariableError :: String -> Transform a
 unknownVariableError s = throwError $ "Variable " ++ s ++ " is not in the environemnt"
 
 
 --------------------------------------------------------------------------------
 -- Wrapper
 --------------------------------------------------------------------------------
-runGen :: Gen a -> (Either String a, TState)
-runGen = fuseError . runIdentity . flip runStateT initTState . runExceptT
+runTransform :: Transform a -> (Either String a, TState, ())
+runTransform = fuseError . (\x -> runRWS x initTEnv initTState) . runExceptT
   where
-    fuseError :: (Either String a, TState) -> (Either String a, TState)
-    fuseError (e, st) = (first (++ "Codegen terminted with an error! States:"
-                                ++ show st) e, st)
+    fuseError :: (Either String a, TState, ()) -> (Either String a, TState, ())
+    fuseError comp = _1 %~ first (++ "Codegen terminted with an error! States:" ++ show st) $ comp
+      where st = comp ^. _3
