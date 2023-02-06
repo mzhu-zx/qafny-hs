@@ -1,5 +1,6 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE FlexibleInstances, FlexibleContexts #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 
 module Qafny.Codegen where
 
@@ -26,6 +27,10 @@ instance Show TState where
 initTState :: TState
 initTState = TState { _kEnv = mempty, _sEnv = mempty }  
 
+--------------------------------------------------------------------------------
+-- Codegen 
+--------------------------------------------------------------------------------
+
 type Gen a = ExceptT String (StateT TState Identity) a
 
 class Codegen a where
@@ -43,6 +48,33 @@ collectMethodTypes a = [ (idt, TMethod (bdTypes ins) (bdTypes outs))
 bdTypes :: Bindings -> [Ty]
 bdTypes b = [t | Binding _ t <- b]
 
+--------------------------------------------------------------------------------
+-- Typing 
+--------------------------------------------------------------------------------
+
+type Infer t = ExceptT String (StateT TState Identity) t
+
+class Typing a t where
+  typing :: a -> Infer t
+
+instance Typing Exp Ty where
+  typing (ENum _)  = return TNat
+  typing (EVar x)  =
+    do k <- use (kEnv . at x)
+       maybe (unknownVariableError x) return k 
+  typing e = throwError $ "Typing for "  ++ show e ++ " is unimplemented!"
+
+
+--------------------------------------------------------------------------------
+-- Error Reporting
+--------------------------------------------------------------------------------
+unknownVariableError :: String -> Infer a
+unknownVariableError s = throwError $ "Variable " ++ s ++ " is not in the environemnt"
+
+
+--------------------------------------------------------------------------------
+-- Wrapper
+--------------------------------------------------------------------------------
 runGen :: Gen a -> (Either String a, TState)
 runGen = fuseError . runIdentity . flip runStateT initTState . runExceptT
   where
