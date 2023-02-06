@@ -173,7 +173,7 @@ instance DafnyPrinter Stmt where
           buildStmt (SVar bd (Just e)) = build "var " <> build bd <>
                                          build " := " <> build e
           buildStmt (SAssign v e) = build v <> build " := " <> build e
-          buildStmt e = build "undefined Stmt : " <> build (show e)
+          buildStmt e = build "// undefined builder for Stmt : " <> build (show e)
 
 instance DafnyPrinter Exp where
   build (ENum n) = build $ show n

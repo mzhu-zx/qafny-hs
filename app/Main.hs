@@ -2,7 +2,7 @@ module Main (main) where
 
 import           Qafny.AST
 import           Qafny.Parser(scanAndParse)
-import           Qafny.Codegen(gen, runTransform, TState)
+import           Qafny.Codegen(codegen, TState)
 
 import           Data.Text.Lazy
 import qualified Data.Text.Lazy.IO as Txt
@@ -10,7 +10,7 @@ import qualified Data.Text.Lazy.IO as Txt
 pipeline :: String -> Either String (Text, TState)
 pipeline s =
   do ast <- scanAndParse s
-     let (result, state, _) = runTransform $ gen ast
+     let (result, state, _) = codegen ast
      ir <- result
      return $ (texify ir, state)
 
