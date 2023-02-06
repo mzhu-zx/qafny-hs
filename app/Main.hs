@@ -1,11 +1,11 @@
 module Main (main) where
 
-import Qafny.Parser(scanAndParse)
-import Qafny.Codegen(gen, runGen, TState)
--- import System.Exit
-import Data.Text.Lazy
+import           Qafny.AST
+import           Qafny.Parser(scanAndParse)
+import           Qafny.Codegen(gen, runGen, TState)
+
+import           Data.Text.Lazy
 import qualified Data.Text.Lazy.IO as Txt
-import Qafny.AST
 
 pipeline :: String -> Either String (Text, TState)
 pipeline s =
@@ -20,7 +20,7 @@ main =
      writeOrReport $ pipeline s
      where writeOrReport (Right (txt, st)) = 
              do
-               putStrLn $ "Codegen Statistics:\n" ++ show st
+               putStrLn $ "Pipeline Finished!\nStatistics from Codegen:\n" ++ show st
                Txt.writeFile tgt txt
            writeOrReport (Left e) = putStrLn ("[Error] " ++ e)
            src = "./test/Resource/3.qfy"

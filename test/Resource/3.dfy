@@ -6,12 +6,11 @@ method DeutschJozsa (n : nat)
 {
   var q : nor := 1;
   var p : nor := 2;
-  q *= H;
-  p *= H;
+  undefined Stmt : SApply (Session [Ran "q" (ENum 0) (ENum 1)]) EHad;
+  undefined Stmt : SApply (Session [Ran "p" (ENum 0) (EVar "n")]) EHad;
 }
 
 method CrossMinus (n : nat, m : nat, q : nat, p : nat)
 {
 }
-
 

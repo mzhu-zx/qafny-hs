@@ -8,59 +8,61 @@ $alpha = [a-zA-Z]
 $digit = 0-9
 
 @dafny = \#(~\n)*
+@comment = (\/\/)(~\n)*
 @id = ($alpha) ($alpha | $digit | \_ | \')*
 @assign = (:=)
 @qassign = (\*=)
 @aand = (&&)
 @aor = (\|\|)
-@adot = (..)
+@adot = (\.\.)
 @eq = (==)
 
 token :-
   $white+          ;
-  @dafny           { pushToken $ TDafny . tail }
-  method           { emit $  TMethod }
-  ensures          { emit $  TEnsures }
-  requires         { emit $  TRequires }
-  returns          { emit $  TReturns }
-  assert           { emit $  TAssert }
-  nat              { emit $  TNat  }
-  int              { emit $  TInt  }
-  bool             { emit $  TBool }
-  seq              { emit $  TSeq  }
-  nor              { emit $  TNor  }
-  not              { emit $  TNot  }
-  had              { emit $  THad  }
-  ch               { emit $  TCH   }
-  var              { emit $  TVar   }
-  if               { emit $  TIf   }
-  H              { emit $  THApp  }
-  QFT              { emit $  TQFT  }
-  RQFT              { emit $  TRQFT  }
-  meas              { emit $  TMea  }
-  @id              { pushToken $ TId }
-  $digit           { pushToken $ TLitInt . read }
-  @assign          { emit $  TAssign }
-  @qassign          { emit $  TApply }
-  @eq              { emit $  TEq }
-  \*               { emit $ TMul }
-  \+               { emit $ TAdd }
-  \%               { emit $ TMod }
-  \[               { emit $ TLBracket   }
-  \]               { emit $ TRBracket    }
-  @aand             { emit $ TAnd }
-  @aor              { emit $ TOr }
-  @adot              { emit $ TDot }
-  \|               { emit $  TBar }
-  \(               { emit $  TLPar }
-  \)               { emit $  TRPar }
-  \{               { emit $  TLBrace }
-  \}               { emit $  TRBrace }
-  \<               { emit $  TLAng      }
-  \>               { emit $  TRAng      }
-  \,               { emit $  TComma }
-  \:               { emit $  TColon }
-  \;               { emit $  TSemi }
+  @comment         ;
+  @dafny           { pushToken $ TDafny . tail   }
+  method           { emit $  TMethod             }
+  ensures          { emit $  TEnsures            }
+  requires         { emit $  TRequires           }
+  returns          { emit $  TReturns            }
+  assert           { emit $  TAssert             }
+  nat              { emit $  TNat                }
+  int              { emit $  TInt                }
+  bool             { emit $  TBool               }
+  seq              { emit $  TSeq                }
+  nor              { emit $  TNor                }
+  not              { emit $  TNot                }
+  had              { emit $  THad                }
+  ch               { emit $  TCH                 }
+  var              { emit $  TVar                }
+  if               { emit $  TIf                 }
+  H                { emit $  THApp               }
+  QFT              { emit $  TQFT                }
+  RQFT             { emit $  TRQFT               }
+  meas             { emit $  TMea                }
+  @id              { pushToken $ TId             }
+  $digit           { pushToken $ TLitInt . read  }
+  @assign          { emit $  TAssign             }
+  @qassign         { emit $  TApply              }
+  @eq              { emit $  TEq                 }
+  \*               { emit $  TMul                }
+  \+               { emit $  TAdd                }
+  \%               { emit $  TMod                }
+  \[               { emit $  TLBracket           }
+  \]               { emit $  TRBracket           }
+  @aand            { emit $  TAnd                }
+  @aor             { emit $  TOr                 }
+  @adot            { emit $  TDot                }
+  \|               { emit $  TBar                }
+  \(               { emit $  TLPar               }
+  \)               { emit $  TRPar               }
+  \{               { emit $  TLBrace             }
+  \}               { emit $  TRBrace             }
+  \<               { emit $  TLAng               }
+  \>               { emit $  TRAng               }
+  \,               { emit $  TComma              }
+  \:               { emit $  TColon              }
+  \;               { emit $  TSemi               }
 {
 
 data Token = TDafny String

@@ -26,6 +26,9 @@ dependencies:
 - lens
 - text
 - containers
+- extra
+# - hashable
+# - unordered-containers
 
 ghc-options:
 - -Wall
