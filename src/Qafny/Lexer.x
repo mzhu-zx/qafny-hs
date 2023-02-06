@@ -10,13 +10,14 @@ $digit = 0-9
 @dafny = \#(~\n)*
 @id = ($alpha) ($alpha | $digit | \_ | \')*
 @assign = (:=)
-@apply = (\*=)
+@qassign = (\*=)
+@aand = (&&)
+@aor = (\|\|)
+@adot = (..)
 @eq = (==)
-@comment = \/\/(~\n)*
 
 token :-
   $white+          ;
-  @comment         ;
   @dafny           { pushToken $ TDafny . tail }
   method           { emit $  TMethod }
   ensures          { emit $  TEnsures }
@@ -28,15 +29,28 @@ token :-
   bool             { emit $  TBool }
   seq              { emit $  TSeq  }
   nor              { emit $  TNor  }
+  not              { emit $  TNot  }
   had              { emit $  THad  }
   ch               { emit $  TCH   }
   var              { emit $  TVar   }
   if               { emit $  TIf   }
+  H              { emit $  THApp  }
+  QFT              { emit $  TQFT  }
+  RQFT              { emit $  TRQFT  }
+  meas              { emit $  TMea  }
   @id              { pushToken $ TId }
   $digit           { pushToken $ TLitInt . read }
   @assign          { emit $  TAssign }
-  @apply           { emit $  TApply }
+  @qassign          { emit $  TApply }
   @eq              { emit $  TEq }
+  \*               { emit $ TMul }
+  \+               { emit $ TAdd }
+  \%               { emit $ TMod }
+  \[               { emit $ TLBracket   }
+  \]               { emit $ TRBracket    }
+  @aand             { emit $ TAnd }
+  @aor              { emit $ TOr }
+  @adot              { emit $ TDot }
   \|               { emit $  TBar }
   \(               { emit $  TLPar }
   \)               { emit $  TRPar }
@@ -47,7 +61,6 @@ token :-
   \,               { emit $  TComma }
   \:               { emit $  TColon }
   \;               { emit $  TSemi }
-
 {
 
 data Token = TDafny String
@@ -62,6 +75,8 @@ data Token = TDafny String
            | TRAng
            | TLBrace
            | TRBrace
+           | TLBracket
+           | TRBracket
            | TForall
            | TBar
            | TEOF
@@ -77,11 +92,22 @@ data Token = TDafny String
            | TComma
            | TColon
            | TAssign
+           | TApply
            | TEq
            | TSemi
            | TVar
            | TIf
-           | TApply
+           | TMul
+           | TAdd
+           | TMod
+           | TAnd
+           | TOr
+           | TNot
+           | TDot
+           | THApp
+           | TQFT
+           | TRQFT
+           | TMea
            deriving (Show, Eq)
 
 -- alexScanTokens str = go (alexStartPos, '\n', [], str)

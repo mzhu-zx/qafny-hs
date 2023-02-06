@@ -1,11 +1,9 @@
-{-# LANGUAGE FlexibleInstances, FlexibleContexts #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE TypeSynonymInstances, FlexibleInstances, FlexibleContexts #-}
 
 module Qafny.AST where
 
 import           Data.Text.Lazy(Text)
 import qualified Data.Text.Lazy.Builder as TB
-import           Control.Monad.Reader
 -- import           GHC.List(foldl')
 
 data Ty = TNat
@@ -30,14 +28,22 @@ type Bindings = [Binding]
 
 data Op2 = OAnd
          | OOr
+         | OAdd
+         | OMul
+         | OMod
          deriving (Show, Eq)
 
 data Op1 = ONot
          deriving (Show, Eq)
 
 data Exp = ENum Int
-         | EId Var
+         | EVar Var
+         | EHad
+         | EQFT
+         | ERQFT
+         | EMea Var
          | EBool Bool
+         | EApp Var Exp
          | EOp1 Op1 Exp
          | EOp2 Op2 Exp Exp
          | EForall Binding (Maybe Exp) Exp
@@ -51,133 +57,75 @@ data Conds = Requires Exp
 
 type Requires = [Exp]
 type Ensures = [Exp]
+type Body = [Stmt]
 
-newtype Block = Block [Stmt]
-  deriving (Show, Eq)
-
-data Toplevel = QMethod Var Bindings Returns Requires Ensures Block
+data Toplevel = QMethod Var Bindings Returns Requires Ensures Body
               | QDafny String
               deriving (Show, Eq)
               -- | QFunction Var Bindings Ty
 
+data Range = Ran Var Exp Exp 
+        deriving (Show, Eq)
+
+type Session = [Range]
+
 data Stmt = SAssert Exp
-          | SCall Exp [Exp] -- invoking method
+          | SCall Exp [Exp]
           | SVar Binding (Maybe Exp)
           | SAssign Var Exp
+          | SApply Session Exp
           | SDafny String
-          | SIf Exp Block
-          | SApply Var Exp -- invoke quantum op
+          | SIf Exp [Stmt]
           deriving (Show, Eq)
 
 type AST = [Toplevel]
 
-newtype Builder_ f = Builder { doBuild :: Reader Int f}
-  deriving (Functor, Applicative, Monad, (MonadReader Int))
+line :: TB.Builder
+line = TB.singleton '\n'
 
-type Builder = Builder_ TB.Builder
-
-instance Semigroup Builder where
-  (<>) = liftM2 (<>)
-
-instance Monoid Builder where
-  mempty = pure mempty
-
-line :: Builder
-line = return $ TB.singleton '\n'
-
-space :: Builder
-space = return $ TB.singleton ' '
+space :: TB.Builder
+space = TB.singleton ' '
 
 
 class DafnyPrinter a where
-  build :: a -> Builder
-
-byComma :: DafnyPrinter a => [a] -> Builder
-byComma [] = mempty
-byComma (x:xs) = foldl (\ys y -> ys  <> build ", " <> build y) (build x) xs
-
-withParens :: Builder -> Builder
-withParens s = build '(' <> s <> build ')'
-
-withBraces :: Builder -> Builder
-withBraces s = build "{\n" <> s <> build "}\n"
-
-byCat :: DafnyPrinter a => [a] -> Builder
-byCat = foldr ((<>) . build) mempty
-
-withIncr2 :: Builder -> Builder
-withIncr2 = local (+ 2)
-
-getIndent :: Builder_ String
-getIndent = do n <- ask
-               return $ replicate n ' '
+  build :: a -> TB.Builder
 
 instance DafnyPrinter Char where
-  build = return . TB.singleton
+  build = TB.singleton
   
 instance DafnyPrinter String where
-  build = return . TB.fromString
+  build = TB.fromString
 
 instance DafnyPrinter AST where
   build = foldr (\x xs -> build x <> line <> xs) line
 
 instance DafnyPrinter Ty where
   build TNat = build "nat"
-  build (TQ t) = build t
-  build e = build "// undefined: " <> build (show e) <> build ";\n"
-  
-instance DafnyPrinter QTy where
-  build TNor = build "nor"
-  build THad = build "had"
-  build TCH = build "ch"
+  build _    = undefined 
 
 instance DafnyPrinter Binding where
   build (Binding x t) = build x <> build " : " <> build t
+
+instance DafnyPrinter Bindings where
+  build [] = build ""
+  build (x:xs) = foldl (\ys y -> ys  <> build ", " <> build y) (build x) xs
 
 instance DafnyPrinter Toplevel where
   build (QDafny s) = build s 
   build (QMethod idt bds rets reqs ens block) =
     build "method" <> space <>
     build idt <> space <>
-    withParens (byComma bds) <>
-    buildRets rets <> line <>
-    buildRequires reqs <> 
-    buildEnsures ens <>
-    build block
-    where buildRets [] = mempty
+    build '(' <> build bds <> build ')' <>
+    buildRets rets
+    where buildRets [] = build ""
           buildRets r  = build " returns " <>
-                         withParens (byComma r)
-
-instance DafnyPrinter Stmt where
-  build s = do i <- getIndent
-               build i <> buildStmt s <> build ";\n"
-    where
-      buildStmt (SVar bd (Just e)) = build "var " <> build bd <> build " := " <> build e
-      buildStmt (SVar bd _) = build "var " <> build bd
-      buildStmt (SAssert e) = build "assert " <> build e
-      buildStmt (SApply x e) = build x <> build " *= " <> build e
-      buildStmt (SCall e es) = build e <> withParens (byComma es) 
-      buildStmt e = build "// undefined: " <> build (show e)
+                         build '(' <> build r <> build ')'
 
 instance DafnyPrinter Exp where
-  build (ENum n) = build $ show n
-  build (EId s) = build s
-  build e = build "// undefined: " <> build (show e)
-  
+  build = undefined
 
-instance DafnyPrinter Block where
-  build (Block b) = withBraces (withIncr2 (byCat b))
-
-
-buildRequires :: Requires -> Builder
-buildRequires = buildConds "requires"
-
-buildEnsures :: Ensures -> Builder
-buildEnsures = buildConds "ensures"
-
-buildConds :: String -> Requires -> Builder
-buildConds s = foldr (\x xs -> build s <> build x <> build '\n' <> xs) mempty
-
+buildRequires :: Requires -> TB.Builder
+buildRequires = foldr (\x xs -> build "requires" <> build x <> build '\n' <> xs) (build "")
 
 texify :: DafnyPrinter a => a -> Text
-texify = TB.toLazyText .  flip runReader 0 . doBuild . build
+texify = TB.toLazyText . build

@@ -13,11 +13,11 @@ import Control.Lens
 
 import Data.Bifunctor
 
-type Session = Var
+-- type Session = Var
 
 data TState = TState
   { _kEnv :: Map Var Ty
-  , _sEnv :: Map Session QTy
+  , _sEnv :: Map Var QTy
   }
   deriving Show
 
