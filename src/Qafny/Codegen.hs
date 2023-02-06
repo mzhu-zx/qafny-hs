@@ -13,6 +13,7 @@ import           Control.Lens.TH
 import           Control.Lens
 import           Data.Bifunctor
 import qualified Data.Map.Strict as Map 
+import Data.List (intercalate)
 
 
 data TEnv = TEnv
@@ -28,11 +29,14 @@ $(makeLenses ''TState)
 $(makeLenses ''TEnv)
 
 instance Show TState where
-  show st = "  Kind State" ++ show (st ^. kSt) ++
-            "\n  Session State" ++ show (st ^. kSt)
+  show st = "  Kind State:\n    " ++
+            (intercalate "\n    " . map show . Map.toList) (st ^. kSt) ++
+            "\n  Session State:\n    " ++
+            (intercalate "\n    " . map show . Map.toList) (st ^. sSt)
 
 instance Show TEnv where
-  show st = "  Kind Environment" ++ show (st ^. kEnv)
+  show st = "  Kind Environment" ++
+            (intercalate "\n    " . map show . Map.toList) (st ^. kEnv)
 
 initTEnv :: TEnv
 initTEnv = TEnv { _kEnv = mempty }  
@@ -55,23 +59,24 @@ class Codegen a where
 
 instance Codegen AST where  
   aug ast = do let k = Map.fromList (collectMethodTypes ast)
-               local (kEnv %~ Map.union k) $ foldr go (return []) ast
-    where go :: Toplevel -> Transform [AST] -> Transform [AST]
-          go top next = do top' <- aug top
-                           rst' <- next
-                           return $ top' : rst'
+               local (kEnv %~ Map.union k) $ mapM aug ast
+
 instance Codegen Toplevel where
   aug q@(QMethod v bds rts rqs ens block) =
     do tEnv <- asks $ appkEnvWithBds bds
-       blk <- head <$> aug block
-       return [q]
+       -- sync kState with kEnv because when handling Stmts, environment becomes
+       -- a state!
+       kSt .= tEnv ^. kEnv
+       block' <- only1 $ local (const tEnv) $ aug block
+       return [QMethod v bds rts rqs ens block']
   aug q@(QDafny _) = return [q] 
 
 instance Codegen Block where
   aug (Block stmts) =
-    do kSt' <- use kSt      -- push a kindSt
-       kSt .= kSt'          -- restore when exiting the block
-       return [Block stmts] -- return the result of the block
+    do kSt' <- use kSt                -- push a kindSt
+       stmts' <- mapM aug stmts
+       kSt .= kSt'                    -- restore when exiting the block
+       return [Block $ concat stmts'] -- return the result of the block
   
 instance Codegen Stmt where
   aug (SVar bds Nothing) = undefined
@@ -84,7 +89,7 @@ instance Codegen Stmt where
 only1 :: Show a => Transform [a] -> Transform a
 only1 = (=<<) $
   \case [x] -> return x
-        e   -> throwError $ show e ++ "is not a singleton"
+        e   -> throwError $ "[only1]: " ++ show e ++ "is not a singleton"
 
 
 --------------------------------------------------------------------------------
