@@ -1,7 +1,6 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE FlexibleInstances, FlexibleContexts #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE LambdaCase #-}
 
 module Qafny.Codegen where
@@ -79,9 +78,14 @@ instance Codegen Block where
        return [Block $ concat stmts'] -- return the result of the block
   
 instance Codegen Stmt where
-  aug (SVar bds Nothing) = undefined
+  aug s@(SVar (Binding v t) eM) = 
+    kSt %= Map.insert v t >> doE eM
+    where 
+      doE Nothing = return [s]
+      doE (Just e) =
+        do t' <- typing e
+           doSubtype t t' (return [s])
   aug s = return [s]
-
 
 
 -- | Helpers 
@@ -91,6 +95,12 @@ only1 = (=<<) $
   \case [x] -> return x
         e   -> throwError $ "[only1]: " ++ show e ++ "is not a singleton"
 
+doSubtype :: Ty -> Ty -> Transform a -> Transform a
+doSubtype t1 t2 m = if sub t1 t2
+                    then m
+                    else throwError $
+                         "Type mismatch: `" ++ show t1 ++
+                         "` is not a subtype of `" ++ show t2 ++ "`"
 
 --------------------------------------------------------------------------------
 -- Typing 
@@ -108,6 +118,8 @@ appkEnvWithBds bds = kEnv %~ appBds
 bdTypes :: Bindings -> [Ty]
 bdTypes b = [t | Binding _ t <- b]
 
+sub :: Ty -> Ty -> Bool
+sub = (==)
 
 class Typing a t where
   typing :: a -> Transform t
@@ -124,7 +136,7 @@ instance Typing Exp Ty where
 -- Error Reporting
 --------------------------------------------------------------------------------
 unknownVariableError :: String -> Transform a
-unknownVariableError s = throwError $ "Variable " ++ s ++ " is not in the environemnt"
+unknownVariableError s = throwError $ "Variable `" ++ s ++ "` is not in the environemnt"
 
 
 --------------------------------------------------------------------------------
@@ -134,8 +146,8 @@ runTransform :: Transform a -> (Either String a, TState, ())
 runTransform = fuseError . (\x -> runRWS x initTEnv initTState) . runExceptT
   where
     fuseError :: (Either String a, TState, ()) -> (Either String a, TState, ())
-    fuseError comp = _1 %~ first (++ "Codegen terminted with an error! States:" ++ show st) $ comp
-      where st = comp ^. _3
+    fuseError comp = _1 %~ first (++ "\ESC[0m\nCodegen terminted with an error!\n" ++ show st) $ comp
+      where st = comp ^. _2
 
 codegen :: AST -> (Either String AST, TState, ())
 codegen = (_1 %~ fmap concat) . runTransform . aug

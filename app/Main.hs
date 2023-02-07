@@ -22,7 +22,8 @@ main =
              do
                putStrLn $ "Pipeline Finished!\nStatistics from Codegen:\n" ++ show st
                Txt.writeFile tgt txt
-           writeOrReport (Left e) = putStrLn ("[Error] " ++ e)
+           writeOrReport (Left e) = putStrLn ("\ESC[31m[Error]\ESC[93m " ++
+                                              e ++ "\ESC[0m")
            src = "./test/Resource/3.qfy"
            tgt = "./test/Resource/3.dfy" 
 

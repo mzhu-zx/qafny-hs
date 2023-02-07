@@ -57,102 +57,102 @@ id          { L.TId $$      }
 
 %%
 AST
-  : toplevels                      { reverse $1                      }
-
-toplevels
-  : toplevel                       { [$1]                            }
-  | toplevels toplevel             { $2 : $1                         }
-  
-toplevel
-  :  dafny                         { QDafny $1                       }
-  | "method" id '(' bindings ')'
-    requireEnsures block 
-                                   { let (rs, es) = $6 in 
-                                  QMethod $2 $4 [] rs es $7          }
-  | "method" id '(' bindings ')' "returns" '(' bindings ')'
-    requireEnsures block
-                                   { let (rs, es) = $10 in 
-                                  QMethod $2 $4 $8 rs es $11         }
+  : toplevels                      { reverse $1                           }
+                                                                          
+toplevels                                                                 
+  : toplevel                       { [$1]                                 }
+  | toplevels toplevel             { $2 : $1                              }
+                                                                          
+toplevel                                                                  
+  :  dafny                         { QDafny $1                            }
+  | "method" id '(' bindings ')'                                          
+    requireEnsures block                                                  
+                                   { let (rs, es) = $6 in                 
+                                       QMethod $2 $4 [] rs es $7          }
+  | "method" id '(' bindings ')' "returns" '(' bindings ')'               
+    requireEnsures block                                                  
+                                   { let (rs, es) = $10 in                
+                                       QMethod $2 $4 $8 rs es $11         }
 
 requireEnsures
   : conds                          { (reverse [e | (Requires e) <- $1], 
-                               reverse [e | (Ensures  e) <- $1])     }
+                                      reverse [e | (Ensures  e) <- $1])   }
 
 conds
-  : {- empty -}                    { []                              }
-  | conds cond                     { $2 : $1                         }
-
-cond
-  : "requires" expr                { Requires $2                     }
-  | "ensures" expr                 { Ensures $2                      }
-
-
-bindings
-  : bindings_                      { reverse $1                      }
-
-bindings_
-  : {- empty -}                    { []                              }
-  | binding                        { [$1]                            }
-  | bindings_ ',' binding          { $3 : $1                         }
-
-binding
-  : id ':' ty                      { Binding $1 $3                   }
-
-ty
-  : "nat"                          { TNat                            }
-  | "int"                          { TInt                            }
-  | "bool"                         { TBool                           }
-  | "seq" '<' ty '>'               { TSeq $3                         }
-  | "nor"                          { TQ $ TNor                       }
-  | "had"                          { TQ $ THad                       }
-  | "ch"                           { TQ $ TCH                        }
-
-block
-  : '{' stmts '}'                  { Block $2                        }
-
-stmts
-  : stmts_                         { reverse $1                      }
-
-stmts_ 
-  : {- empty -}                    { []                              }
-  | stmts_ stmt                    { $2 : $1                         }
- 
-
-stmt
-  : "assert" expr ';'              { SAssert $2                      }
-  | "var" binding ';'              { SVar $2 Nothing                 }
-  | "var" binding ":=" expr ';'    { SVar $2 (Just $4)               }
-  | id ":=" expr ';'               { SAssign $1 $3                   }
-  | session "*=" expr ';'          { SApply $1 $3                    }
-  | "if" expr block                { SIf $2 $3                       }
-
-session 
-  : session_                       { Session $ reverse $1            }
-
-session_
-  : range                          { [$1]                            }
-  | session_ range                 { $2 : $1                         }
-
-range 
-  : id '[' atomic ".." atomic ']'  { Ran $1 $3 $5                    }
-
-expr
-  : atomic                         { $1                              }
-  | "H"                            { EHad                            }
-  | "QFT"                          { EQFT                            }
-  | "RQFT"                         { ERQFT                           }
-  | "meas" id                      { EMea $2                         }
-  | "not" atomic                   { EOp1 ONot $2                    }
-  | id '(' atomic ')'              { EApp $1 $3                      }
-  | atomic '+' atomic              { EOp2 OAdd $1 $3                 }
-  | atomic "&&" atomic             { EOp2 OAnd $1 $3                 }
-  | atomic "||" atomic             { EOp2 OOr $1 $3                  }
-  | atomic '*' atomic              { EOp2 OMul $1 $3                 }
-  | atomic '*' atomic '\%' atomic  { EOp2 OMod (EOp2 OMul $1 $3) $5  }
-
-atomic
-  : digits                         { ENum $1                         }
-  | id                             { EVar $1                         }
+  : {- empty -}                    { []                                   }
+  | conds cond                     { $2 : $1                              }
+                                                                          
+cond                                                                      
+  : "requires" expr                { Requires $2                          }
+  | "ensures" expr                 { Ensures $2                           }
+                                                                          
+                                                                          
+bindings                                                                  
+  : bindings_                      { reverse $1                           }
+                                                                          
+bindings_                                                                 
+  : {- empty -}                    { []                                   }
+  | binding                        { [$1]                                 }
+  | bindings_ ',' binding          { $3 : $1                              }
+                                                                          
+binding                                                                   
+  : id ':' ty                      { Binding $1 $3                        }
+                                                                          
+ty                                                                        
+  : "nat"                          { TNat                                 }
+  | "int"                          { TInt                                 }
+  | "bool"                         { TBool                                }
+  | "seq" '<' ty '>'               { TSeq $3                              }
+  | "nor"                          { TQ $ TNor                            }
+  | "had"                          { TQ $ THad                            }
+  | "ch"                           { TQ $ TCH                             }
+                                                                          
+block                                                                     
+  : '{' stmts '}'                  { Block $2                             }
+                                                                          
+stmts                                                                     
+  : stmts_                         { reverse $1                           }
+                                                                          
+stmts_                                                                    
+  : {- empty -}                    { []                                   }
+  | stmts_ stmt                    { $2 : $1                              }
+                                                                          
+                                                                          
+stmt                                                                      
+  : "assert" expr ';'              { SAssert $2                           }
+  | "var" binding ';'              { SVar $2 Nothing                      }
+  | "var" binding ":=" expr ';'    { SVar $2 (Just $4)                    }
+  | id ":=" expr ';'               { SAssign $1 $3                        }
+  | session "*=" expr ';'          { SApply $1 $3                         }
+  | "if" expr block                { SIf $2 $3                            }
+                                                                          
+session                                                                   
+  : session_                       { Session $ reverse $1                 }
+                                                                          
+session_                                                                  
+  : range                          { [$1]                                 }
+  | session_ range                 { $2 : $1                              }
+                                                                          
+range                                                                     
+  : id '[' atomic ".." atomic ']'  { Ran $1 $3 $5                         }
+                                                                          
+expr                                                                      
+  : atomic                         { $1                                   }
+  | "H"                            { EHad                                 }
+  | "QFT"                          { EQFT                                 }
+  | "RQFT"                         { ERQFT                                }
+  | "meas" id                      { EMea $2                              }
+  | "not" atomic                   { EOp1 ONot $2                         }
+  | id '(' atomic ')'              { EApp $1 $3                           }
+  | atomic '+' atomic              { EOp2 OAdd $1 $3                      }
+  | atomic "&&" atomic             { EOp2 OAnd $1 $3                      }
+  | atomic "||" atomic             { EOp2 OOr $1 $3                       }
+  | atomic '*' atomic              { EOp2 OMul $1 $3                      }
+  | atomic '*' atomic '\%' atomic  { EOp2 OMod (EOp2 OMul $1 $3) $5       }
+                                                                          
+atomic                                                                    
+  : digits                         { ENum $1                              }
+  | id                             { EVar $1                              }
 
 {
 type Parser a = Either String a
