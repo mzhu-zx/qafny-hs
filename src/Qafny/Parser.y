@@ -38,10 +38,10 @@ dafny       { L.TDafny $$   }
 "seq"       { L.TSeq        }
 "nor"       { L.TNor        }
 "had"       { L.THad        }
- "H"        { L.THApp       }
- "QFT"      { L.TQFT        }
- "RQFT"     { L.TRQFT       }
- "meas"     { L.TMea        }
+"H"         { L.THApp       }
+"QFT"       { L.TQFT        }
+"RQFT"      { L.TRQFT       }
+"meas"      { L.TMea        }
 "ch"        { L.TCH         }
 "var"       { L.TVar        }
 "if"        { L.TIf         }
@@ -137,22 +137,23 @@ range
   : id '[' atomic ".." atomic ']'  { Ran $1 $3 $5                         }
                                                                           
 expr                                                                      
-  : atomic                         { $1                                   }
-  | "H"                            { EHad                                 }
-  | "QFT"                          { EQFT                                 }
-  | "RQFT"                         { ERQFT                                }
-  | "meas" id                      { EMea $2                              }
-  | "not" atomic                   { EOp1 ONot $2                         }
-  | id '(' atomic ')'              { EApp $1 $3                           }
-  | atomic '+' atomic              { EOp2 OAdd $1 $3                      }
-  | atomic "&&" atomic             { EOp2 OAnd $1 $3                      }
-  | atomic "||" atomic             { EOp2 OOr $1 $3                       }
-  | atomic '*' atomic              { EOp2 OMul $1 $3                      }
-  | atomic '*' atomic '\%' atomic  { EOp2 OMod (EOp2 OMul $1 $3) $5       }
-                                                                          
-atomic                                                                    
-  : digits                         { ENum $1                              }
-  | id                             { EVar $1                              }
+  : atomic                           { $1                                   }
+  | "H"                              { EHad                                 }
+  | "QFT"                            { EQFT                                 }
+  | "RQFT"                           { ERQFT                                }
+  | "meas" id                        { EMea $2                              }
+  | "not" atomic                     { EOp1 ONot $2                         }
+  | "nor" '(' atomic ',' digits ')'  { EOp2 ONor $1 (ENum $5)               }
+  | id '(' atomic ')'                { EApp $1 $3                           }
+  | atomic '+' atomic                { EOp2 OAdd $1 $3                      }
+  | atomic "&&" atomic               { EOp2 OAnd $1 $3                      }
+  | atomic "||" atomic               { EOp2 OOr $1 $3                       }
+  | atomic '*' atomic                { EOp2 OMul $1 $3                      }
+  | atomic '*' atomic '\%' atomic    { EOp2 OMod (EOp2 OMul $1 $3) $5       }
+                                                                            
+atomic                                                                      
+  : digits                           { ENum $1                              }
+  | id                               { EVar $1                              }
 
 {
 type Parser a = Either String a

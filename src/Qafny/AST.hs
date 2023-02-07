@@ -33,6 +33,7 @@ data Op2 = OAnd
          | OAdd
          | OMul
          | OMod
+         | ONor
          deriving (Show, Eq, Ord)
 
 data Op1 = ONot

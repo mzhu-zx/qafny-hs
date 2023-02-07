@@ -2,6 +2,7 @@
 {-# LANGUAGE FlexibleInstances, FlexibleContexts #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE TupleSections #-}
 
 module Qafny.Codegen where
 
@@ -81,26 +82,52 @@ instance Codegen Stmt where
   aug s@(SVar (Binding v t) eM) = 
     kSt %= Map.insert v t >> doE eM
     where 
+      doE :: Maybe Exp -> Transform [Stmt]
       doE Nothing = return [s]
       doE (Just e) =
-        do t' <- typing e
-           doSubtype t t' (return [s])
+        do te <- typing e
+           es <- aug e 
+           t' <- aug t
+           let b = length t' == length es
+           when b $ throwError "augmented type and expressions are of differnt type"
+           vs <- throwError "I need a way to generate free variables here"
+           let g = doSubtype t te -- (zipWith es t')
+           undefined
   aug s = return [s]
 
+instance Codegen Exp where
+  aug (EOp2 op2 e1 e2) =
+    do top <- typing op2
+       t1 <- typing e1
+       t2 <- typing e2
+       (tr, a) <- doSubtype2 top t1 t2 (throwError "sthhere")
+       return [e1]
+  aug e = return [e]
+
+instance Codegen Ty where
+  aug (TQ TNor) = return [TSeq TNat] -- TODO complete the phase type here
+  aug e = return [e]
 
 -- | Helpers 
- 
+
 only1 :: Show a => Transform [a] -> Transform a
 only1 = (=<<) $
   \case [x] -> return x
         e   -> throwError $ "[only1]: " ++ show e ++ "is not a singleton"
 
 doSubtype :: Ty -> Ty -> Transform a -> Transform a
-doSubtype t1 t2 m = if sub t1 t2
-                    then m
-                    else throwError $
-                         "Type mismatch: `" ++ show t1 ++
-                         "` is not a subtype of `" ++ show t2 ++ "`"
+doSubtype t1 t2 m =
+  if sub t1 t2
+  then m
+  else throwError $
+       "Type mismatch: `" ++ show t1 ++
+       "` is not a subtype of `" ++ show t2 ++ "`"
+
+doSubtype2 :: (Ty, Ty, Ty) -> Ty -> Ty -> Transform a -> Transform (Ty, a)
+doSubtype2 (top1, top2, tret) t1 t2 m =
+  doSubtype top1 t1 $
+  doSubtype top2 t2 $
+  fmap (tret ,) m
 
 --------------------------------------------------------------------------------
 -- Typing 
@@ -131,7 +158,15 @@ instance Typing Exp Ty where
        maybe (unknownVariableError x) return k 
   typing e = throwError $ "Typing for "  ++ show e ++ " is unimplemented!"
 
-
+instance Typing Op2 (Ty, Ty, Ty) where
+  typing OAnd = return (TBool, TBool, TBool)
+  typing OOr = return (TBool, TBool, TBool)
+  -- We might need to solve the issue of nat vs int 
+  typing OAdd = return (TNat, TNat, TNat) 
+  typing OMod = return (TNat, TNat, TNat) 
+  typing OMul = return (TNat, TNat, TNat)
+  typing ONor = return (TNat, TNat, TQ TNor)
+  
 --------------------------------------------------------------------------------
 -- Error Reporting
 --------------------------------------------------------------------------------
