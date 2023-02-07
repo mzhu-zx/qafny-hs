@@ -143,7 +143,7 @@ expr
   | "RQFT"                           { ERQFT                                }
   | "meas" id                        { EMea $2                              }
   | "not" atomic                     { EOp1 ONot $2                         }
-  | "nor" '(' atomic ',' digits ')'  { EOp2 ONor $1 (ENum $5)               }
+  | "nor" '(' atomic ',' digits ')'  { EOp2 ONor $3 (ENum $5)               }
   | id '(' atomic ')'                { EApp $1 $3                           }
   | atomic '+' atomic                { EOp2 OAdd $1 $3                      }
   | atomic "&&" atomic               { EOp2 OAnd $1 $3                      }

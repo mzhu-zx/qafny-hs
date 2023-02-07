@@ -3,6 +3,7 @@ module Main (main) where
 import           Qafny.AST
 import           Qafny.Parser(scanAndParse)
 import           Qafny.Codegen(codegen, TState)
+import           Qafny.Emit(texify)
 
 import           Data.Text.Lazy
 import qualified Data.Text.Lazy.IO as Txt
