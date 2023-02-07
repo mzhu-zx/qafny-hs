@@ -1,4 +1,4 @@
-{-# LANGUAGE FlexibleInstances, FlexibleContexts #-}
+{-# language flexibleinstances, flexiblecontexts #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 module Qafny.AST where
@@ -52,6 +52,9 @@ data Exp = ENum Int
          | EForall Binding (Maybe Exp) Exp
          | EDafny String
          deriving (Show, Eq, Ord)
+
+data EmitExp        -- EmitExp : Unsafe Expressions for Codegen Only
+  = ELambda Var Exp 
 
 type Returns = [Binding]
 
