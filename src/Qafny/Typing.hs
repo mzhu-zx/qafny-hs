@@ -53,12 +53,17 @@ instance Typing Exp Ty where
   typing (EVar x)  =
     do k <- asks (view $ kEnv . at x)
        maybe (unknownVariableError x) return k 
+  typing (EOp2 op2 e1 e2) =
+    do top <- typing op2
+       t1 <- typing e1
+       t2 <- typing e2
+       checkSubtype2 top t1 t2 
   typing e = throwError $ "Typing for "  ++ show e ++ " is unimplemented!"
 
 instance Typing Op2 (Ty, Ty, Ty) where
   typing OAnd = return (TBool, TBool, TBool)
   typing OOr = return (TBool, TBool, TBool)
-  -- We might need to solve the issue of nat vs int 
+  -- We might need to solve the issue of nat vs int 0
   typing OAdd = return (TNat, TNat, TNat) 
   typing OMod = return (TNat, TNat, TNat) 
   typing OMul = return (TNat, TNat, TNat)

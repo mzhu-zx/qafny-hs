@@ -2,7 +2,6 @@
 module Qafny.Transform where
 
 import           Qafny.AST
-
 import           Control.Monad.RWS
 import           Control.Monad.Except
 import           Control.Lens.TH
@@ -54,23 +53,23 @@ initTState = TState
   , _symSt = [1..]
   , _rbSt = mempty}  
 
+-- | Generate a fresh symbol and add into the renaming buffer
 gensym :: Var -> Transform Var
 gensym s = do sym <- uses symSt $ (\x -> s ++ "_emited_" ++ x) . show . head
               symSt %= tail
+              rbSt %= Map.insert s sym
               return sym
 
-gensymN :: Int -> Var -> Transform [Var]
-gensymN n s = do syms <- uses symSt $ map (\x -> s ++ "_emited_" ++ show x) . take n
-                 symSt %= drop n 
-                 return syms
-
+-- | Generate multiple symbols based on the type
+gensymTys :: [Ty] -> Var -> Transform [Var]
+gensymTys ty s = mapM (\t -> gensym (s ++ typeTag t)) ty 
 
 --------------------------------------------------------------------------------
 -- Error Reporting
 --------------------------------------------------------------------------------
 unknownVariableError :: String -> Transform a
-unknownVariableError s = throwError $ "Variable `" ++ s ++ "` is not in the environemnt"
-
+unknownVariableError s =
+  throwError $ "Variable `" ++ s ++ "` is not in the environemnt"
 
 --------------------------------------------------------------------------------
 -- Wrapper
@@ -79,5 +78,6 @@ runTransform :: Transform a -> (Either String a, TState, ())
 runTransform = fuseError . (\x -> runRWS x initTEnv initTState) . runExceptT
   where
     fuseError :: (Either String a, TState, ()) -> (Either String a, TState, ())
-    fuseError comp = _1 %~ first (++ "\ESC[0m\nCodegen terminted with an error!\n" ++ show st) $ comp
+    fuseError comp =
+      _1 %~ first (++ "\ESC[0m\nCodegen terminted with an error!\n" ++ show st) $ comp
       where st = comp ^. _2

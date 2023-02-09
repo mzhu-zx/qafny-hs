@@ -1,9 +1,10 @@
 module Main (main) where
 
-import           Qafny.AST
+-- import           Qafny.AST
 import           Qafny.Parser(scanAndParse)
-import           Qafny.Codegen(codegen, TState)
+import           Qafny.Codegen(codegen)
 import           Qafny.Emit(texify)
+import           Qafny.Transform(TState)
 
 import           Data.Text.Lazy
 import qualified Data.Text.Lazy.IO as Txt
@@ -19,6 +20,7 @@ main :: IO ()
 main = 
   do s <- readFile src
      writeOrReport $ pipeline s
+     putStrLn $ "\ESC[32mSuccess: target is emited as `" ++ tgt ++ "` \ESC[0m"
      where writeOrReport (Right (txt, st)) = 
              do
                putStrLn $ "Pipeline Finished!\nStatistics from Codegen:\n" ++ show st

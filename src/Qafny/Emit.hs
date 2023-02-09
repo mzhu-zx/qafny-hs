@@ -3,9 +3,10 @@
 
 module Qafny.Emit where
 
+import           Qafny.AST
+
 import           Data.Text.Lazy(Text)
 import qualified Data.Text.Lazy.Builder as TB
-import           Data.AST
 import           Control.Monad.Reader
 
 -------------------- Builder --------------------
@@ -60,9 +61,12 @@ instance DafnyPrinter AST where
   build = byLine
 
 instance DafnyPrinter Ty where
-  build TNat = build "nat"
-  build (TQ q) = build q
-  build _    = undefined 
+  build TNat     = build "nat"
+  build TInt     = build "int"
+  build TBool    = build "bool"
+  build (TQ q)   = build q
+  build (TSeq t) = build "seq<" <> build t <> build ">"
+  build _        = undefined
 
 instance DafnyPrinter QTy where
   build TNor = build "nor"
@@ -104,8 +108,11 @@ instance DafnyPrinter Exp where
   build (EEmit e) = build e
   build _ = undefined
 
-instance DafnyPrinter EEmit where
-  build _ = undefined
+instance DafnyPrinter EmitExp where
+  build (ELambda v e) = build v <> build " => " <> build e
+  build (EMakeSeq ty e ee) =
+    build "seq<" <> build ty <> build ">" <>
+    withParen (build e <> build ", " <> build ee)
 
 buildConds :: String -> [Exp] -> Builder
 buildConds s = foldr (\x xs -> build s <> build x <> build '\n' <> xs) (build "")

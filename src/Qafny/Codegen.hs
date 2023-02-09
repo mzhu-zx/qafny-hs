@@ -1,7 +1,6 @@
 {-# LANGUAGE FlexibleInstances, FlexibleContexts #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE TupleSections #-}
 
 module Qafny.Codegen where
 
@@ -53,21 +52,28 @@ instance Codegen Stmt where
         do te <- typing e
            checkSubtype t te -- check if `t` agrees with the type of `e`
            es <- aug e 
-           t' <- aug t
-           when (length t' == length es) $
-             throwError "augmented type and expressions are of differnt type"
-           vs <- gensymN (length t') v
-           undefined
+           ts <- aug t
+           unless (length ts == length es) $
+             throwError $
+             "augmented type and expressions are of differnt length" ++
+             "\n  Types: " ++ show ts ++
+             "\n  Expression: " ++ show es
+           vs <- gensymTys ts v
+           return $ zipWith3 mkSVar vs ts es
+             where mkSVar :: Var -> Ty -> Exp -> Stmt
+                   mkSVar v' t' =  SVar (Binding v' t') . Just
+ -- mkSVar v' t' = SVar (Binding v' t') . Just
   aug s = return [s]
 
 instance Codegen Exp where
-  aug (EOp2 op2 e1 e2) =
-    do top <- typing op2
-       t1 <- typing e1
-       t2 <- typing e2
-       _ <- checkSubtype2 top t1 t2
-       return augNor op2
-       where augNor ONor = EDafny "seq"
+  -- note: the type checking of `Exp` is caller's responsibility
+  -- probably I need some nice type to enforce this
+  aug e@(EOp2 op2 e1 e2) =
+    do return $
+         case op2 of
+           ONor -> [ EEmit $ EMakeSeq TNat e1 (ELambda wild e2)
+                   ] -- todo : auto create the sequence for phase
+           _    -> [e] 
   aug e = return [e]
 
 instance Codegen Ty where

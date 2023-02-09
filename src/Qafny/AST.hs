@@ -1,4 +1,3 @@
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 module Qafny.AST where
 
 data Ty = TNat
@@ -47,8 +46,12 @@ data Exp = ENum Int
          | EEmit EmitExp
          deriving (Show, Eq, Ord)
 
+wild :: Var
+wild =  "_"
+
 -- EmitExp : Unsafe Expressions for Codegen Only
-data EmitExp = ELambda Var Exp 
+data EmitExp = ELambda Var Exp
+             | EMakeSeq Ty Exp EmitExp
              deriving  (Show, Eq, Ord)
 
 type Returns = [Binding]
@@ -82,3 +85,10 @@ data Stmt = SAssert Exp
           deriving (Show, Eq)
 
 type AST = [Toplevel]
+
+typeTag :: Ty -> String
+typeTag TNat     = "nat"
+typeTag TInt     = "int"
+typeTag TBool    = "bool"
+typeTag (TSeq t) = "__" ++ typeTag t ++ "__"
+typeTag _        = "unsupported"

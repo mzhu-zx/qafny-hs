@@ -1,6 +1,6 @@
 cabal-version: 1.12
 
--- This file has been generated from package.yaml by hpack version 0.35.1.
+-- This file has been generated from package.yaml by hpack version 0.35.0.
 --
 -- see: https://github.com/sol/hpack
 
@@ -28,8 +28,11 @@ library
       Qafny
       Qafny.AST
       Qafny.Codegen
+      Qafny.Emit
       Qafny.Lexer
       Qafny.Parser
+      Qafny.Transform
+      Qafny.Typing
   other-modules:
       Paths_qafny_hs
   hs-source-dirs:
