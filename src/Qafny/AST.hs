@@ -90,5 +90,5 @@ typeTag :: Ty -> String
 typeTag TNat     = "nat"
 typeTag TInt     = "int"
 typeTag TBool    = "bool"
-typeTag (TSeq t) = "__" ++ typeTag t ++ "__"
+typeTag (TSeq t) = "seq__" ++ typeTag t ++ "__"
 typeTag _        = "unsupported"
