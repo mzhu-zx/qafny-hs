@@ -17,15 +17,21 @@ import Data.List (intercalate)
 --------------------------------------------------------------------------------
 type Transform a = ExceptT String (RWS TEnv () TState) a
 
+data CtxMode
+  = CtxC
+  | CtxQ
+  deriving Show
+
 data TEnv = TEnv
   { _kEnv :: Map.Map Var Ty
+  , _ctx  :: CtxMode
   }
 
 data TState = TState
-  { _sSt :: Map.Map Session QTy,
-    _kSt :: Map.Map Var Ty,
-    _symSt :: [Int], -- renaming state
-    _rbSt :: Map.Map Var Var  -- renaming state
+  { _sSt :: Map.Map Session QTy
+  , _kSt :: Map.Map Var Ty
+  , _symSt :: [Int]          -- gensym state
+  , _rbSt :: Map.Map Var Var -- renaming state
   }
 
 $(makeLenses ''TState)
@@ -44,7 +50,7 @@ instance Show TEnv where
             (intercalate "\n    " . map show . Map.toList) (st ^. kEnv)
 
 initTEnv :: TEnv
-initTEnv = TEnv { _kEnv = mempty }  
+initTEnv = TEnv { _kEnv = mempty, _ctx = CtxQ }  
 
 initTState :: TState
 initTState = TState
@@ -62,7 +68,7 @@ gensym s = do sym <- uses symSt $ (\x -> s ++ "_emited_" ++ x) . show . head
 
 -- | Generate multiple symbols based on the type
 gensymTys :: [Ty] -> Var -> Transform [Var]
-gensymTys ty s = mapM (\t -> gensym (s ++ typeTag t)) ty 
+gensymTys ty s = mapM (\t -> gensym (s ++ "__" ++ typeTag t)) ty 
 
 --------------------------------------------------------------------------------
 -- Error Reporting
