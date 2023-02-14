@@ -27,10 +27,10 @@ main =
                Txt.writeFile tgt txt
            writeOrReport (Left e) = putStrLn ("\ESC[31m[Error]\ESC[93m " ++
                                               e ++ "\ESC[0m")
-           src = "./test/Resource/3.qfy"
-           tgt = "./test/Resource/3.dfy" 
+           src = "./test/Resource/4.qfy"
+           tgt = "./test/Resource/4.dfy" 
 
-loadDefaultFile :: IO String
-loadDefaultFile = 
-  let src = "./test/Resource/3.qfy" in
-    readFile src
+-- loadDefaultFile :: IO String
+-- loadDefaultFile = 
+--   let src = "./test/Resource/3.qfy" in
+--     readFile src

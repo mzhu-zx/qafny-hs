@@ -43,26 +43,40 @@ instance Codegen Block where
        return [Block $ concat stmts'] -- return the result of the block
   
 instance Codegen Stmt where
-  aug s@(SVar (Binding v t) eM) = 
-    kSt %= Map.insert v t >> doE eM
-    where 
-      doE :: Maybe Exp -> Transform [Stmt]
-      doE Nothing = return [s]
-      doE (Just e) =
-        do te <- typing e
-           checkSubtype t te -- check if `t` agrees with the type of `e`
-           es <- aug e 
-           ts <- aug t
-           unless (length ts == length es) $
-             throwError $
-             "augmented type and expressions are of differnt length" ++
-             "\n  Types: " ++ show ts ++
-             "\n  Expression: " ++ show es
-           vs <- gensymTys ts v
-           return $ zipWith3 mkSVar vs ts es
-             where mkSVar :: Var -> Ty -> Exp -> Stmt
-                   mkSVar v' t' =  SVar (Binding v' t') . Just
- -- mkSVar v' t' = SVar (Binding v' t') . Just
+  aug s@(SVar (Binding v t) eM) =
+    do
+      kSt %= Map.insert v t
+      extendSession t
+      doE eM
+   where
+    extendSession :: Ty -> Transform ()
+    extendSession (TQ qty) = sSt %= Map.insert (session1 v) qty
+    extendSession _        = pure ()
+    doE :: Maybe Exp -> Transform [Stmt]
+    doE Nothing = return [s]
+    doE (Just e) =
+      do
+        te <- typing e
+        checkSubtype t te -- check if `t` agrees with the type of `e`
+        es <- aug e
+        ts <- aug t
+        unless (length ts == length es) $
+          throwError $
+            "augmented type and expressions are of differnt length"
+              ++ "\n  Types: "
+              ++ show ts
+              ++ "\n  Expression: "
+              ++ show es
+        vs <- gensymTys ts v
+        return $ zipWith3 mkSVar vs ts es
+     where
+      mkSVar :: Var -> Ty -> Exp -> Stmt
+      mkSVar v' t' = SVar (Binding v' t') . Just
+  aug (SApply s e) =
+    do t <- typing s
+    where
+      findCastOp :: QTy -> Transform String
+      findCastOp TNor = 
   aug s = return [s]
 
 instance Codegen Exp where
@@ -72,7 +86,7 @@ instance Codegen Exp where
     do return $
          case op2 of
            ONor -> [ EEmit $ EMakeSeq TNat e1 (ELambda wild e2)
-                   ] -- todo : auto create the sequence for phase
+                   ] -- todo : create the sequence/whatever for phase
            _    -> [e] 
   aug e = return [e]
 

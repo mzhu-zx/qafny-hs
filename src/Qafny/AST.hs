@@ -108,3 +108,10 @@ typeTag TInt     = "int"
 typeTag TBool    = "bool"
 typeTag (TSeq t) = "seq__" ++ typeTag t ++ "__"
 typeTag _        = "unsupported"
+
+
+range1 :: Var -> Range
+range1 v = Ran v (ENum 0) (ENum 1)
+
+session1 :: Var -> Session
+session1 =  Session . (: []) . range1

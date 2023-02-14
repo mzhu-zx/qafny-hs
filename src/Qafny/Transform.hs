@@ -73,9 +73,13 @@ gensymTys ty s = mapM (\t -> gensym (s ++ "__" ++ typeTag t)) ty
 --------------------------------------------------------------------------------
 -- Error Reporting
 --------------------------------------------------------------------------------
-unknownVariableError :: String -> Transform a
+unknownVariableError :: Var -> Transform a
 unknownVariableError s =
-  throwError $ "Variable `" ++ s ++ "` is not in the environemnt"
+  throwError $ "Variable `" ++ s ++ "` is not in the scope"
+
+unknownSessionError :: Session -> Transform a
+unknownSessionError s =
+  throwError $ "Session `" ++ show s ++ "` is not in the scope"
 
 --------------------------------------------------------------------------------
 -- Wrapper

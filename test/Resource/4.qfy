@@ -1,0 +1,15 @@
+#import opened DivMod
+#import opened Mul
+#import opened Power2
+#import opened Unity
+
+method DeutschJozsa (n : nat)
+  // requires n > 0
+{
+  var q : nor := nor(1, 0);
+  var p : nor := nor(n, 1);
+  q[0 .. 1] *= H;
+  p[0 .. n] *= H;
+  // assert typeof (q) is (n) $ had { forall i : nat | i < n :: q[i] == 1 };
+  // assert typeof (p) is (1) $ had { p[0] == -1 };
+}
