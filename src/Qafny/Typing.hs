@@ -74,3 +74,8 @@ instance Typing Op2 (Ty, Ty, Ty) where
   typing OMul = return (TNat, TNat, TNat)
   typing ONor = return (TNat, TNat, TQ TNor)
   
+
+instance Typing QTy [Ty] where
+  typing TNor = return [TSeq TNat]
+  typing THad = return [TSeq TNat]
+  typing TCH  = return [TSeq TNat]

@@ -65,6 +65,7 @@ wild =  "_"
 data EmitExp
   = ELambda Var Exp
   | EMakeSeq Ty Exp EmitExp
+  | EDafnyVar Var 
   deriving  (Show, Eq, Ord)
 
 type Returns = [Binding]
@@ -109,9 +110,15 @@ typeTag TBool    = "bool"
 typeTag (TSeq t) = "seq__" ++ typeTag t ++ "__"
 typeTag _        = "unsupported"
 
+--------------------------------------------------------------------------------
+-- | Session Utils
+--------------------------------------------------------------------------------
 
 range1 :: Var -> Range
 range1 v = Ran v (ENum 0) (ENum 1)
 
-session1 :: Var -> Session
-session1 =  Session . (: []) . range1
+session1 :: Range -> Session
+session1 =  Session . (: [])
+
+varFromSession :: Session -> [Var]
+varFromSession (Session s) = map (\(Ran x _ _) -> x) s

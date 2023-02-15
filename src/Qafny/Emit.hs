@@ -100,6 +100,7 @@ instance DafnyPrinter Stmt where
           buildStmt (SVar bd (Just e)) = build "var " <> build bd <>
                                          build " := " <> build e
           buildStmt (SAssign v e) = build v <> build " := " <> build e
+          buildStmt (SCall e es) = build e <> withParen (byComma es)
           buildStmt e = build "// undefined builder for Stmt : " <> build (show e)
 
 instance DafnyPrinter Exp where
@@ -113,6 +114,7 @@ instance DafnyPrinter EmitExp where
   build (EMakeSeq ty e ee) =
     build "seq<" <> build ty <> build ">" <>
     withParen (build e <> build ", " <> build ee)
+  build (EDafnyVar s) = build s
 
 buildConds :: String -> [Exp] -> Builder
 buildConds s = foldr (\x xs -> build s <> build x <> build '\n' <> xs) (build "")

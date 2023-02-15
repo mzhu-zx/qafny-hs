@@ -28,10 +28,11 @@ data TEnv = TEnv
   }
 
 data TState = TState
-  { _sSt :: Map.Map Session QTy
-  , _kSt :: Map.Map Var Ty
-  , _symSt :: [Int]          -- gensym state
-  , _rbSt :: Map.Map Var Var -- renaming state
+  { _sSt :: Map.Map Session QTy       -- session type state
+  , _xSt :: Map.Map Var Session       -- session reference state
+  , _kSt :: Map.Map Var Ty            -- kind state
+  , _symSt :: [Int]                   -- gensym state
+  , _rbSt :: Map.Map (Var, Ty) Var    -- renaming state (maintained by `gensym`)
   }
 
 $(makeLenses ''TState)
@@ -40,10 +41,13 @@ $(makeLenses ''TEnv)
 instance Show TState where
   show st = "  Kind State:\n    " ++
             (intercalate "\n    " . map show . Map.toList) (st ^. kSt) ++
+            "\n  Session Reference State:\n    " ++
+            (intercalate "\n    " . map show . Map.toList) (st ^. xSt) ++ 
             "\n  Session State:\n    " ++
             (intercalate "\n    " . map show . Map.toList) (st ^. sSt) ++ 
             "\n  Renaming State:\n    " ++
-            (intercalate "\n    " . map show . Map.toList) (st ^. rbSt)
+            (intercalate "\n    " . map show . Map.toList) (st ^. rbSt) ++
+            "\n  Number of Fresh Symbols: " ++ show (head (st ^. symSt) - 1)
 
 instance Show TEnv where
   show st = "  Kind Environment" ++
@@ -55,20 +59,40 @@ initTEnv = TEnv { _kEnv = mempty, _ctx = CtxQ }
 initTState :: TState
 initTState = TState
   { _sSt = mempty
+  , _xSt = mempty
   , _kSt = mempty
   , _symSt = [1..]
   , _rbSt = mempty}  
 
 -- | Generate a fresh symbol and add into the renaming buffer
-gensym :: Var -> Transform Var
-gensym s = do sym <- uses symSt $ (\x -> s ++ "_emited_" ++ x) . show . head
-              symSt %= tail
-              rbSt %= Map.insert s sym
-              return sym
+gensym :: Var -> Ty -> Transform Var
+gensym s t = do
+  sym <-
+    uses symSt $
+      (\x -> s ++ "__" ++ typeTag t ++ "_emited_" ++ x) . show . head
+  symSt %= tail
+  rbSt %= (at (s, t) ?~ sym)
+  return sym
 
 -- | Generate multiple symbols based on the type
 gensymTys :: [Ty] -> Var -> Transform [Var]
-gensymTys ty s = mapM (\t -> gensym (s ++ "__" ++ typeTag t)) ty 
+gensymTys ty s = mapM (gensym s) ty 
+
+findSym :: Var -> Ty -> Transform Var
+findSym v t =
+  do
+    me <- use (rbSt . at (v, t))
+    err return me
+ where
+  err =
+    maybe
+      ( throwError $
+          "the symbol `"
+            ++ show v
+            ++ "` of emitted type `"
+            ++ show t
+            ++ "` cannot be found in the renaming state."
+      )
 
 --------------------------------------------------------------------------------
 -- Error Reporting
