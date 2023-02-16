@@ -59,9 +59,6 @@ instance Codegen Stmt where
       kSt %= (at v ?~ t)
       doE eM
    where
-    -- extendSession :: Ty -> Transform ()
-    -- extendSession (TQ qty) = sSt %= (at (session1 v) ?~ qty)
-    -- extendSession _        = pure ()
     doE :: Maybe Exp -> Transform [Stmt]
     doE Nothing = return [s]
     doE (Just e) =
@@ -74,6 +71,8 @@ instance Codegen Stmt where
       mkSVar :: (Var, Exp, Ty) -> Stmt
       mkSVar (v', e', t') = SVar (Binding v' t') (Just e')
   aug (SApply s EHad) =
+    -- todo: `tNewEmit` and `tOldEmit` new assumes only one, need a mapping when
+    -- extending phase calculus
     do
       let newTy = THad
       qt <- typing s
