@@ -115,6 +115,7 @@ instance DafnyPrinter EmitExp where
     build "seq<" <> build ty <> build ">" <>
     withParen (build e <> build ", " <> build ee)
   build (EDafnyVar s) = build s
+  build (ECall e es) = build e <> withParen (byComma es)
 
 buildConds :: String -> [Exp] -> Builder
 buildConds s = foldr (\x xs -> build s <> build x <> build '\n' <> xs) (build "")

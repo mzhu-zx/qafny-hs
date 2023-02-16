@@ -32,7 +32,8 @@ data TState = TState
   , _xSt :: Map.Map Var Session       -- session reference state
   , _kSt :: Map.Map Var Ty            -- kind state
   , _symSt :: [Int]                   -- gensym state
-  , _rbSt :: Map.Map (Var, Ty) Var    -- renaming state (maintained by `gensym`)
+  -- renaming state (maintained by `gensym`), indexed by metaVar and emittedType  
+  , _rbSt :: Map.Map (Var, Ty) Var
   }
 
 $(makeLenses ''TState)

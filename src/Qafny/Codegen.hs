@@ -1,6 +1,7 @@
 {-# LANGUAGE FlexibleInstances, FlexibleContexts #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE TupleSections #-}
 
 module Qafny.Codegen where
 
@@ -12,6 +13,7 @@ import           Control.Monad.RWS
 import           Control.Monad.Except
 import           Control.Lens
 import qualified Data.Map.Strict as Map 
+import qualified Data.Set as Set 
 
 --------------------------------------------------------------------------------
 -- | Codegen 
@@ -24,7 +26,13 @@ class Codegen a where
 instance Codegen AST where
   aug ast = do
     let k = Map.fromList (collectMethodTypes ast)
-    local (kEnv %~ Map.union k) $ mapM aug ast
+    let prelude =
+          [ QDafny "include \"../../external/QPreludeUntyped.dfy\""
+          , -- , QDafny "import opened QPreludeUntyped"
+            QDafny ""
+          ]
+    main <- local (kEnv %~ Map.union k) $ mapM aug ast
+    return $ prelude : main
 
 instance Codegen Toplevel where
   aug q@(QMethod v bds rts rqs ens block) =
@@ -65,17 +73,29 @@ instance Codegen Stmt where
      where
       mkSVar :: (Var, Exp, Ty) -> Stmt
       mkSVar (v', e', t') = SVar (Binding v' t') (Just e')
-  aug (SApply s e) =
+  aug (SApply s EHad) =
     do
+      let newTy = THad
       qt <- typing s
-      cast <- opCastHad qt
-      sSt %= (at s ?~ qt) --  todo: allow splits/change states when typing
-      let vs = varFromSession s
-      tEmit <- only1 $ typing qt
-      vEmits <- mapM (`findSym` tEmit) vs
+      castOp <- opCastHad qt
+      tNewEmit <- only1 $ typing newTy
+      let vMetas = varFromSession s
+      -- get the previous types
+      tOldEmit <- only1 $ typing qt
+      vOldEmits <- mapM (`findSym` tNewEmit) vMetas
+      -- update with new ones
+      sSt %= (at s ?~ newTy) --  todo: allow splits/change states when typing
+      -- update the kind state for each (probably not necessary)
+      foldM_ (\_ v -> kSt %= (at v ?~ TQ newTy)) () vMetas
+      -- remove all old symbols and generate new symbols
+      rbSt %= (`Map.withoutKeys` (Set.fromList $ map (,tOldEmit) vMetas))
+      vNewEmits <- mapM (`gensym` tNewEmit) vMetas
+      -- assemble the emitted terms
       return
-        [ EEmit (EDafnyVar "CastNorHad") `SCall` [EEmit $ EDafnyVar v]
-        | v <- vEmits
+        [ SVar (Binding vNew tNewEmit) $
+          Just $
+            EEmit (castOp `ECall` [EEmit $ EDafnyVar vOld])
+        | (vOld, vNew) <- zip vOldEmits vNewEmits
         ]
    where
     opCastHad :: QTy -> Transform String

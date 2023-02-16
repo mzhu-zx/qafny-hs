@@ -65,6 +65,7 @@ wild =  "_"
 data EmitExp
   = ELambda Var Exp
   | EMakeSeq Ty Exp EmitExp
+  | ECall Var [Exp]
   | EDafnyVar Var 
   deriving  (Show, Eq, Ord)
 

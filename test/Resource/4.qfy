@@ -1,8 +1,3 @@
-#import opened DivMod
-#import opened Mul
-#import opened Power2
-#import opened Unity
-
 method DeutschJozsa (n : nat)
   // requires n > 0
 {
