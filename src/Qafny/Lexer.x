@@ -23,6 +23,7 @@ token :-
   @dafny           { pushToken $ TDafny . tail   }
   method           { emit $  TMethod             }
   ensures          { emit $  TEnsures            }
+  separates        { emit $  TSeparates          }
   requires         { emit $  TRequires           }
   returns          { emit $  TReturns            }
   assert           { emit $  TAssert             }
@@ -36,6 +37,10 @@ token :-
   ch               { emit $  TCH                 }
   var              { emit $  TVar                }
   if               { emit $  TIf                 }
+  for              { emit $  TFor                }
+  in               { emit $  TIn                 }
+  with             { emit $  TWith               }
+  invariants       { emit $  TInv                }
   H                { emit $  THApp               }
   QFT              { emit $  TQFT                }
   RQFT             { emit $  TRQFT               }
@@ -86,6 +91,7 @@ data Token = TDafny String
            | TNat
            | TInt
            | TBool
+           | TIn
            | TSeq
            | TNor
            | THad
@@ -110,6 +116,10 @@ data Token = TDafny String
            | TQFT
            | TRQFT
            | TMea
+           | TSeparates
+           | TInv
+           | TWith
+           | TFor
            deriving (Show, Eq)
 
 -- alexScanTokens str = go (alexStartPos, '\n', [], str)

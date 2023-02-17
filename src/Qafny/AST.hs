@@ -74,9 +74,14 @@ type Returns = [Binding]
 data Conds
   = Requires Exp
   | Ensures Exp
+  | Invariants Exp
+  | Separates Exp
+  deriving Show
 
 type Requires = [Exp]
 type Ensures = [Exp]
+type Invariants = [Exp]
+type Separates = Exp
 
 newtype Block = Block { inBlock :: [Stmt] }
   deriving (Show, Eq)
@@ -99,7 +104,9 @@ data Stmt
   | SAssign Var Exp
   | SApply Session Exp
   | SDafny String
-  | SIf Exp Block
+  | SIf Exp Separates Block
+  --     id left right guard invarants separates Body
+  | SFor Var Exp Exp   Exp   [Exp]     Exp       Block
   deriving (Show, Eq)
 
 type AST = [Toplevel]

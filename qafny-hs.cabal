@@ -31,6 +31,7 @@ library
       Qafny.Emit
       Qafny.Lexer
       Qafny.Parser
+      Qafny.ParserUtils
       Qafny.Transform
       Qafny.Typing
   other-modules:
