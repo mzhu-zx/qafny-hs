@@ -1,0 +1,25 @@
+#+TITLE: Qafny Design Documentation
+#+OPTIONS: toc:nil date:nil
+#+bibliography: design.bib
+#+cite_export: biblatex
+
+* Compilation
+
+* Biview
+Coincidentally, the choice between a sequence of bitvectors vs a sequence of
+nats is closely related to the idea in [cite:@wadler_views_1987]
+
+
+# ########################################################################### #
+#+begin_src sh :exports none
+  cp design.bib design.bib.bak
+  cat "Exported Items.bib" >> design.bib
+  cat "Exported Items.bib" | grep "title"
+#+end_src
+
+#+RESULTS:
+|   | title = {Views: a way for pattern matching to cohabit with data abstraction},                                      |
+|   | shorttitle = {Views},                                                                                              |
+|   | booktitle = {Proceedings of the 14th {ACM} {SIGACT}-{SIGPLAN} symposium on {Principles} of programming languages}, |
+
+#+print_bibliography:
