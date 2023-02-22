@@ -100,9 +100,8 @@ instance Codegen Stmt where
     opCastHad :: QTy -> Transform String
     opCastHad TNor = return "CastNorHad"
     opCastHad t = throwError $ "type `" ++ show t ++ "` cannot be casted to Had type"
-  aug (SIf e seps b) = undefined
+  aug (SIf e seps b) = return [SEmit $ SIfDafny e b]
   aug s = return [s]
-
 
 
 instance Codegen (Var, Exp, Ty) where

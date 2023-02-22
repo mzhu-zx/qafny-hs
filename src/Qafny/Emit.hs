@@ -21,6 +21,7 @@ instance Semigroup Builder where
 instance Monoid Builder where
   mempty = return mempty
 
+
 line :: Builder
 line = return $ TB.singleton '\n'
 
@@ -47,9 +48,12 @@ byComma (x:xs) = foldl (\ys y -> ys  <> build ", " <> build y) (build x) xs
 byLine :: DafnyPrinter a => [a] -> Builder
 byLine = foldr (\y ys -> build y <> build "\n" <> ys) mempty
 
+infixr 6 <!>
 
 class DafnyPrinter a where
   build :: a -> Builder
+  (<!>) :: a -> Builder -> Builder
+  a <!> b = build a <> b
 
 instance DafnyPrinter Char where
   build = return . TB.singleton
@@ -101,8 +105,11 @@ instance DafnyPrinter Stmt where
                                          build " := " <> build e
           buildStmt (SAssign v e) = build v <> build " := " <> build e
           buildStmt (SCall e es) = build e <> withParen (byComma es)
+          buildStmt (SEmit s') = buildEmit s'
           buildStmt e = build "// undefined builder for Stmt : " <> build (show e)
-
+          buildEmit :: EmitStmt -> Builder
+          buildEmit (SIfDafny e b) = "if " <!> withParen (build e) <> build b
+                        
 instance DafnyPrinter Exp where
   build (ENum n) = build $ show n
   build (EVar v) = build v
@@ -112,13 +119,12 @@ instance DafnyPrinter Exp where
 instance DafnyPrinter EmitExp where
   build (ELambda v e) = build v <> build " => " <> build e
   build (EMakeSeq ty e ee) =
-    build "seq<" <> build ty <> build ">" <>
-    withParen (build e <> build ", " <> build ee)
+    "seq<" <!> ty <!> ">" <!> withParen (e <!> ", " <!> build ee)
   build (EDafnyVar s) = build s
-  build (ECall e es) = build e <> withParen (byComma es)
+  build (ECall e es) = e <!> withParen (byComma es)
 
 buildConds :: String -> [Exp] -> Builder
-buildConds s = foldr (\x xs -> build s <> build x <> build '\n' <> xs) (build "")
+buildConds s = foldr (\x xs -> s <!> x <!> '\n' <!> xs) (build "")
 
 texify :: DafnyPrinter a => a -> Text
 texify = TB.toLazyText . flip runReader 0 . doBuild . build
