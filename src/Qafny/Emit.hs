@@ -114,7 +114,17 @@ instance DafnyPrinter Exp where
   build (ENum n) = build $ show n
   build (EVar v) = build v
   build (EEmit e) = build e
-  build _ = undefined
+  build (EOp2 op e1 e2) = buildOp2 op (build e1) (build e2)
+    where
+      buildOp2 :: Op2 -> Builder -> Builder -> Builder
+      buildOp2 OAnd = flip (<>) . ("&&" <!>)
+      buildOp2 OOr  = flip (<>) . ("||" <!>)
+      buildOp2 OAdd = flip (<>) . ("+" <!>)
+      buildOp2 OMul = flip (<>) . ("*" <!>)
+      buildOp2 OMod = flip (<>) . ("%" <!>)
+      buildOp2 _    = const const $ build "Nor should not be in emitted form"
+      -- FIXEM: why without `build` it still works?
+  build e = "//" <!> show e <!> build " should not be in emitted form!"
 
 instance DafnyPrinter EmitExp where
   build (ELambda v e) = build v <> build " => " <> build e

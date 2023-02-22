@@ -114,6 +114,7 @@ data Stmt
 
 data EmitStmt
   = SIfDafny Exp Block 
+  deriving (Show, Eq)
 
 type AST = [Toplevel]
 

@@ -37,7 +37,7 @@ dafny                 { L.TDafny $$   }
 "ch"                  { L.TCH         }
 "var"                 { L.TVar        }
 "if"                  { L.TIf         }
-"cl"                  { L.TCl         }
+"λ"                   { L.TCl         }
 "assert"              { L.TAssert     }
 "||"                  { L.TOr         }
 "&&"                  { L.TAnd        }
@@ -162,13 +162,14 @@ expr
   | "meas" id                         { EMea $2                              }
   | "not" atomic                      { EOp1 ONot $2                         }
   | "nor" '(' atomic ',' digits ')'   { EOp2 ONor $3 (ENum $5)               }
-  | "cl" '(' id "=>" expr ')'         { ECl $3 $5                            }
+  | "λ" '(' id "=>" expr ')'          { ECl $3 $5                            }
   | id '(' atomic ')'                 { EApp $1 $3                           }
   | atomic '+' atomic                 { EOp2 OAdd $1 $3                      }
   | atomic "&&" atomic                { EOp2 OAnd $1 $3                      }
   | atomic "||" atomic                { EOp2 OOr $1 $3                       }
   | atomic '*' atomic                 { EOp2 OMul $1 $3                      }
-  | expr '\%' atomic                  { EOp2 OMod $1 $3       }
+  | expr '\%' expr                    { EOp2 OMod $1 $3                      }
+  | '(' expr ')'                      { $2                                   }
                                                                             
 atomic                                                                      
   : digits                            { ENum $1                              }
