@@ -109,7 +109,8 @@ instance DafnyPrinter Stmt where
           buildStmt e = build "// undefined builder for Stmt : " <> build (show e)
           buildEmit :: EmitStmt -> Builder
           buildEmit (SIfDafny e b) = "if " <!> withParen (build e) <> build b
-                        
+          buildEmit (SBlock b) = build b
+
 instance DafnyPrinter Exp where
   build (ENum n) = build $ show n
   build (EVar v) = build v
@@ -122,7 +123,7 @@ instance DafnyPrinter Exp where
       buildOp2 OAdd = flip (<>) . ("+" <!>)
       buildOp2 OMul = flip (<>) . ("*" <!>)
       buildOp2 OMod = flip (<>) . ("%" <!>)
-      buildOp2 _    = const const $ build "Nor should not be in emitted form"
+      buildOp2 _    = const . const $ build "Nor should not be in emitted form"
       -- FIXEM: why without `build` it still works?
   build e = "//" <!> show e <!> build " should not be in emitted form!"
 

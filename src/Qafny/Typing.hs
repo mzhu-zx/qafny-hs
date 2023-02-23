@@ -79,3 +79,9 @@ instance Typing QTy [Ty] where
   typing TNor = return [TSeq TNat]
   typing THad = return [TSeq TNat]
   typing TCH  = return [TSeq TNat]
+
+
+-- Type (rewriting) for the guard 
+typingGuard :: Exp -> Transform QTy
+typingGuard (ESession s) = 
+

@@ -58,18 +58,18 @@ instance Codegen Stmt where
     do
       kSt %= (at v ?~ t)
       doE eM
-   where
-    doE :: Maybe Exp -> Transform [Stmt]
-    doE Nothing = return [s]
-    doE (Just e) =
-      do
-        te <- typing e
-        checkSubtype t te -- check if `t` agrees with the type of `e`
-        vets <- aug (v, e, t)
-        return $ map mkSVar vets
-     where
-      mkSVar :: (Var, Exp, Ty) -> Stmt
-      mkSVar (v', e', t') = SVar (Binding v' t') (Just e')
+    where
+      doE :: Maybe Exp -> Transform [Stmt]
+      doE Nothing = return [s]
+      doE (Just e) =
+        do
+          te <- typing e
+          checkSubtype t te -- check if `t` agrees with the type of `e`
+          vets <- aug (v, e, t)
+          return $ map mkSVar vets
+        where
+          mkSVar :: (Var, Exp, Ty) -> Stmt
+          mkSVar (v', e', t') = SVar (Binding v' t') (Just e')
   aug (SApply s EHad) =
     -- todo: `tNewEmit` and `tOldEmit` new assumes only one, need a mapping when
     -- extending phase calculus
@@ -96,12 +96,15 @@ instance Codegen Stmt where
             EEmit (castOp `ECall` [EEmit $ EDafnyVar vOld])
         | (vOld, vNew) <- zip vOldEmits vNewEmits
         ]
-   where
-    opCastHad :: QTy -> Transform String
-    opCastHad TNor = return "CastNorHad"
-    opCastHad t = throwError $ "type `" ++ show t ++ "` cannot be casted to Had type"
-  aug (SIf e seps b) = return [SEmit $ SIfDafny e b]
+    where
+      opCastHad :: QTy -> Transform String
+      opCastHad TNor = return "CastNorHad"
+      opCastHad t = throwError $ "type `" ++ show t ++ "` cannot be casted to Had type"
+  aug (SIf e seps b) = 
+    do typing e  
+      return [SEmit $ SBlock b]
   aug s = return [s]
+
 
 
 instance Codegen (Var, Exp, Ty) where
