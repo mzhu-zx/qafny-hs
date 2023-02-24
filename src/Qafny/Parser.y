@@ -37,6 +37,7 @@ dafny                 { L.TDafny $$   }
 "ch"                  { L.TCH         }
 "var"                 { L.TVar        }
 "if"                  { L.TIf         }
+"λ"                   { L.TCl         }
 "assert"              { L.TAssert     }
 "||"                  { L.TOr         }
 "&&"                  { L.TAnd        }
@@ -57,6 +58,7 @@ id                    { L.TId $$      }
 ':'                   { L.TColon      }
 ';'                   { L.TSemi       }
 "=="                  { L.TEq         }
+"=>"                  { L.TArrow      }
 ":="                  { L.TAssign     }
 "*="                  { L.TApply      }
 ".."                  { L.TDot        }
@@ -86,7 +88,7 @@ requireEnsures
 invs
   : conds                             { reverse [e | (Invariants e) <- $1]   }
 
-separates
+separates :: { Session }
   : cond                              {% separatesOnly $1                    }
 
 conds
@@ -97,7 +99,7 @@ cond
   : "requires" expr                   { Requires $2                          }
   | "ensures" expr                    { Ensures $2                           }
   | "invariants" expr                 { Invariants $2                        }
-  | "separates" expr                  { Separates $2                         }
+  | "separates" session               { Separates $2                         }
                                                                           
 bindings                                                                  
   : bindings_                         { reverse $1                           }
@@ -141,7 +143,7 @@ stmt
   | "for" id "in" '[' atomic ".." atomic ']' "with" expr invs separates block
                                       { SFor $2 $5 $7 $10 $11 $12 $13        }
                                                                           
-session                                                                   
+session :: { Session }                                                               
   : session_                          { Session $ reverse $1                 }
                                                                           
 session_                                                                  
@@ -153,18 +155,21 @@ range
                                                                           
 expr                                                                      
   : atomic                            { $1                                   }
+  | session                           { ESession $1                          }
   | "H"                               { EHad                                 }
   | "QFT"                             { EQFT                                 }
   | "RQFT"                            { ERQFT                                }
   | "meas" id                         { EMea $2                              }
   | "not" atomic                      { EOp1 ONot $2                         }
   | "nor" '(' atomic ',' digits ')'   { EOp2 ONor $3 (ENum $5)               }
+  | "λ" '(' id "=>" expr ')'          { ECl $3 $5                            }
   | id '(' atomic ')'                 { EApp $1 $3                           }
   | atomic '+' atomic                 { EOp2 OAdd $1 $3                      }
   | atomic "&&" atomic                { EOp2 OAnd $1 $3                      }
   | atomic "||" atomic                { EOp2 OOr $1 $3                       }
   | atomic '*' atomic                 { EOp2 OMul $1 $3                      }
-  | atomic '*' atomic '\%' atomic     { EOp2 OMod (EOp2 OMul $1 $3) $5       }
+  | expr '\%' expr                    { EOp2 OMod $1 $3                      }
+  | '(' expr ')'                      { $2                                   }
                                                                             
 atomic                                                                      
   : digits                            { ENum $1                              }

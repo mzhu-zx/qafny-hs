@@ -16,6 +16,7 @@ $digit = 0-9
 @aor = (\|\|)
 @adot = (\.\.)
 @eq = (==)
+@arrow = (=>)
 
 token :-
   $white+          ;
@@ -37,6 +38,8 @@ token :-
   ch               { emit $  TCH                 }
   var              { emit $  TVar                }
   if               { emit $  TIf                 }
+  cl               { emit $  TCl                 }
+  "λ"              { emit $  TCl                 }
   for              { emit $  TFor                }
   in               { emit $  TIn                 }
   with             { emit $  TWith               }
@@ -50,6 +53,7 @@ token :-
   @assign          { emit $  TAssign             }
   @qassign         { emit $  TApply              }
   @eq              { emit $  TEq                 }
+  @arrow           { emit $  TArrow              }
   \*               { emit $  TMul                }
   \+               { emit $  TAdd                }
   \%               { emit $  TMod                }
@@ -94,6 +98,7 @@ data Token = TDafny String
            | TIn
            | TSeq
            | TNor
+           | TArrow
            | THad
            | TCH
            | TId String
@@ -105,6 +110,7 @@ data Token = TDafny String
            | TSemi
            | TVar
            | TIf
+           | TCl
            | TMul
            | TAdd
            | TMod

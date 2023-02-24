@@ -1,5 +1,6 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE TupleSections #-}
 
 module Qafny.Typing where
 
@@ -50,14 +51,12 @@ class Typing a t where
 
 instance Typing Session QTy where
   typing s =
-    do t <- use (sSt . at s)
-       maybe (unknownSessionError s) return t
-       
+    handleWith (unknownSessionError s) $ use (sSt . at s)
+
 instance Typing Exp Ty where
   typing (ENum _)  = return TNat
   typing (EVar x)  =
-    do k <- use (kSt . at x)
-       maybe (unknownVariableError x) return k 
+    handleWith (unknownVariableError x) $ use (kSt . at x)
   typing (EOp2 op2 e1 e2) =
     do top <- typing op2
        t1 <- typing e1
@@ -79,3 +78,16 @@ instance Typing QTy [Ty] where
   typing TNor = return [TSeq TNat]
   typing THad = return [TSeq TNat]
   typing TCH  = return [TSeq TNat]
+
+
+-- | Gather sessions used in the guard
+typingGuard :: Exp -> Transform (Session, QTy)
+typingGuard (ESession s) = 
+  handleWith (unknownSessionError s) (uses (sSt . at s) ((s, ) <$>))
+typingGuard e = throwError $ "Unsupported guard: " ++ show e
+
+
+
+-- | Find the type of the emitted term
+typingEmit :: Session -> Transform [Ty]
+typingEmit s = (typing s :: Transform QTy) >>= typing

@@ -50,12 +50,14 @@ data Exp
   | ERQFT
   | EMea Var
   | EBool Bool
+  | ECl Var Exp
   | EApp Var Exp
   | EOp1 Op1 Exp
   | EOp2 Op2 Exp Exp
   | EForall Binding (Maybe Exp) Exp
   | EDafny String
   | EEmit EmitExp
+  | ESession Session
   deriving (Show, Eq, Ord)
 
 wild :: Var
@@ -75,13 +77,13 @@ data Conds
   = Requires Exp
   | Ensures Exp
   | Invariants Exp
-  | Separates Exp
+  | Separates Session
   deriving Show
 
 type Requires = [Exp]
 type Ensures = [Exp]
 type Invariants = [Exp]
-type Separates = Exp
+type Separates = Session
 
 newtype Block = Block { inBlock :: [Stmt] }
   deriving (Show, Eq)
@@ -106,7 +108,13 @@ data Stmt
   | SDafny String
   | SIf Exp Separates Block
   --     id left right guard invarants separates Body
-  | SFor Var Exp Exp   Exp   [Exp]     Exp       Block
+  | SFor Var Exp Exp   Exp   [Exp]     Session   Block
+  | SEmit EmitStmt
+  deriving (Show, Eq)
+
+data EmitStmt
+  = SIfDafny Exp Block 
+  | SBlock Block
   deriving (Show, Eq)
 
 type AST = [Toplevel]

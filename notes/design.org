@@ -5,9 +5,23 @@
 
 * Compilation
 
+* =if= statement
+
+
+
 * Biview
 Coincidentally, the choice between a sequence of bitvectors vs a sequence of
 nats is closely related to the idea in [cite:@wadler_views_1987]
+
+* Misc
+** Point-free of =buildOp2=
+#+begin_src haskell
+  x <> ("&&" <!> y)
+    == (<>) x  ("&&" <!> y)
+    == (flip (<>)) ("&&" <!> y) $ x
+    == (flip (<>)) (("&&" <!>) y) $ x
+    == (flip (<>)) . ("&&" <!>) $ y x 
+#+end_src
 
 
 # ########################################################################### #
@@ -23,3 +37,6 @@ nats is closely related to the idea in [cite:@wadler_views_1987]
 |   | booktitle = {Proceedings of the 14th {ACM} {SIGACT}-{SIGPLAN} symposium on {Principles} of programming languages}, |
 
 #+print_bibliography:
+
+
+

@@ -14,6 +14,7 @@ import           Control.Monad.Except
 import           Control.Lens
 import qualified Data.Map.Strict as Map 
 import qualified Data.Set as Set 
+import Control.Applicative (Applicative(liftA2))
 
 --------------------------------------------------------------------------------
 -- | Codegen 
@@ -58,18 +59,18 @@ instance Codegen Stmt where
     do
       kSt %= (at v ?~ t)
       doE eM
-   where
-    doE :: Maybe Exp -> Transform [Stmt]
-    doE Nothing = return [s]
-    doE (Just e) =
-      do
-        te <- typing e
-        checkSubtype t te -- check if `t` agrees with the type of `e`
-        vets <- aug (v, e, t)
-        return $ map mkSVar vets
-     where
-      mkSVar :: (Var, Exp, Ty) -> Stmt
-      mkSVar (v', e', t') = SVar (Binding v' t') (Just e')
+    where
+      doE :: Maybe Exp -> Transform [Stmt]
+      doE Nothing = return [s]
+      doE (Just e) =
+        do
+          te <- typing e
+          checkSubtype t te -- check if `t` agrees with the type of `e`
+          vets <- aug (v, e, t)
+          return $ map mkSVar vets
+        where
+          mkSVar :: (Var, Exp, Ty) -> Stmt
+          mkSVar (v', e', t') = SVar (Binding v' t') (Just e')
   aug (SApply s EHad) =
     -- todo: `tNewEmit` and `tOldEmit` new assumes only one, need a mapping when
     -- extending phase calculus
@@ -96,14 +97,54 @@ instance Codegen Stmt where
             EEmit (castOp `ECall` [EEmit $ EDafnyVar vOld])
         | (vOld, vNew) <- zip vOldEmits vNewEmits
         ]
-   where
-    opCastHad :: QTy -> Transform String
-    opCastHad TNor = return "CastNorHad"
-    opCastHad t = throwError $ "type `" ++ show t ++ "` cannot be casted to Had type"
-  aug (SIf e seps b) = undefined
+    where
+      opCastHad :: QTy -> Transform String
+      opCastHad TNor = return "CastNorHad"
+      opCastHad t = throwError $ "type `" ++ show t ++ "` cannot be casted to Had type"
+  aug (SIf e seps b) =
+    do
+      (s, t) <- typingGuard e
+      sDup <- withGuardType t
+      return [SEmit $ SBlock (Block sDup)]
+    where
+      withGuardType TNor = throwError "Nor type for gurad?"
+      withGuardType THad =
+        do tyEmit <- only1 $ typingEmit seps 
+           (sepStash, dupStmts) <- dupSession tyEmit seps
+           -- TODO: implement separate checker here:
+           -- only `separated` sessions can be on the LHS of `aug`
+           -- I could add a checker on the Reader.
+           -- another point is that you should not allocate any new qubits in
+           -- if. therefore, some freshness checker needs to be implemented at
+           -- the method call to ensure that
+           stmtsBody <- aug b
+           -- How to guarantee the consistency between two sessions?
+           -- One approach is to produce a high order zip
+           -- zipWithM :: Session -> Session -> (Ran -> Ran -> b) -> b
+           -- let zipWithM sepStash seps, and always use this zipper to preserve
+           -- the mapping between the oldMetaVar and the newMetaVar
+           -- mergeSession sepStash seps  
+           return dupStmts
+           -- throwError "do the rest on seqNew!"
+      withGuardType TCH =
+        throwError "Do the split mechanism here, map will not be generic enough"
   aug s = return [s]
 
-
+-- | Generate declarations to duplicate session data
+-- TODO: do I really need to generate new emitted symbols?
+dupSession :: Ty -> Session -> Transform (Session, [Stmt])
+dupSession tEmit s =
+  do
+    newSeps@(Session newRs) <- gensymSessionMeta s
+    let Session oldRs = s
+    stmts <- zipWithM mkDecls newRs oldRs
+    return (newSeps, stmts)
+  where
+    mkDecls (Ran newR _ _) (Ran oldR _ _) =
+      liftA2
+        (\vOldEmit vNewEmit -> SVar (Binding vNewEmit tEmit) (Just (EVar vOldEmit)))
+        (findSym oldR tEmit)
+        (gensym newR tEmit)
 
 instance Codegen (Var, Exp, Ty) where
   -- Specialized instance for variable declaration
