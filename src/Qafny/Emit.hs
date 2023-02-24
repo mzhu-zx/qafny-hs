@@ -31,15 +31,15 @@ space = return $ TB.singleton ' '
 withIncr2 :: Builder -> Builder
 withIncr2 = local (+ 2)
 
-getIndent :: Builder_ String
+getIndent :: Builder
 getIndent = do n <- ask
-               return $ replicate n ' '
+               build $ replicate n ' '
 
 withParen :: Builder -> Builder
 withParen b = build '(' <> b <> build ')'
 
 withBrace :: Builder -> Builder
-withBrace b = build "{\n" <> b <> build "}\n"
+withBrace b = getIndent <> build "{\n" <> b <> getIndent <> build "}\n"
 
 byComma :: DafnyPrinter a => [a] -> Builder
 byComma [] = mempty
@@ -97,8 +97,8 @@ instance DafnyPrinter Block where
   build = withBrace . withIncr2 . byLine . inBlock
 
 instance DafnyPrinter Stmt where
-  build s = do i <- getIndent
-               build i <> buildStmt s <> build ';'
+  build (SEmit (SBlock b)) = build b
+  build s = getIndent <> buildStmt s <> build ';'
     where buildStmt :: Stmt -> Builder
           buildStmt (SVar bd Nothing) = build "var " <> build bd
           buildStmt (SVar bd (Just e)) = build "var " <> build bd <>

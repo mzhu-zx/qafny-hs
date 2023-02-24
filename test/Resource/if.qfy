@@ -6,7 +6,7 @@ method DeutschJozsa (n : nat)
   q[0 .. 1] *= H;
   p[0 .. 1] *= H;
   if (q[0 .. 1])
-    separates q[0..1]
+    separates p[0..1]
   {
     p[0..1] *= λ (x => (x + 1) % 2);
   }

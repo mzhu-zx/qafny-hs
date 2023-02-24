@@ -88,7 +88,7 @@ requireEnsures
 invs
   : conds                             { reverse [e | (Invariants e) <- $1]   }
 
-separates
+separates :: { Session }
   : cond                              {% separatesOnly $1                    }
 
 conds
@@ -99,7 +99,7 @@ cond
   : "requires" expr                   { Requires $2                          }
   | "ensures" expr                    { Ensures $2                           }
   | "invariants" expr                 { Invariants $2                        }
-  | "separates" expr                  { Separates $2                         }
+  | "separates" session               { Separates $2                         }
                                                                           
 bindings                                                                  
   : bindings_                         { reverse $1                           }
@@ -143,7 +143,7 @@ stmt
   | "for" id "in" '[' atomic ".." atomic ']' "with" expr invs separates block
                                       { SFor $2 $5 $7 $10 $11 $12 $13        }
                                                                           
-session                                                                   
+session :: { Session }                                                               
   : session_                          { Session $ reverse $1                 }
                                                                           
 session_                                                                  

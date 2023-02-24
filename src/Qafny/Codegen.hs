@@ -14,6 +14,7 @@ import           Control.Monad.Except
 import           Control.Lens
 import qualified Data.Map.Strict as Map 
 import qualified Data.Set as Set 
+import Control.Applicative (Applicative(liftA2))
 
 --------------------------------------------------------------------------------
 -- | Codegen 
@@ -100,12 +101,50 @@ instance Codegen Stmt where
       opCastHad :: QTy -> Transform String
       opCastHad TNor = return "CastNorHad"
       opCastHad t = throwError $ "type `" ++ show t ++ "` cannot be casted to Had type"
-  aug (SIf e seps b) = 
-    do typing e  
-      return [SEmit $ SBlock b]
+  aug (SIf e seps b) =
+    do
+      (s, t) <- typingGuard e
+      sDup <- withGuardType t
+      return [SEmit $ SBlock (Block sDup)]
+    where
+      withGuardType TNor = throwError "Nor type for gurad?"
+      withGuardType THad =
+        do tyEmit <- only1 $ typingEmit seps 
+           (sepStash, dupStmts) <- dupSession tyEmit seps
+           -- TODO: implement separate checker here:
+           -- only `separated` sessions can be on the LHS of `aug`
+           -- I could add a checker on the Reader.
+           -- another point is that you should not allocate any new qubits in
+           -- if. therefore, some freshness checker needs to be implemented at
+           -- the method call to ensure that
+           stmtsBody <- aug b
+           -- How to guarantee the consistency between two sessions?
+           -- One approach is to produce a high order zip
+           -- zipWithM :: Session -> Session -> (Ran -> Ran -> b) -> b
+           -- let zipWithM sepStash seps, and always use this zipper to preserve
+           -- the mapping between the oldMetaVar and the newMetaVar
+           -- mergeSession sepStash seps  
+           return dupStmts
+           -- throwError "do the rest on seqNew!"
+      withGuardType TCH =
+        throwError "Do the split mechanism here, map will not be generic enough"
   aug s = return [s]
 
-
+-- | Generate declarations to duplicate session data
+-- TODO: do I really need to generate new emitted symbols?
+dupSession :: Ty -> Session -> Transform (Session, [Stmt])
+dupSession tEmit s =
+  do
+    newSeps@(Session newRs) <- gensymSessionMeta s
+    let Session oldRs = s
+    stmts <- zipWithM mkDecls newRs oldRs
+    return (newSeps, stmts)
+  where
+    mkDecls (Ran newR _ _) (Ran oldR _ _) =
+      liftA2
+        (\vOldEmit vNewEmit -> SVar (Binding vNewEmit tEmit) (Just (EVar vOldEmit)))
+        (findSym oldR tEmit)
+        (gensym newR tEmit)
 
 instance Codegen (Var, Exp, Ty) where
   -- Specialized instance for variable declaration

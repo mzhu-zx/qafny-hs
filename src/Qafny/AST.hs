@@ -77,13 +77,13 @@ data Conds
   = Requires Exp
   | Ensures Exp
   | Invariants Exp
-  | Separates Exp
+  | Separates Session
   deriving Show
 
 type Requires = [Exp]
 type Ensures = [Exp]
 type Invariants = [Exp]
-type Separates = Exp
+type Separates = Session
 
 newtype Block = Block { inBlock :: [Stmt] }
   deriving (Show, Eq)
@@ -108,7 +108,7 @@ data Stmt
   | SDafny String
   | SIf Exp Separates Block
   --     id left right guard invarants separates Body
-  | SFor Var Exp Exp   Exp   [Exp]     Exp       Block
+  | SFor Var Exp Exp   Exp   [Exp]     Session   Block
   | SEmit EmitStmt
   deriving (Show, Eq)
 

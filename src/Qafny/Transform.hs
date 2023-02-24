@@ -31,7 +31,7 @@ data TState = TState
   { _sSt :: Map.Map Session QTy       -- session type state
   , _xSt :: Map.Map Var Session       -- session reference state
   , _kSt :: Map.Map Var Ty            -- kind state
-  , _symSt :: [Int]                   -- gensym state
+  , _symSt :: [Int]                   -- gensm state
   -- renaming state (maintained by `gensym`), indexed by metaVar and emittedType  
   , _rbSt :: Map.Map (Var, Ty) Var
   }
@@ -75,6 +75,20 @@ gensym s t = do
   rbSt %= (at (s, t) ?~ sym)
   return sym
 
+
+-- | Generate a symbol at meta level without performing renaming
+gensymMeta :: Var -> Transform Var
+gensymMeta v =
+  do sym <- uses symSt $ ((v ++ "__") ++ ) . show . head
+     symSt %= tail
+     return sym
+
+gensymSessionMeta :: Session -> Transform Session
+gensymSessionMeta (Session rs) =
+  mapM inner rs <&> Session
+  where
+    inner (Ran r e1 e2) = gensymMeta r <&> flip (`Ran` e1) e2
+
 -- | Generate multiple symbols based on the type
 gensymTys :: [Ty] -> Var -> Transform [Var]
 gensymTys ty s = mapM (gensym s) ty 
@@ -105,6 +119,9 @@ unknownVariableError s =
 unknownSessionError :: Session -> Transform a
 unknownSessionError s =
   throwError $ "Session `" ++ show s ++ "` is not in the scope"
+
+handleWith :: Transform a -> Transform (Maybe a) -> Transform a
+handleWith err = (>>= maybe err return)
 
 --------------------------------------------------------------------------------
 -- Wrapper
