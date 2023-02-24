@@ -34,13 +34,25 @@ checkSubtype t1 t2 =
   unless (sub t1 t2) $
   throwError $
   "Type mismatch: `" ++ show t1 ++ "` is not a subtype of `" ++ show t2 ++ "`"
-     
 
+-- TODO: make `sub` a typeclass?
+subQ :: QTy -> QTy -> Bool
+subQ _    TCH  = True
+subQ THad THad = True
+subQ TNor TNor = True
+subQ _     _   = False
+  
 checkSubtype2 :: (Ty, Ty, Ty) -> Ty -> Ty -> Transform Ty
 checkSubtype2 (top1, top2, tret) t1 t2 =
   do checkSubtype top1 t1
      checkSubtype top2 t2
      return tret
+
+checkSubtypeQ :: QTy -> QTy -> Transform ()
+checkSubtypeQ t1 t2 =
+  unless (subQ t1 t2) $
+  throwError $
+  "Type mismatch: `" ++ show t1 ++ "` is not a subtype of `" ++ show t2 ++ "`"
 
 
 --------------------------------------------------------------------------------

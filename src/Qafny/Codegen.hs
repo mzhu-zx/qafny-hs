@@ -29,11 +29,15 @@ instance Codegen AST where
     let k = Map.fromList (collectMethodTypes ast)
     let prelude =
           [ QDafny "include \"../../external/QPreludeUntyped.dfy\""
-          , -- , QDafny "import opened QPreludeUntyped"
-            QDafny ""
+          , QDafny "// target Dafny version: 3.12.0"
+          , QDafny "abstract module QafnyDefault {"
+          , QDafny "import opened QPreludeUntyped"
+          , QDafny ""
           ]
+    let postscript =
+          [ QDafny "}" ]
     main <- local (kEnv %~ Map.union k) $ mapM aug ast
-    return $ prelude : main
+    return $ prelude : main ++ [postscript]
 
 instance Codegen Toplevel where
   aug q@(QMethod v bds rts rqs ens block) =
@@ -101,6 +105,10 @@ instance Codegen Stmt where
       opCastHad :: QTy -> Transform String
       opCastHad TNor = return "CastNorHad"
       opCastHad t = throwError $ "type `" ++ show t ++ "` cannot be casted to Had type"
+  -- aug (SApply s e@(ECl _ _)) =
+  --   do qt <- typing s
+  --      checkSubtypeQ TCH qt
+  --      throwError "I need to finish the cast part first"
   aug (SIf e seps b) =
     do
       (s, t) <- typingGuard e
@@ -110,7 +118,7 @@ instance Codegen Stmt where
       withGuardType TNor = throwError "Nor type for gurad?"
       withGuardType THad =
         do tyEmit <- only1 $ typingEmit seps 
-           (sepStash, dupStmts) <- dupSession tyEmit seps
+           (sepStash, dupStmts, zipper) <- dupSession tyEmit seps
            -- TODO: implement separate checker here:
            -- only `separated` sessions can be on the LHS of `aug`
            -- I could add a checker on the Reader.
@@ -124,23 +132,33 @@ instance Codegen Stmt where
            -- let zipWithM sepStash seps, and always use this zipper to preserve
            -- the mapping between the oldMetaVar and the newMetaVar
            -- mergeSession sepStash seps  
-           return dupStmts
+           mergeBody <- zipper $ mergeRange2 tyEmit
+           return $ dupStmts ++ concatMap inBlock stmtsBody ++ concat mergeBody
            -- throwError "do the rest on seqNew!"
       withGuardType TCH =
         throwError "Do the split mechanism here, map will not be generic enough"
+      mergeRange2 :: Ty -> Range -> Range -> Transform [Stmt]
+      mergeRange2 tyEmit rMain@(Range vMain _ _) rStash@(Range vStash _ _) =
+        liftA2
+        (\vMainEmit vStashEmit ->
+           [SAssign vMainEmit (EOp2 OAdd (EVar vMainEmit) (EVar vStashEmit))])
+        (findSym vMain tyEmit)
+        (findSym vStash tyEmit)
   aug s = return [s]
+
+type BiRangeZipper a = (Range -> Range -> Transform a) -> Transform [a]
 
 -- | Generate declarations to duplicate session data
 -- TODO: do I really need to generate new emitted symbols?
-dupSession :: Ty -> Session -> Transform (Session, [Stmt])
+dupSession :: Ty -> Session -> Transform (Session, [Stmt], BiRangeZipper a)
 dupSession tEmit s =
   do
     newSeps@(Session newRs) <- gensymSessionMeta s
     let Session oldRs = s
     stmts <- zipWithM mkDecls newRs oldRs
-    return (newSeps, stmts)
+    return (newSeps, stmts, \f -> zipWithM f oldRs newRs)
   where
-    mkDecls (Ran newR _ _) (Ran oldR _ _) =
+    mkDecls (Range newR _ _) (Range oldR _ _) =
       liftA2
         (\vOldEmit vNewEmit -> SVar (Binding vNewEmit tEmit) (Just (EVar vOldEmit)))
         (findSym oldR tEmit)
@@ -164,7 +182,7 @@ instance Codegen (Var, Exp, Ty) where
           ++ "\n  Expression: "
     vs <- gensymTys ts v
     -- update state mappings
-    let vRange = Ran v (ENum 0) e1
+    let vRange = Range v (ENum 0) e1
         vSession = session1 vRange
     xSt %= (at v ?~ vSession)
     sSt %= (at vSession ?~ TNor)

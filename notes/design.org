@@ -1,20 +1,128 @@
-#+TITLE: Qafny Design Documentation
+#+TITLE: Qafny Design and Bookkeeping
 #+OPTIONS: toc:nil date:nil
 #+bibliography: design.bib
 #+cite_export: biblatex
 
+* Typing
+
+** Typing with Sessions and Ranges
+For example, let's say we have the full session
+#+begin_src haskell
+  s == { x [0 .. 1]; y [0 .. 1]; z [0 .. 1] }
+#+end_src
+For a λ application statement, let's say
+#+begin_src haskell
+  x [0 .. 1] *= λ (x => x + 1)
+#+end_src
+The typing procedure should locate =x[0 .. 1]= the corr. session =s= and
+identify that the session =s= is indeed of =CH= type.  With the =CH= type
+ensured, we then should emit the term for the oracle operator that should /only/
+modify the range corr. to =x[0 .. 1]= instead of the entire session.
+
+Therefore, a reasonable way to do this is to have following functions
+
+#+begin_src haskell
+  -- | locate session with a range 
+  findSession :: Range -> Transform Session
+
+  -- | locate a session with a (sub-)session
+  subSession :: Session -> Transform Session
+
+  -- | the typing of session (already done)
+  instance Typing Session QTy
+
+  -- | sub-range based codegen
+  augWithSession :: Session -> ? -> Transform ?
+#+end_src
+
+However, I think there might be other case where you need to compare if two
+sessions are exactly the same.
+
+
+*** Sidenote
+At the same time, by viewing a session as a row, I see the connection between
+the subtyping between sessions w/ or w/o ranges and the open and close rows in
+the row polymorphism. 
+
+** Type Coercion, or Casting
+I need to implement a new function to perform type coercion between =QTy='s.
+When subtyping is satisfied, insert a cast to lift the subtype to its super
+type. This needs a support from =QPreludeUntyped= module.
+
+* =QPreludeUntyped= and Dafny 4.0
+
+** Ghost Functions
+In the new standard, =function= is now =function method= by default, and 
+=ghost function= represents =function= in Dafny 3.
+
+** =abstract module=
+Dafny 4.0 introduced the notation =abstract module= which are modules not to be
+compiled. The upstream libraries seems to be adapted for that. (That's exactly
+what we need.) To conform to the standard, =Codegen= now generates a default
+abstract module wrapper to enable us to use those functions. 
+
 * Compilation
 
-* =if= statement
+** =separates= Keyword and Body
+I introduced =separates= keyword as a hint for the split-combine semantics for
+non-trivial guards.
+
+Let's say, if we have a guard
+#+begin_src haskell
+  -- _ leading
+  if (f (x [0 .. n]))
+    separates x <_ .. m> 
+
+  -- _ trailing
+  if (f (x [0 .. n]))
+    separates x <m .. _> 
+
+  -- segment
+  if (f (x [0 .. n]))
+    separates x <i .. j> 
+#+end_src
+The =separates= side condition asserts that only the sequence of *states* in =x=
+between =i= and =j= actually satisfies =f (x [0 .. n])=.
+I will need to insert assertions when implementing assertion translations.
+
+** CH Biview
+=CH= is now expected to have two views: =bitvector= versus =nat=.
+
+I think it's unnecessary to track views by installing a new state field.
+A tentative solution is to make 2 =CH= types, =CHb= and =CHn=, to distinguish
+those two views.
+
+** Biview Preference
+From previous implementations, the GHZ one favors =CHb= and the Shor's one
+favors =CHn=.  I think there's a pattern: in GHZ, the guard is of =CH= type and
+the λ oracle is /flip/ (a very bit-level operation), while in Shor's, the guard
+is =Had= type and the λ oracle is modulo multiplication which is on =nat=.
 
 
+** Placeholder for Phase Calculus
+The following instance is responsible for mapping a session type to its emission
+type which should include the emitted type for kets as well as phases.
+#+begin_src haskell
+  instance Typing QTy [Ty]
+#+end_src
+Currently, this list is always a singleton and is flatten by the =only1=
+combinator. Some lifting operation and bijective mapping will be expected when
+starting the phase calculus implementation. 
 
-* Biview
+* Language Design
+
+** State Predicate
+What would state predicates be like now?
+
+
+* Misc
+
+** Biview
 Coincidentally, the choice between a sequence of bitvectors vs a sequence of
 nats is closely related to the idea in [cite:@wadler_views_1987]
 
-* Misc
-** Point-free of =buildOp2=
+
+** Point-free Translation of =buildOp2=
 #+begin_src haskell
   x <> ("&&" <!> y)
     == (<>) x  ("&&" <!> y)

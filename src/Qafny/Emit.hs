@@ -69,22 +69,21 @@ instance DafnyPrinter Ty where
   build TInt     = build "int"
   build TBool    = build "bool"
   build (TQ q)   = build q
-  build (TSeq t) = build "seq<" <> build t <> build ">"
+  build (TSeq t) = "seq<" <!> t <!> build ">"
   build _        = undefined
 
 instance DafnyPrinter QTy where
   build TNor = build "nor"
   build THad = build "had"
-  build TCH = build "ch"
+  build TCH  = build "ch"
 
 instance DafnyPrinter Binding where
-  build (Binding x t) = build x <> build " : " <> build t
+  build (Binding x t) = x <!>  " : " <!> build t
 
 instance DafnyPrinter Toplevel where
   build (QDafny s) = build s 
   build (QMethod idt bds rets reqs ens block) =
-    build "method" <> space <>
-    build idt <> space <>
+    "method " <!> idt <!> " " <!>
     withParen (byComma bds) <> 
     buildRets rets <> line <>
     buildConds "requires" reqs <> 
@@ -118,11 +117,11 @@ instance DafnyPrinter Exp where
   build (EOp2 op e1 e2) = buildOp2 op (build e1) (build e2)
     where
       buildOp2 :: Op2 -> Builder -> Builder -> Builder
-      buildOp2 OAnd = flip (<>) . ("&&" <!>)
-      buildOp2 OOr  = flip (<>) . ("||" <!>)
-      buildOp2 OAdd = flip (<>) . ("+" <!>)
-      buildOp2 OMul = flip (<>) . ("*" <!>)
-      buildOp2 OMod = flip (<>) . ("%" <!>)
+      buildOp2 OAnd = flip (<>) . (" && " <!>)
+      buildOp2 OOr  = flip (<>) . (" || " <!>)
+      buildOp2 OAdd = flip (<>) . (" + " <!>)
+      buildOp2 OMul = flip (<>) . (" * " <!>)
+      buildOp2 OMod = flip (<>) . (" % " <!>)
       buildOp2 _    = const . const $ build "Nor should not be in emitted form"
       -- FIXEM: why without `build` it still works?
   build e = "//" <!> show e <!> build " should not be in emitted form!"

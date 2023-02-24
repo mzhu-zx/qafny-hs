@@ -1,4 +1,4 @@
-method DeutschJozsa (n : nat)
+method GHZ0 (n : nat)
   // requires n > 0
 {
   var q : nor := nor(1, 0);

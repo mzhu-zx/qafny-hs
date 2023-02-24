@@ -151,7 +151,7 @@ session_
   | session_ range                    { $2 : $1                              }
                                                                           
 range                                                                     
-  : id '[' atomic ".." atomic ']'     { Ran $1 $3 $5                         }
+  : id '[' atomic ".." atomic ']'     { Range $1 $3 $5                       }
                                                                           
 expr                                                                      
   : atomic                            { $1                                   }

@@ -10,8 +10,6 @@ import           Data.Bifunctor
 import qualified Data.Map.Strict as Map 
 import Data.List (intercalate)
 
-
-
 --------------------------------------------------------------------------------
 -- General 
 --------------------------------------------------------------------------------
@@ -87,12 +85,13 @@ gensymSessionMeta :: Session -> Transform Session
 gensymSessionMeta (Session rs) =
   mapM inner rs <&> Session
   where
-    inner (Ran r e1 e2) = gensymMeta r <&> flip (`Ran` e1) e2
+    inner (Range r e1 e2) = gensymMeta r <&> flip (`Range` e1) e2
 
 -- | Generate multiple symbols based on the type
 gensymTys :: [Ty] -> Var -> Transform [Var]
 gensymTys ty s = mapM (gensym s) ty 
 
+-- | Find a symbol based on its emitted type
 findSym :: Var -> Ty -> Transform Var
 findSym v t =
   do

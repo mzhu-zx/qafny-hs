@@ -93,7 +93,7 @@ data Toplevel
   | QDafny String
   deriving (Show, Eq)
 
-data Range = Ran Var Exp Exp 
+data Range = Range Var Exp Exp 
            deriving (Show, Eq, Ord)
 
 newtype Session = Session [Range]
@@ -131,10 +131,10 @@ typeTag _        = "unsupported"
 --------------------------------------------------------------------------------
 
 range1 :: Var -> Range
-range1 v = Ran v (ENum 0) (ENum 1)
+range1 v = Range v (ENum 0) (ENum 1)
 
 session1 :: Range -> Session
 session1 =  Session . (: [])
 
 varFromSession :: Session -> [Var]
-varFromSession (Session s) = map (\(Ran x _ _) -> x) s
+varFromSession (Session s) = map (\(Range x _ _) -> x) s
