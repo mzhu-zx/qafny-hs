@@ -68,6 +68,7 @@ instance Codegen Block where
 
 instance Codegen Stmt where
   aug s@(SVar (Binding v t) eM) =
+  -- TODO: make a special case to allow `SVar` emission for uncured terms
     do
       kSt %= (at v ?~ t)
       doE eM
@@ -82,8 +83,7 @@ instance Codegen Stmt where
           return $ map mkSVar vets
         where
           mkSVar :: (Var, Exp, Ty) -> Stmt
-          mkSVar (vEmitted, e', tEmitted) =
-            SVar (Binding vEmitted tEmitted) $ Just e'
+          mkSVar (vEmitted, e', tEmitted) = SAssign vEmitted e'
   aug (SApply s EHad) = 
     do qt <- typing s
        opCast <- opCastHad qt
