@@ -10,6 +10,7 @@ import           Control.Lens
 import           Control.Monad.RWS
 import           Control.Monad.Except
 import qualified Data.Map.Strict as Map 
+import qualified Data.List as List
 
 --------------------------------------------------------------------------------
 -- | Helpers 
@@ -62,8 +63,22 @@ class Typing a t where
   typing :: a -> Transform t
 
 instance Typing Session QTy where
-  typing s =
-    handleWith (unknownSessionError s) $ use (sSt . at s)
+  typing se@(Session s) =
+    do
+      sesRange <-
+        (`mapM` s)
+          ( \r@(Range name _ _) ->
+              handleWith (unknownRangeError r) $ use (xSt . at name)
+          )
+      case List.nub sesRange of
+        [] -> throwError "Internal Error? An empty session has no type!"
+        [x] -> handleWith (unknownSessionError x) $ use (sSt . at x)
+        ss ->
+          throwError $
+            "`"
+              ++ show se
+              ++ "` is not a sub-session, counterexample: "
+              ++ show ss
 
 instance Typing Exp Ty where
   typing (ENum _)  = return TNat
@@ -97,7 +112,6 @@ typingGuard :: Exp -> Transform (Session, QTy)
 typingGuard (ESession s) = 
   handleWith (unknownSessionError s) (uses (sSt . at s) ((s, ) <$>))
 typingGuard e = throwError $ "Unsupported guard: " ++ show e
-
 
 
 -- | Find the type of the emitted term

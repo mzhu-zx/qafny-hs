@@ -138,3 +138,12 @@ session1 =  Session . (: [])
 
 varFromSession :: Session -> [Var]
 varFromSession (Session s) = map (\(Range x _ _) -> x) s
+
+-- | Compute all sessions mentioned in the LHS of application 
+leftSessions :: [Stmt] -> [Session]
+leftSessions =
+  concatMap perStmt
+  where
+    perStmt (SApply s _) = [s]
+    -- TODO: query If and For recursively
+    perStmt _            = []

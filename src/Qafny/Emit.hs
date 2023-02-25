@@ -97,6 +97,7 @@ instance DafnyPrinter Block where
 
 instance DafnyPrinter Stmt where
   build (SEmit (SBlock b)) = build b
+  build (SDafny s') = getIndent <> build s'
   build s = getIndent <> buildStmt s <> build ';'
     where buildStmt :: Stmt -> Builder
           buildStmt (SVar bd Nothing) = build "var " <> build bd

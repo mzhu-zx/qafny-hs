@@ -3,12 +3,12 @@ method GHZ0 (n : nat)
 {
   var q : nor := nor(1, 0);
   var p : nor := nor(1, 0);
-  // var g : nor := nor(1, 0);
+  var g : nor := nor(1, 0);
   q[0 .. 1] *= H;
   if (q[0 .. 1])
-    separates q[0..1]           // this can be omitted?
+    separates q[0..1]
   {
     p[0..1] *= λ (x => (x + 1) % 2);
-    // g[0..1] *= λ (x => (x + 1) % 2);
+    g[0..1] *= λ (x => (x + 1) % 2);
   }
 }

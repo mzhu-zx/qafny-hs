@@ -1,6 +1,6 @@
 module Main (main) where
 
--- import           Qafny.AST
+import           Qafny.AST(Ty)
 import           Qafny.Parser(scanAndParse)
 import           Qafny.Codegen(codegen)
 import           Qafny.Emit(texify)
@@ -14,12 +14,12 @@ import           System.Exit (exitFailure)
 parseArg :: IO String
 parseArg = fmap (head :: [String] -> String) getArgs
 
-pipeline :: String -> Either String (Txt.Text, TState)
+pipeline :: String -> Either String (Txt.Text, TState, [(String, Ty)])
 pipeline s =
   do ast <- scanAndParse s
-     let (result, state, _) = codegen ast
+     let (result, state, ev) = codegen ast
      ir <- result
-     return (texify ir, state)
+     return (texify ir, state, ev)
 
 main :: IO ()
 main =
@@ -32,9 +32,10 @@ main =
       writeOrReport $ pipeline s
       putStrLn $ "\ESC[32mSuccess: target is emited as `" ++ tgt ++ "` \ESC[0m"
       where
-        writeOrReport (Right (txt, st)) =
+        writeOrReport (Right (txt, st, emittedVars)) =
           do
             putStrLn $ "Pipeline Finished!\nStatistics from Codegen:\n" ++ show st
+            putStrLn $ "Writer Result:\n  " ++ show emittedVars
             Txt.IO.writeFile tgt txt
         writeOrReport (Left e) =
           do

@@ -13,7 +13,7 @@ import Data.List (intercalate)
 --------------------------------------------------------------------------------
 -- General 
 --------------------------------------------------------------------------------
-type Transform a = ExceptT String (RWS TEnv () TState) a
+type Transform a = ExceptT String (RWS TEnv [(String, Ty)] TState) a
 
 data CtxMode
   = CtxC
@@ -27,7 +27,7 @@ data TEnv = TEnv
 
 data TState = TState
   { _sSt :: Map.Map Session QTy       -- session type state
-  , _xSt :: Map.Map Var Session       -- session reference state
+  , _xSt :: Map.Map Var Session       -- range reference state
   , _kSt :: Map.Map Var Ty            -- kind state
   , _symSt :: [Int]                   -- gensm state
   -- renaming state (maintained by `gensym`), indexed by metaVar and emittedType  
@@ -69,6 +69,7 @@ gensym s t = do
   sym <-
     uses symSt $
       (\x -> s ++ "__" ++ typeTag t ++ "_emited_" ++ x) . show . head
+  tell [(sym, t)]
   symSt %= tail
   rbSt %= (at (s, t) ?~ sym)
   return sym
@@ -111,13 +112,19 @@ findSym v t =
 --------------------------------------------------------------------------------
 -- Error Reporting
 --------------------------------------------------------------------------------
+
+unknownXError :: Show b => String -> b -> Transform a
+unknownXError meta s =
+  throwError $ meta ++ " `" ++ show s ++ "` is not in the scope"
+
 unknownVariableError :: Var -> Transform a
-unknownVariableError s =
-  throwError $ "Variable `" ++ s ++ "` is not in the scope"
+unknownVariableError = unknownXError "Variable"
 
 unknownSessionError :: Session -> Transform a
-unknownSessionError s =
-  throwError $ "Session `" ++ show s ++ "` is not in the scope"
+unknownSessionError = unknownXError "Session"
+
+unknownRangeError :: Range -> Transform a
+unknownRangeError = unknownXError "Range"
 
 handleWith :: Transform a -> Transform (Maybe a) -> Transform a
 handleWith err = (>>= maybe err return)
@@ -125,10 +132,11 @@ handleWith err = (>>= maybe err return)
 --------------------------------------------------------------------------------
 -- Wrapper
 --------------------------------------------------------------------------------
-runTransform :: Transform a -> (Either String a, TState, ())
+type Production a = (Either String a, TState, [(String, Ty)])
+
+runTransform :: Transform a -> Production a
 runTransform = fuseError . (\x -> runRWS x initTEnv initTState) . runExceptT
   where
-    fuseError :: (Either String a, TState, ()) -> (Either String a, TState, ())
-    fuseError comp =
-      _1 %~ first (++ "\ESC[0m\nCodegen terminted with an error!\n" ++ show st) $ comp
-      where st = comp ^. _2
+    -- fuseError :: (Either String a, TState, [String]) -> (Either String a, TState, [String])
+    fuseError (eit, st, writ) =
+      (first (++ "\ESC[0m\nCodegen terminted with an error!\n" ++ show st) eit, st, writ)

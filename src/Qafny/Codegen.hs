@@ -14,7 +14,7 @@ import           Control.Monad.Except
 import           Control.Lens
 import qualified Data.Map.Strict as Map 
 import qualified Data.Set as Set 
-import Control.Applicative (Applicative(liftA2))
+import           Control.Applicative (Applicative(liftA2))
 
 --------------------------------------------------------------------------------
 -- | Codegen 
@@ -46,8 +46,16 @@ instance Codegen Toplevel where
       -- sync kState with kEnv because when handling Stmts, environment becomes
       -- a state!
       kSt .= tEnv ^. kEnv
-      block' <- only1 $ local (const tEnv) $ aug block
-      return [QMethod v bds rts rqs ens block']
+      (block', eVts) <- listen $ only1 $ local (const tEnv) $ aug block
+      let stmtsDeclare = map (\(s, t) -> SVar (Binding s t) Nothing) eVts
+      let totalBlock =
+            [SDafny "// Forward Declaration"]
+              ++ stmtsDeclare
+              ++ [ SDafny ""
+                 , SDafny "// Method Definition"
+                 ]
+              ++ inBlock block'
+      return [QMethod v bds rts rqs ens (Block totalBlock)]
   aug q@(QDafny _) = return [q]
 
 instance Codegen Block where
@@ -74,33 +82,11 @@ instance Codegen Stmt where
           return $ map mkSVar vets
         where
           mkSVar :: (Var, Exp, Ty) -> Stmt
-          mkSVar (v', e', t') = SVar (Binding v' t') (Just e')
-  aug (SApply s EHad) =
-    -- todo: `tNewEmit` and `tOldEmit` new assumes only one, need a mapping when
-    -- extending phase calculus
-    do
-      let newTy = THad
-      qt <- typing s
-      castOp <- opCastHad qt
-      tNewEmit <- only1 $ typing newTy
-      let vMetas = varFromSession s
-      -- get the previous types
-      tOldEmit <- only1 $ typing qt
-      vOldEmits <- mapM (`findSym` tNewEmit) vMetas
-      -- update with new ones
-      sSt %= (at s ?~ newTy) --  todo: allow splits/change states when typing
-      -- update the kind state for each (probably not necessary)
-      foldM_ (\_ v -> kSt %= (at v ?~ TQ newTy)) () vMetas
-      -- remove all old symbols and generate new symbols
-      rbSt %= (`Map.withoutKeys` (Set.fromList $ map (,tOldEmit) vMetas))
-      vNewEmits <- mapM (`gensym` tNewEmit) vMetas
-      -- assemble the emitted terms
-      return
-        [ SVar (Binding vNew tNewEmit) $
-          Just $
-            EEmit (castOp `ECall` [EEmit $ EDafnyVar vOld])
-        | (vOld, vNew) <- zip vOldEmits vNewEmits
-        ]
+          mkSVar (v', e', t') = SVar (Binding v t') $ Just e'
+  aug (SApply s EHad) = 
+    do qt <- typing s
+       opCast <- opCastHad qt
+       coercionWithOp opCast qt THad s
     where
       opCastHad :: QTy -> Transform String
       opCastHad TNor = return "CastNorHad"
@@ -113,37 +99,48 @@ instance Codegen Stmt where
     do
       (s, t) <- typingGuard e
       sDup <- withGuardType t
+      -- I need to first gather all sessions that are going to be mutated here.
       return [SEmit $ SBlock (Block sDup)]
     where
       withGuardType TNor = throwError "Nor type for gurad?"
       withGuardType THad =
-        do tyEmit <- only1 $ typingEmit seps 
-           (sepStash, dupStmts, zipper) <- dupSession tyEmit seps
-           -- TODO: implement separate checker here:
-           -- only `separated` sessions can be on the LHS of `aug`
-           -- I could add a checker on the Reader.
-           -- another point is that you should not allocate any new qubits in
-           -- if. therefore, some freshness checker needs to be implemented at
-           -- the method call to ensure that
-           stmtsBody <- aug b
-           -- How to guarantee the consistency between two sessions?
-           -- One approach is to produce a high order zip
-           -- zipWithM :: Session -> Session -> (Ran -> Ran -> b) -> b
-           -- let zipWithM sepStash seps, and always use this zipper to preserve
-           -- the mapping between the oldMetaVar and the newMetaVar
-           -- mergeSession sepStash seps  
-           mergeBody <- zipper $ mergeRange2 tyEmit
-           return $ dupStmts ++ concatMap inBlock stmtsBody ++ concat mergeBody
-           -- throwError "do the rest on seqNew!"
+        do
+          let freeSession = leftSessions . inBlock $ b
+          prelude <- mapM preludeIf freeSession
+          -- TODO: implement separate checker here:
+          -- only `separated` sessions can be on the LHS of `aug`
+          -- I could add a checker on the Reader.
+          -- another point is that you should not allocate any new qubits in
+          -- if. therefore, some freshness checker needs to be implemented at
+          -- the method call to ensure that
+          stmtsBody <- aug b
+          mergeBody <- mapM mergeIf prelude <&> concat
+          let dupStmts = concatMap (^. _3) prelude
+          return $ dupStmts ++ concatMap inBlock stmtsBody ++ concat mergeBody
       withGuardType TCH =
         throwError "Do the split mechanism here, map will not be generic enough"
+      -- Convert those session to CH type if not and generate split statement
+      -- for every session
+      preludeIf :: Session -> Transform (Ty, Session, [Stmt], BiRangeZipper a)
+      preludeIf s =
+        do
+          ty <- typing s
+          coerStmts <- coercionCH ty s
+          tyEmit <- only1 $ typingEmit s
+          (stashed, dupStmts, zipper) <- dupSession tyEmit s
+          return (tyEmit, stashed, coerStmts ++ dupStmts, zipper)
+      -- Generate merge statement for every session
+      mergeIf :: (Ty, Session, [Stmt], BiRangeZipper [Stmt]) -> Transform [[Stmt]]
+      mergeIf (tyEmit, _, _, zipper) = zipper $ mergeRange2 tyEmit
+      -- Generate the merge statement of one paired range
       mergeRange2 :: Ty -> Range -> Range -> Transform [Stmt]
       mergeRange2 tyEmit rMain@(Range vMain _ _) rStash@(Range vStash _ _) =
         liftA2
-        (\vMainEmit vStashEmit ->
-           [SAssign vMainEmit (EOp2 OAdd (EVar vMainEmit) (EVar vStashEmit))])
-        (findSym vMain tyEmit)
-        (findSym vStash tyEmit)
+          ( \vMainEmit vStashEmit ->
+              [SAssign vMainEmit (EOp2 OAdd (EVar vMainEmit) (EVar vStashEmit))]
+          )
+          (findSym vMain tyEmit)
+          (findSym vStash tyEmit)
   aug s = return [s]
 
 type BiRangeZipper a = (Range -> Range -> Transform a) -> Transform [a]
@@ -153,14 +150,14 @@ type BiRangeZipper a = (Range -> Range -> Transform a) -> Transform [a]
 dupSession :: Ty -> Session -> Transform (Session, [Stmt], BiRangeZipper a)
 dupSession tEmit s =
   do
-    newSeps@(Session newRs) <- gensymSessionMeta s
+    stashed@(Session newRs) <- gensymSessionMeta s
     let Session oldRs = s
     stmts <- zipWithM mkDecls newRs oldRs
-    return (newSeps, stmts, \f -> zipWithM f oldRs newRs)
+    return (stashed, stmts, \f -> zipWithM f oldRs newRs)
   where
     mkDecls (Range newR _ _) (Range oldR _ _) =
       liftA2
-        (\vOldEmit vNewEmit -> SVar (Binding vNewEmit tEmit) (Just (EVar vOldEmit)))
+        (\vOldEmit vNewEmit -> SAssign vNewEmit (EVar vOldEmit))
         (findSym oldR tEmit)
         (gensym newR tEmit)
 
@@ -212,8 +209,49 @@ only1 = (=<<) $
     [x] -> return x
     e -> throwError $ "[only1]: " ++ show e ++ "is not a singleton"
 
+
+-- | Given a well-typed full session (s :: τ1), emit the statement and cast it
+-- to CH type
+-- 
+-- FIXME: Emitted variable declaration should appear outside the block,
+-- there could be some problem in the current implementation
+-- Solution: write used emission variables in the writer and forward the
+-- declaration
+
+coercionCH :: QTy -> Session -> Transform [Stmt]
+coercionCH TCH = const $ return []
+coercionCH TNor = coercionWithOp "CastNorCH10" TNor TCH
+coercionCH THad = coercionWithOp "CastHadCH10" TNor TCH
+
+-- | For a given well-typed session, cast its type with the given op and return
+-- the statements for the cast
+-- TODO: with phase calculus [coercionWithOp] will need to take a list of `Op`s
+coercionWithOp :: String -> QTy -> QTy -> Session -> Transform [Stmt]
+coercionWithOp castOp sessionTy newTy s =
+  do
+    tNewEmit <- only1 $ typing newTy
+    let vMetas = varFromSession s
+    -- get the previous types
+    tOldEmit <- only1 $ typing sessionTy
+    vOldEmits <- mapM (`findSym` tNewEmit) vMetas
+    -- update with new ones
+    sSt %= (at s ?~ newTy) --  todo: allow splits/change states when typing
+    -- update the kind state for each (probably not necessary)
+    foldM_ (\_ v -> kSt %= (at v ?~ TQ newTy)) () vMetas
+    -- remove all old symbols and generate new symbols
+    rbSt %= (`Map.withoutKeys` (Set.fromList $ map (,tOldEmit) vMetas))
+    vNewEmits <- mapM (`gensym` tNewEmit) vMetas
+    -- assemble the emitted terms
+    return $
+      concat
+        [ [ SDafny $ "// Cast " ++ show sessionTy ++ " ==> " ++ show newTy
+          , SAssign vNew $ EEmit (castOp `ECall` [EEmit $ EDafnyVar vOld])
+          ]
+        | (vOld, vNew) <- zip vOldEmits vNewEmits
+        ]
+
 --------------------------------------------------------------------------------
 -- | Wrapper 
 --------------------------------------------------------------------------------
-codegen :: AST -> (Either String AST, TState, ())
+codegen :: AST -> Production AST
 codegen = (_1 %~ fmap concat) . runTransform . aug
