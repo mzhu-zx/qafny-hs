@@ -13,8 +13,8 @@ method GHZ0 (n : nat)
   var p__5__seq__nat___emited_6 : seq<nat>;
   
   // Method Definition
-  var q : seq<nat> := seq<nat>(1, _ => 0);
-  var p : seq<nat> := seq<nat>(1, _ => 0);
+  var q__seq__nat___emited_1 : seq<nat> := seq<nat>(1, _ => 0);
+  var p__seq__nat___emited_2 : seq<nat> := seq<nat>(1, _ => 0);
   // Cast TNor ==> THad
   q__seq__nat___emited_3 := CastNorHad(q__seq__nat___emited_1);
   {

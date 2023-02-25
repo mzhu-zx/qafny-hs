@@ -82,7 +82,8 @@ instance Codegen Stmt where
           return $ map mkSVar vets
         where
           mkSVar :: (Var, Exp, Ty) -> Stmt
-          mkSVar (v', e', t') = SVar (Binding v t') $ Just e'
+          mkSVar (vEmitted, e', tEmitted) =
+            SVar (Binding vEmitted tEmitted) $ Just e'
   aug (SApply s EHad) = 
     do qt <- typing s
        opCast <- opCastHad qt
