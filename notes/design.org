@@ -49,6 +49,26 @@ I need to implement a new function to perform type coercion between =QTy='s.
 When subtyping is satisfied, insert a cast to lift the subtype to its super
 type. This needs a support from =QPreludeUntyped= module.
 
+** Retyping
+Consider the function that changes the type of a session
+#+begin_src haskell
+  retypeSession :: Session -> QTy -> Transform ([Var], Ty, [Var], Ty)
+#+end_src
+This signature makes sense because a session could include multiple ranges
+already.
+
+However, on the other hand, it's hard to use because retyping from =Nor= or
+=Had= type should not take a session that contains more than one range
+variable. If there's such a case, session split should be done first.
+
+Therefore, a proposed retyping function should be of type.
+#+begin_src haskell
+  retypeSession1 :: Session -> QTy -> Transform (Var, Ty, Var, Ty)
+#+end_src
+
+I will keep both version. Let's see how to change it.
+
+
 * =QPreludeUntyped= and Dafny 4.0
 
 ** Ghost Functions

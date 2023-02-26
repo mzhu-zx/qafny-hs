@@ -1,4 +1,5 @@
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE LambdaCase #-}
 module Qafny.Transform where
 
 import           Qafny.AST
@@ -9,6 +10,13 @@ import           Control.Lens
 import           Data.Bifunctor
 import qualified Data.Map.Strict as Map 
 import Data.List (intercalate)
+
+
+--------------------------------------------------------------------------------
+-- High-Order Types
+--------------------------------------------------------------------------------
+type Zipper a r = (a -> a -> Transform r) -> Transform [r]
+
 
 --------------------------------------------------------------------------------
 -- General 
@@ -108,6 +116,17 @@ findSym v t =
             ++ show t
             ++ "` cannot be found in the renaming state."
       )
+
+--------------------------------------------------------------------------------
+-- Combinator
+--------------------------------------------------------------------------------
+
+only1 :: Show a => Transform [a] -> Transform a
+only1 = (=<<) $
+  \case
+    [x] -> return x
+    e -> throwError $ "[only1]: " ++ show e ++ "is not a singleton"
+
 
 --------------------------------------------------------------------------------
 -- Error Reporting

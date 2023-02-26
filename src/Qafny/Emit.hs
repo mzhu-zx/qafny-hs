@@ -132,6 +132,7 @@ instance DafnyPrinter EmitExp where
   build (EMakeSeq ty e ee) =
     "seq<" <!> ty <!> ">" <!> withParen (e <!> ", " <!> build ee)
   build (EDafnyVar s) = build s
+  build (ECard e) = "|" <!> e <!> build "|"
   build (ECall e es) = e <!> withParen (byComma es)
 
 buildConds :: String -> [Exp] -> Builder

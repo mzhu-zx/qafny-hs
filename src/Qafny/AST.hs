@@ -50,7 +50,6 @@ data Exp
   | ERQFT
   | EMea Var
   | EBool Bool
-  | ECl Var Exp
   | EApp Var Exp
   | EOp1 Op1 Exp
   | EOp2 Op2 Exp Exp
@@ -60,13 +59,11 @@ data Exp
   | ESession Session
   deriving (Show, Eq, Ord)
 
-wild :: Var
-wild =  "_"
-
 -- | EmitExp : Unsafe Expressions for Codegen Only
 data EmitExp
   = ELambda Var Exp
   | EMakeSeq Ty Exp EmitExp
+  | ECard Exp
   | ECall Var [Exp]
   | EDafnyVar Var 
   deriving  (Show, Eq, Ord)
@@ -119,6 +116,16 @@ data EmitStmt
 
 type AST = [Toplevel]
 
+--------------------------------------------------------------------------------
+-- | AST Constants
+-------------------------------------------------------------------------------
+wild :: Var
+wild =  "_"
+
+constExp :: Exp -> EmitExp
+constExp = ELambda wild
+
+
 typeTag :: Ty -> String
 typeTag TNat     = "nat"
 typeTag TInt     = "int"
@@ -147,3 +154,5 @@ leftSessions =
     perStmt (SApply s _) = [s]
     -- TODO: query If and For recursively
     perStmt _            = []
+
+
