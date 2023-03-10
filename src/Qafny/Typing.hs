@@ -66,20 +66,9 @@ class Typing a t where
 instance Typing Session QTy where
   typing se@(Session s) =
     do
-      sesRange <-
-        (`mapM` s)
-          ( \r@(Range name _ _) ->
-              handleWith (unknownRangeError r) $ use (xSt . at name)
-          )
-      case List.nub sesRange of
-        [] -> throwError "Internal Error? An empty session has no type!"
-        [x] -> handleWith (unknownSessionError x) $ use (sSt . at x)
-        ss ->
-          throwError $
-            "`"
-              ++ show se
-              ++ "` is not a sub-session, counterexample: "
-              ++ show ss
+      x <- resolveSession se
+      handleWith (throwError $ "Internal Error? Session`" ++ show x ++ "` is not in the type state") $
+        use (sSt . at x)
 
 instance Typing Exp Ty where
   typing (ENum _)  = return TNat
@@ -170,7 +159,7 @@ retypeSession1 s qtNow =
     vNewEmit <- vMeta `gensym` tNewEmit
     return (vOldEmit, tOldEmit, vNewEmit, tOldEmit)
 
-
+-- | Merge two sessions and update the typing state
 mergeSessionType :: Session -> Session -> Transform ()
 mergeSessionType sMain@(Session rsMain) sAux@(Session rsAux) =
   do
@@ -201,3 +190,28 @@ mergeSessionType sMain@(Session rsMain) sAux@(Session rsAux) =
     -- surprisingly, I don't need to change the rest
     -- TODO: what should I return to avoid computation?
     return ()
+
+
+-- | Resolve session: compute the super session of one session
+resolveSession :: Session -> Transform Session
+resolveSession se@(Session rs) =
+    do
+      sesRange <-
+        (`mapM` rs)
+          ( \r@(Range name _ _) ->
+              handleWith (unknownRangeError r) $ use (xSt . at name)
+          )
+      case List.nub sesRange of
+        [] -> throwError "Internal Error? An empty session has no type!"
+        [x] -> return x
+        ss ->
+          throwError $
+            "`"
+              ++ show se
+              ++ "` is not a sub-session, counterexample: "
+              ++ show ss
+
+-- | Resolve session: compute the super session of several sessions
+resolveSessions :: [Session] -> Transform Session
+resolveSessions =
+  resolveSession . Session . concatMap (\(Session rs) -> rs)

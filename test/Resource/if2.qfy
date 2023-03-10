@@ -1,0 +1,23 @@
+method GHZ0 (n : nat)
+  // requires n > 0
+{
+  var q : nor := nor(1, 0);
+  var p : nor := nor(1, 0);
+  var g : nor := nor(1, 0);
+
+  q[0 .. 1] *= H;
+  p[0 .. 1] *= H;
+
+  if (q[0 .. 1])
+    separates q[0..1]           // this can be omitted?
+  {
+    g[0..1] *= λ (x => (x + 1) % 2);
+  }
+
+  if (p[0 .. 1])
+    separates p[0..1]           // this can be omitted?
+  {
+    q[0..1] *= λ (x => (x + 1) % 2);
+    g[0..1] *= λ (x => (x + 1) % 2);
+  }
+}

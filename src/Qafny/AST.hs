@@ -146,7 +146,7 @@ session1 =  Session . (: [])
 varFromSession :: Session -> [Var]
 varFromSession (Session s) = map (\(Range x _ _) -> x) s
 
--- | Compute all sessions mentioned in the LHS of application 
+-- | Compute all free sessions/ranges mentioned in the LHS of application 
 leftSessions :: [Stmt] -> [Session]
 leftSessions =
   concatMap perStmt

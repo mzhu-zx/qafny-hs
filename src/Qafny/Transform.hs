@@ -9,8 +9,8 @@ import           Control.Lens.TH
 import           Control.Lens
 import           Data.Bifunctor
 import qualified Data.Map.Strict as Map 
-import Data.List (intercalate)
-
+import           Data.List (intercalate)
+import           GHC.Stack
 
 --------------------------------------------------------------------------------
 -- High-Order Types
@@ -121,11 +121,11 @@ findSym v t =
 -- Combinator
 --------------------------------------------------------------------------------
 
-only1 :: Show a => Transform [a] -> Transform a
+only1 :: (HasCallStack, Show a) => Transform [a] -> Transform a
 only1 = (=<<) $
   \case
     [x] -> return x
-    e -> throwError $ "[only1]: " ++ show e ++ "is not a singleton"
+    e -> error $ "[only1]: " ++ show e ++ "is not a singleton"
 
 
 --------------------------------------------------------------------------------

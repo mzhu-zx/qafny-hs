@@ -114,23 +114,15 @@ instance Codegen Stmt where
       withGuardType _ TNor = throwError "Nor type for gurad?"
       withGuardType sGuard THad =
         do
-          let freeSession = leftSessions . inBlock $ b
-          prelude <- mapM preludeIf freeSession
-          -- TODO: implement separate checker here:
-          -- only `separated` sessions can be on the LHS of `aug`
-          -- I could add a checker on the Reader.
-          -- another point is that you should not allocate any new qubits in
-          -- if. therefore, some freshness checker needs to be implemented at
-          -- the method call to ensure that
+          -- Requirement: all sessions in the body should be in the same session
+          freeSession <- resolveSessions . leftSessions . inBlock $ b
+          prelude <- preludeIf freeSession
           stmtsBody <- aug b
-          -- FIXME: After the if statement, all these ranges should be in one
-          -- session, this means that I need to join all of them first, the
-          -- `prelude` should be merged first
           vCard <- getStashedEmitVar prelude
           mergeGuardStmt <- mergeGuard vCard freeSession sGuard
-          mergeBody <- mapM mergeIf prelude <&> concat
-          let dupStmts = concatMap (^. _3) prelude
-          return $ dupStmts ++ concatMap inBlock stmtsBody ++ concat mergeBody ++ mergeGuardStmt
+          mergeBody <- mergeIf prelude <&> concat
+          let dupStmts = (^. _3) prelude
+          return $ dupStmts ++ concatMap inBlock stmtsBody ++ mergeBody ++ mergeGuardStmt
       withGuardType _ TCH =
         throwError "Do the split mechanism here, map will not be generic enough"
       -- Convert those session to CH type if not and generate split statement
@@ -150,10 +142,9 @@ instance Codegen Stmt where
       -- Question: should the guard be visible to the body? I don't think so.
       -- If that should be visible, then the cast should happen beforehand.
       -- The semantics of multiple sessions in one body is unclear so far
-      mergeGuard :: Var -> [Session] -> Session -> Transform [Stmt]
-      mergeGuard vCard bodySessions s =
+      mergeGuard :: Var -> Session -> Session -> Transform [Stmt]
+      mergeGuard vCard bodySession s =
         do
-          bodySession@(Session bodyRanges) <- only1 $ return bodySessions
           -- grab an arbitrary range from the session
           let stateCard = EEmit . ECard . EVar $ vCard
           -- in Had type, `retypeSession1` should not fail, unless there's some
@@ -178,9 +169,8 @@ instance Codegen Stmt where
                   (EEmit $ EMakeSeq tNew stateCard $ constExp (ENum 0))
                   (EEmit $ EMakeSeq tNew stateCard $ constExp (ENum 1))
             ]
-      getStashedEmitVar :: [(Ty, Session, [Stmt], BiRangeZipper a)] -> Transform Var
-      getStashedEmitVar [] = throwError "Empty Body? Need to fix this!"
-      getStashedEmitVar ((_, s@(Session rs), _, _) : _) =
+      getStashedEmitVar :: (Ty, Session, [Stmt], BiRangeZipper a) -> Transform Var
+      getStashedEmitVar (_, s@(Session rs), _, _) =
         case listToMaybe rs of
           Nothing -> throwError "Empty Session?"
           Just r -> findSymByRangeQTy r TCH
