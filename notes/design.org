@@ -68,6 +68,52 @@ Therefore, a proposed retyping function should be of type.
 
 I will keep both version. Let's see how to change it.
 
+** What does Typing really need to do?
+- Typing should be updated when a type conversion is implied on a part of
+  session. Consider the following program. 
+
+  #+begin_src csharp 
+    if (q [0 .. 1])
+      ... 
+  #+end_src
+
+  If we have ={ q[0 .. n] : Had }= as the pre-condition, the following pipeline
+  should work: 
+  1. split =q[0 .. 1]= from =q[0..n]=
+
+     (note, the engineering of range is not clear now. a new symbol for
+     =q[0..1]= may need to be generated!)
+  2. update the typing state for the separation of state
+
+- Here is one generic interpretation of types for this:
+  - An =if= statement requires all free variables and guard to be of =CH= type.
+  - a =Had= qubit is of a subtype of =CH=
+
+    #+begin_src haskell
+      { q [ 0 .. 1 ] :: Had } ⊑ { q [ 0 .. 1 ] :: CH }
+    #+end_src
+
+    Need to update typing state and insert coercion
+
+  - A =Had= qubit is a part of a =Had= session
+
+    #+begin_src haskell
+      { q [ 0 .. 1 ] :: Had } { q [ 1 .. n ] :: Had } ≡ { q [ 0 .. n ] :: Had }
+    #+end_src
+
+    This, however, introduces a question:
+    - if we choose to rename the name of range each time I do the split, e.g.
+      
+      #+begin_src haskell
+        { q' [ 0 .. 1 ] :: Had } { q [ 1 .. n ] :: Had } ≡ { q [ 0 .. n ] :: Had }
+      #+end_src
+
+      If the user refers =q[0 .. 1]=, there's no way to refer to that =q'=.
+
+    - if we don't rename it, we have no way to decide which qubit the user is
+      referring to!
+
+      Consider =q[0 .. 2]=, you cannot tell!
 
 * =QPreludeUntyped= and Dafny 4.0
 

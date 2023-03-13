@@ -108,7 +108,6 @@ instance Codegen Stmt where
     do
       (s, t) <- typingGuard e
       sDup <- withGuardType s t
-      -- I need to first gather all sessions that are going to be mutated here.
       return [SEmit $ SBlock (Block sDup)]
     where
       withGuardType _ TNor = throwError "Nor type for gurad?"
@@ -193,8 +192,10 @@ instance Codegen Stmt where
 
 type BiRangeZipper a = Zipper Range a
 
--- | Generate declarations to duplicate session data
--- TODO: do I really need to generate new emitted symbols?
+-- | Duplicate session, generate duplication statements and a zipper  
+-- the zipper returned zips over the newly generated ranges and the old ones 
+-- 
+-- FIXME: do I really need to emit new symbols?
 dupSession :: Ty -> Session -> Transform (Session, [Stmt], BiRangeZipper a)
 dupSession tEmit s =
   do
@@ -212,7 +213,7 @@ dupSession tEmit s =
 instance Codegen (Var, Exp, Ty) where
   -- Specialized instance for variable declaration
   -- note: the type checking of `Exp` is caller's responsibility
-  -- probably I need some nice type to enforce this
+  -- probably I need some nice types to enforce this
   aug (v, e@(EOp2 ONor e1 e2), t@(TQ TNor)) = do
     let es =
           [ EEmit $ EMakeSeq TNat e1 $ constExp e2 -- basis

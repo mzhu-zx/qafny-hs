@@ -63,12 +63,9 @@ checkSubtypeQ t1 t2 =
 class Typing a t where
   typing :: a -> Transform t
 
+-- | resolve the typing of a coarse session
 instance Typing Session QTy where
-  typing se@(Session s) =
-    do
-      x <- resolveSession se
-      handleWith (throwError $ "Internal Error? Session`" ++ show x ++ "` is not in the type state") $
-        use (sSt . at x)
+  typing se@(Session s) = resolveSession se >>= getSessionType
 
 instance Typing Exp Ty where
   typing (ENum _)  = return TNat
@@ -215,3 +212,14 @@ resolveSession se@(Session rs) =
 resolveSessions :: [Session] -> Transform Session
 resolveSessions =
   resolveSession . Session . concatMap (\(Session rs) -> rs)
+
+-- | Compute the quantum type of a session
+getSessionType :: Session -> Transform QTy
+getSessionType s =
+  handleWith
+    ( throwError $
+        "Internal Error? Session`"
+          ++ show s
+          ++ "` is not in the type state"
+    )
+    $ use (sSt . at s)

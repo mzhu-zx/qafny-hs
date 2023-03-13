@@ -8,17 +8,32 @@ module Qafny.Direct where
 -}
 
 import           Qafny.AST
+import           Qafny.Typing
 import           Qafny.Transform
 
 data Derivation f
   = DIf f f f
   -- deriving Functor
 
-class Infer a where
-  infer :: a -> Transform (Derivation [a])
+inferStmt :: Stmt -> Transform ()
+inferStmt (SIf e seps b) =
+  inferGuardExp e 
+inferStmt _ = undefined
 
--- inferCompile :: Infer a => (Derivation -> Transform [a]) -> Transform [a]
--- inferCompile a f = infer a >>=  f
+inferGuardExp :: Exp -> Transform ()
+inferGuardExp (ESession s) =
+  inferSession s TCH
+inferGuardExp _ = undefined
 
--- instance Infer Stmt where
-  
+inferSession :: Session -> QTy -> Transform ()
+inferSession s@(Session rs) qt = 
+  do
+    sCtx <- resolveSession s
+    qtCtx <- getSessionType sCtx
+    inferSub s qt sCtx qtCtx 
+    return ()
+
+
+-- | Compute the derivation from expected type to the current type 
+inferSub :: Session -> QTy -> Session -> QTy -> Transform ()
+inferSub s qt sCtx qtCtx = undefined
