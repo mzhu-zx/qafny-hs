@@ -10,6 +10,7 @@ module Qafny.Direct where
 import           Qafny.AST
 import           Qafny.Typing
 import           Qafny.Transform
+import           Data.Maybe (maybeToList)
 
 data Derivation f
   = DIf f f f
@@ -35,5 +36,17 @@ inferSession s@(Session rs) qt =
 
 
 -- | Compute the derivation from expected type to the current type 
+-- Here are two level subtypings
+-- 1. Subrange
+-- 2. QTy Subtying
+-- Subrange should be resolved first, followed by QTy, because splitting enables
+-- potential QTy casts
 inferSub :: Session -> QTy -> Session -> QTy -> Transform ()
+inferSub (Session [r@(Range x l h)]) qt sCtx@(Session rsCtx) qtCtx =
+  return ()
+  where
+    rsRelavent = [r'' | r' <- rsCtx
+                      , r'' <- maybeToList $ subRange r' r ]
 inferSub s qt sCtx qtCtx = undefined
+
+
