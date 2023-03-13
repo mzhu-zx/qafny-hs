@@ -38,6 +38,8 @@ data Op2
   | OMul
   | OMod
   | ONor
+  | OLt
+  | OLe
   deriving (Show, Eq, Ord)
 
 data Op1
@@ -64,10 +66,12 @@ data Exp
 -- | EmitExp : Unsafe Expressions for Codegen Only
 data EmitExp
   = ELambda Var Exp
+  | EMtSeq
   | EMakeSeq Ty Exp EmitExp
   | ECard Exp
   | ECall Var [Exp]
   | EDafnyVar Var 
+  | EOpChained Exp [(Op2, Exp)]
   deriving  (Show, Eq, Ord)
 
 type Returns = [Binding]

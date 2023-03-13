@@ -107,8 +107,8 @@ instance Codegen Stmt where
   aug (SIf e seps b) =
     do
       (s, t) <- typingGuard e
-      sDup <- withGuardType s t
-      return [SEmit $ SBlock (Block sDup)]
+      sIf <- withGuardType s t
+      return [SEmit $ SBlock (Block sIf)]
     where
       withGuardType _ TNor = throwError "Nor type for gurad?"
       withGuardType sGuard THad =
@@ -129,11 +129,9 @@ instance Codegen Stmt where
       preludeIf :: Session -> Transform (Ty, Session, [Stmt], BiRangeZipper a)
       preludeIf s =
         do
-          ty <- typing s
-          coerStmts <- coercionCH ty s
-          tyEmit <- only1 $ typingEmit s
+          (castStmts, tyEmit) <- coercionSessionCH s
           (stashed, dupStmts, zipper) <- dupSession tyEmit s
-          return (tyEmit, stashed, coerStmts ++ dupStmts, zipper)
+          return (tyEmit, stashed, castStmts ++ dupStmts, zipper)
       -- Generate merge statement for every session
       mergeIf :: (Ty, Session, [Stmt], BiRangeZipper [Stmt]) -> Transform [[Stmt]]
       mergeIf (tyEmit, _, _, zipper) = zipper $ mergeRange2 tyEmit
@@ -188,6 +186,33 @@ instance Codegen Stmt where
           -- recycle stashed variables
           deallocOrphan vStash tyEmit
           return stmts
+  aug (SFor id boundl boundr guard invs seps body) =
+    do
+      (s, t) <- typingGuard guard
+      sFor <- augByGuardType t s
+      return [SEmit $ SBlock (Block sFor)]
+    where
+      augByGuardType TNor _ =
+        throwError "This is an easy case: apply on states with 1"
+      augByGuardType THad sGrd = 
+        do
+          (sGrdTtl, eGrdRng) <- loopSession sGrd boundl boundr
+          -- collect the sessions in the body and cast them to CH first
+          freeSession <- resolveSessions . leftSessions . inBlock $ body
+          (castStmts, tyEmit) <- coercionSessionCH freeSession
+          -- create a fresh CH metavariable, interesting, the dup semantics
+          -- works here!
+          tyGuardEmit <- only1 $ typing THad
+          (sGrdFrsh, sGrdDupStmt, zGrd) <- dupSession tyGuardEmit sGrdTtl
+          -- cast `sGrd` to CH type at meta-level
+          (_, _, vNowEmits, tNowEmits) <- retypeSession sGrd TCH
+          vNowEmit <- only1 $ return vNowEmits
+          let sGrdResetStmt = SAssign vNowEmit (EEmit EMtSeq)
+          -- start building the new body
+          throwError "Not done yet!"
+      augByGuardType TCH  _ =
+        throwError "This is a tricky, perhaps only makes sense in GHZ-like bitvector?"
+  
   aug s = return [s]
 
 type BiRangeZipper a = Zipper Range a
@@ -196,6 +221,7 @@ type BiRangeZipper a = Zipper Range a
 -- the zipper returned zips over the newly generated ranges and the old ones 
 -- 
 -- FIXME: do I really need to emit new symbols?
+-- return: (stashed, dupStmts, zipper)
 dupSession :: Ty -> Session -> Transform (Session, [Stmt], BiRangeZipper a)
 dupSession tEmit s =
   do
@@ -265,6 +291,16 @@ coercionCH :: QTy -> Session -> Transform [Stmt]
 coercionCH TCH = const $ return []
 coercionCH TNor = coercionWithOp "CastNorCH10" TNor TCH
 coercionCH THad = coercionWithOp "CastHadCH10" TNor TCH
+
+
+coercionSessionCH :: Session -> Transform ([Stmt], Ty)
+coercionSessionCH s =
+  do
+    ty <- getSessionType s
+    coerStmts <- coercionCH ty s
+    tyEmit <- only1 $ typingEmit s
+    return (coerStmts, tyEmit)
+
 
 -- | For a given well-typed session, cast its type with the given op and return
 -- the statements for the cast

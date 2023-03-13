@@ -86,7 +86,9 @@ instance Typing Op2 (Ty, Ty, Ty) where
   typing OMod = return (TNat, TNat, TNat) 
   typing OMul = return (TNat, TNat, TNat)
   typing ONor = return (TNat, TNat, TQ TNor)
-  
+  typing OLt  = return (TNat, TNat, TBool)
+  typing OLe  = return (TNat, TNat, TBool)
+
 
 instance Typing QTy [Ty] where
   typing TNor = return [TSeq TNat]
@@ -116,6 +118,7 @@ deallocOrphan vMeta tyEmit =
     
 
 -- | Change the type of a session and returns something
+-- retyping doesn't emit a new session symbol 
 retypeSession :: Session -> QTy -> Transform ([Var], Ty, [Var], Ty)
 retypeSession s qtNow =
   do
@@ -223,3 +226,23 @@ getSessionType s =
           ++ "` is not in the type state"
     )
     $ use (sSt . at s)
+
+-- | Assemble the session from a session from the guard and the upper and the
+-- lower bound of the loop and emit a check
+-- Precondition: Split has been performed at the subtyping stage so that it's
+-- guaranteed that only one range can be in the session
+-- Reason: (was from `augByGuardType`)
+--   `sGuard` is likely to be in `x [i .. i + 1]` form,
+--   there should be a around of resolution that resolves to the session
+--   `x[l .. h]` and do the emission at that place 
+loopSession :: Session -> Exp -> Exp -> Transform (Session, Exp)
+loopSession (Session [Range r sl sh]) l h =
+  return
+    ( Session [Range r l h]
+    , EEmit (EOpChained l [(OLe, sl), (OLt, sh), (OLe, h)])
+    )
+loopSession s _ _ =
+  throwError $
+    "Session `"
+      ++ show s
+      ++ "` contains more than 1 range, this should be resolved at the typing stage"
