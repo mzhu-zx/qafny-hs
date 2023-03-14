@@ -1,0 +1,12 @@
+method For0 (n : nat)
+  // requires n > 0
+{
+  var q : nor := nor(1, 0);
+  var p : nor := nor(1, 0);
+  q[0 .. 1] *= H;
+  for i in [0 .. 1] with q[i .. (i + 1)]
+    separates p[0 .. 1]
+  {
+    p[0 .. (i + 1)] *= λ (x => (x + 1) % 2);
+  }
+}

@@ -118,6 +118,7 @@ data Stmt
 data EmitStmt
   = SIfDafny Exp Block 
   | SBlock Block
+  | SForEmit Var Exp Exp [Exp] Block
   deriving (Show, Eq)
 
 type AST = [Toplevel]

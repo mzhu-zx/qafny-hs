@@ -89,7 +89,8 @@ invs
   : conds                             { reverse [e | (Invariants e) <- $1]   }
 
 separates :: { Session }
-  : cond                              {% separatesOnly $1                    }
+  : "separates" session               { $2                                   }
+{-  : "separates" session               {% separatesOnly $1                    } -}
 
 conds
   : {- empty -}                       { []                                   }
@@ -99,7 +100,6 @@ cond
   : "requires" expr                   { Requires $2                          }
   | "ensures" expr                    { Ensures $2                           }
   | "invariants" expr                 { Invariants $2                        }
-  | "separates" session               { Separates $2                         }
                                                                           
 bindings                                                                  
   : bindings_                         { reverse $1                           }
@@ -151,7 +151,7 @@ session_
   | session_ range                    { $2 : $1                              }
                                                                           
 range                                                                     
-  : id '[' atomic ".." atomic ']'     { Range $1 $3 $5                       }
+  : id '[' expr ".." expr ']'         { Range $1 $3 $5                       }
                                                                           
 expr                                                                      
   : atomic                            { $1                                   }

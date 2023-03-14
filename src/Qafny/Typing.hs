@@ -98,8 +98,10 @@ instance Typing QTy [Ty] where
 
 -- | Gather sessions used in the guard
 typingGuard :: Exp -> Transform (Session, QTy)
-typingGuard (ESession s) = 
-  handleWith (unknownSessionError s) (uses (sSt . at s) ((s, ) <$>))
+typingGuard (ESession s') = 
+  do 
+    s <- resolveSession s'
+    handleWith (unknownSessionError s) (uses (sSt . at s) ((s, ) <$>))
 typingGuard e = throwError $ "Unsupported guard: " ++ show e
 
 -- | Find the type of the emitted term

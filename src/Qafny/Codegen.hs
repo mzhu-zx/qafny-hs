@@ -30,11 +30,13 @@ instance Codegen AST where
     let prelude =
           [ QDafny "include \"../../external/QPreludeUntyped.dfy\""
           , QDafny "include \"../../external/libraries/src/Collections/Sequences/Seq.dfy\""
+          , QDafny "include \"../../external/libraries/src/NonlinearArithmetic/Power2.dfy\""
           , QDafny ""
           , QDafny "// target Dafny version: 3.12.0"
           , QDafny "abstract module QafnyDefault {"
           , QDafny "import opened QPreludeUntyped"
           , QDafny "import opened Seq"
+          , QDafny "import opened Power2"
           , QDafny ""
           ]
     let postscript =
@@ -96,7 +98,7 @@ instance Codegen Stmt where
       opCastHad :: QTy -> Transform String
       opCastHad TNor = return "CastNorHad"
       opCastHad t = throwError $ "type `" ++ show t ++ "` cannot be casted to Had type"
-  aug (SApply s@(Session ranges) e@(EEmit (ELambda {}))) =
+  aug (SApply s@(Session ranges) e@(EEmit (ELambda{}))) =
     do
       qt <- typing s
       checkSubtypeQ TCH qt
@@ -171,57 +173,62 @@ instance Codegen Stmt where
         case listToMaybe rs of
           Nothing -> throwError "Empty Session?"
           Just r -> findSymByRangeQTy r TCH
-
-      -- Generate the merge statement of one paired range
-      mergeRange2 :: Ty -> Range -> Range -> Transform [Stmt]
-      mergeRange2 tyEmit rMain@(Range vMain _ _) rStash@(Range vStash _ _) =
-        do
-          stmts <-
-            liftA2
-              ( \vMainEmit vStashEmit ->
-                  [SAssign vMainEmit (EOp2 OAdd (EVar vMainEmit) (EVar vStashEmit))]
-              )
-              (findSym vMain tyEmit)
-              (findSym vStash tyEmit)
-          -- recycle stashed variables
-          deallocOrphan vStash tyEmit
-          return stmts
-  aug (SFor id boundl boundr guard invs seps body) =
+  aug (SFor idx boundl boundr eguard invs seps body) =
     do
-      (s, t) <- typingGuard guard
+      (s, t) <- typingGuard eguard
       sFor <- augByGuardType t s
       return [SEmit $ SBlock (Block sFor)]
     where
       augByGuardType TNor _ =
         throwError "This is an easy case: apply on states with 1"
-      augByGuardType THad sGrd = 
+      augByGuardType THad sGrd =
         do
           (sGrdTtl, eGrdRng) <- loopSession sGrd boundl boundr
           -- collect the sessions in the body and cast them to CH first
           freeSession <- resolveSessions . leftSessions . inBlock $ body
           (castStmts, tyEmit) <- coercionSessionCH freeSession
-          -- create a fresh CH metavariable, interesting, the dup semantics
-          -- works here!
+          -- create a fresh CH metavariable for the guard session1
+          -- interestingly, the dup semantics works here!
           tyGuardEmit <- only1 $ typing THad
-          (sGrdFrsh, sGrdDupStmt, zGrd) <- dupSession tyGuardEmit sGrdTtl
+          (sGrdFrsh, sGrdDupStmts, zGrd) <- dupSession tyGuardEmit sGrdTtl
           -- cast `sGrd` to CH type at meta-level
-          (_, _, vNowEmits, tNowEmits) <- retypeSession sGrd TCH
-          vNowEmit <- only1 $ return vNowEmits
-          let sGrdResetStmt = SAssign vNowEmit (EEmit EMtSeq)
-          -- start building the new body
-          throwError "Not done yet!"
-      augByGuardType TCH  _ =
+          (_, _, vGrdNowEmits, tGrdNowEmits) <- retypeSession sGrd TCH
+          vGrdNowEmit <- only1 $ return vGrdNowEmits
+          let sGrdResetStmt = SAssign vGrdNowEmit (EEmit EMtSeq)
+          -- now, both `freeSession` and the new guard sessions has been
+          -- prepared
+          -- Start building the new body:
+          -- 1. split semantics again over freeSessions
+          (sStashedBdy, dupSBdy, zipperBody) <- dupSession tyEmit freeSession
+          -- 2. compile the body
+          loopBody <- aug body
+          -- 3. compile the merge of both body and the guard
+          mergeBodyStmts <- zipperBody $ mergeRange2 tyEmit
+          let mergeGuardStmt = addCHHad1 vGrdNowEmit idx
+          -- 4. put them together
+          let prelude = castStmts ++ sGrdDupStmts ++ [sGrdResetStmt]
+          let innerFor =
+                SEmit $
+                  SForEmit idx boundl boundr [] $
+                    Block
+                      ( dupSBdy
+                          ++ (SEmit . SBlock <$> loopBody)
+                          ++ concat mergeBodyStmts
+                          ++ [mergeGuardStmt]
+                      )
+          return $ prelude ++ [innerFor]
+      augByGuardType TCH _ =
         throwError "This is a tricky, perhaps only makes sense in GHZ-like bitvector?"
-  
   aug s = return [s]
 
 type BiRangeZipper a = Zipper Range a
 
--- | Duplicate session, generate duplication statements and a zipper  
--- the zipper returned zips over the newly generated ranges and the old ones 
--- 
--- FIXME: do I really need to emit new symbols?
--- return: (stashed, dupStmts, zipper)
+{- | Duplicate session, generate duplication statements and a zipper
+ the zipper returned zips over the newly generated ranges and the old ones
+
+ FIXME: do I really need to emit new symbols?
+ return: (stashed, dupStmts, zipper)
+-}
 dupSession :: Ty -> Session -> Transform (Session, [Stmt], BiRangeZipper a)
 dupSession tEmit s =
   do
@@ -317,6 +324,36 @@ coercionWithOp castOp sessionTy newTy s =
           ]
         | (vOld, vNew) <- zip vOldEmits vNewEmits
         ]
+
+-- | Generate the merge statement of one paired range
+mergeRange2 :: Ty -> Range -> Range -> Transform [Stmt]
+mergeRange2 tyEmit rMain@(Range vMain _ _) rStash@(Range vStash _ _) =
+  do
+    stmts <-
+      liftA2
+        ( \vMainEmit vStashEmit ->
+            [SAssign vMainEmit (EOp2 OAdd (EVar vMainEmit) (EVar vStashEmit))]
+        )
+        (findSym vMain tyEmit)
+        (findSym vStash tyEmit)
+    -- recycle stashed variables
+    deallocOrphan vStash tyEmit
+    return stmts
+
+-- | Merge semantics of a Had qubit into one CH emitted state
+-- uses the name of the emitted seq as well as the index name
+
+addCHHad1 :: Var -> Var -> Stmt
+addCHHad1 vEmit idx =
+  SAssign vEmit $
+    EOp2 OAdd (EVar vEmit) (EEmit $ ECall "Map" [eLamPlusPow2, EVar vEmit])
+  where
+    vfresh = "x__lambda"
+    eLamPlusPow2 =
+      EEmit $
+        ELambda vfresh $
+          EOp2 OAdd (EVar vfresh) (EEmit (ECall "Pow2" [EVar idx]))
+
 
 --------------------------------------------------------------------------------
 -- | Wrapper 

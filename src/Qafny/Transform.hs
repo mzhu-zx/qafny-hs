@@ -132,17 +132,17 @@ only1 = (=<<) $
 -- Error Reporting
 --------------------------------------------------------------------------------
 
-unknownXError :: Show b => String -> b -> Transform a
+unknownXError :: (HasCallStack, Show b) => String -> b -> Transform a
 unknownXError meta s =
-  throwError $ meta ++ " `" ++ show s ++ "` is not in the scope"
+  throwError $ prettyCallStack callStack ++ "\n" ++  meta ++ " `" ++ show s ++ "` is not in the scope"
 
-unknownVariableError :: Var -> Transform a
+unknownVariableError :: HasCallStack => Var -> Transform a
 unknownVariableError = unknownXError "Variable"
 
-unknownSessionError :: Session -> Transform a
+unknownSessionError :: HasCallStack => Session -> Transform a
 unknownSessionError = unknownXError "Session"
 
-unknownRangeError :: Range -> Transform a
+unknownRangeError :: HasCallStack => Range -> Transform a
 unknownRangeError = unknownXError "Range"
 
 handleWith :: Transform a -> Transform (Maybe a) -> Transform a

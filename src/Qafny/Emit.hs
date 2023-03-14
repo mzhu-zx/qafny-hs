@@ -97,19 +97,28 @@ instance DafnyPrinter Block where
 
 instance DafnyPrinter Stmt where
   build (SEmit (SBlock b)) = build b
+  build (SEmit f@(SForEmit idf initf bound invs b)) =
+    getIndent <> buildFor
+    where
+      buildFor =
+        "for " <!> idf <!> " := " <!> initf <!> " to " <!> bound
+          <!> "\n" <!>
+          -- todo: emit invariants
+          build b
   build (SDafny s') = getIndent <> build s'
   build s = getIndent <> buildStmt s <> build ';'
-    where buildStmt :: Stmt -> Builder
-          buildStmt (SVar bd Nothing) = build "var " <> build bd
-          buildStmt (SVar bd (Just e)) = build "var " <> build bd <>
-                                         build " := " <> build e
-          buildStmt (SAssign v e) = build v <> build " := " <> build e
-          buildStmt (SCall e es) = build e <> withParen (byComma es)
-          buildStmt (SEmit s') = buildEmit s'
-          buildStmt e = build "// undefined builder for Stmt : " <> build (show e)
-          buildEmit :: EmitStmt -> Builder
-          buildEmit (SIfDafny e b) = "if " <!> withParen (build e) <> build b
-          buildEmit (SBlock b) = build b
+    where
+      buildStmt :: Stmt -> Builder
+      buildStmt (SVar bd Nothing) = build "var " <> build bd
+      buildStmt (SVar bd (Just e)) =
+        build "var " <> build bd <> build " := " <> build e
+      buildStmt (SAssign v e) = build v <> build " := " <> build e
+      buildStmt (SCall e es) = build e <> withParen (byComma es)
+      buildStmt (SEmit s') = buildEmit s'
+      buildStmt e = build "// undefined builder for Stmt : " <> build (show e)
+      buildEmit :: EmitStmt -> Builder
+      buildEmit (SIfDafny e b) = "if " <!> withParen (build e) <> build b
+      buildEmit _ = error "Should have been handled!!"
 
 instance DafnyPrinter Exp where
   build (ENum n) = build $ show n
