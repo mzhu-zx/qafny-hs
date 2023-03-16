@@ -45,38 +45,35 @@ instance Codegen AST where
     return $ prelude : main ++ [postscript]
 
 instance Codegen Toplevel where
-  aug q@(QMethod v bds rts rqs ens block) =
-    do
-      tEnv <- asks $ appkEnvWithBds bds
-      -- sync kState with kEnv because when handling Stmts, environment becomes
-      -- a state!
-      kSt .= tEnv ^. kEnv
-      (block', eVts) <- listen $ only1 $ local (const tEnv) $ aug block
-      let stmtsDeclare = map (\(s, t) -> SVar (Binding s t) Nothing) eVts
-      let totalBlock =
-            [SDafny "// Forward Declaration"]
-              ++ stmtsDeclare
-              ++ [ SDafny ""
-                 , SDafny "// Method Definition"
-                 ]
-              ++ inBlock block'
-      return [QMethod v bds rts rqs ens (Block totalBlock)]
+  aug q@(QMethod v bds rts rqs ens block) = do
+    tEnv <- asks $ appkEnvWithBds bds
+    -- sync kState with kEnv because when handling Stmts, environment becomes
+    -- a state!
+    kSt .= tEnv ^. kEnv
+    (block', eVts) <- listen $ only1 $ local (const tEnv) $ aug block
+    let stmtsDeclare = map (\(s, t) -> SVar (Binding s t) Nothing) eVts
+    let totalBlock =
+          [SDafny "// Forward Declaration"]
+            ++ stmtsDeclare
+            ++ [ SDafny ""
+               , SDafny "// Method Definition"
+               ]
+            ++ inBlock block'
+    return [QMethod v bds rts rqs ens (Block totalBlock)]
   aug q@(QDafny _) = return [q]
 
 instance Codegen Block where
-  aug (Block stmts) =
-    do
-      kSt' <- use kSt -- push a kindSt
-      stmts' <- mapM aug stmts
-      kSt .= kSt' -- restore when exiting the block
-      return [Block $ concat stmts'] -- return the result of the block
+  aug (Block stmts) = do
+    kSt' <- use kSt -- push a kindSt
+    stmts' <- mapM aug stmts
+    kSt .= kSt' -- restore when exiting the block
+    return [Block $ concat stmts'] -- return the result of the block
 
 instance Codegen Stmt where
-  aug s@(SVar (Binding v t) eM) =
+  aug s@(SVar (Binding v t) eM) = do
     -- TODO: make a special case to allow `SVar` emission for uncured terms
-    do
-      kSt %= (at v ?~ t)
-      doE eM
+    kSt %= (at v ?~ t)
+    doE eM
     where
       doE :: Maybe Exp -> Transform [Stmt]
       doE Nothing = return [s]
@@ -89,51 +86,46 @@ instance Codegen Stmt where
         where
           mkSVar :: (Var, Exp, Ty) -> Stmt
           mkSVar (vEmitted, e', tEmitted) = SAssign vEmitted e'
-  aug (SApply s EHad) =
-    do
-      qt <- typing s
-      opCast <- opCastHad qt
-      coercionWithOp opCast qt THad s
+  aug (SApply s EHad) = do
+    qt <- typing s
+    opCast <- opCastHad qt
+    coercionWithOp opCast qt THad s
     where
       opCastHad :: QTy -> Transform String
       opCastHad TNor = return "CastNorHad"
       opCastHad t = throwError $ "type `" ++ show t ++ "` cannot be casted to Had type"
-  aug (SApply s@(Session ranges) e@(EEmit (ELambda{}))) =
-    do
-      qt <- typing s
-      checkSubtypeQ TCH qt
-      emitVs <- mapM (`findSymByRangeQTy` qt) ranges
-      return $ mkMapCall `map` emitVs
+  aug (SApply s@(Session ranges) e@(EEmit (ELambda {}))) = do
+    qt <- typing s
+    checkSubtypeQ TCH qt
+    emitVs <- mapM (`findSymByRangeQTy` qt) ranges
+    return $ mkMapCall `map` emitVs
     where
       mkMapCall v = v `SAssign` EEmit (ECall "Map" [e, EVar v])
-  aug (SIf e seps b) =
-    do
-      (s, t) <- typingGuard e
-      sIf <- withGuardType s t
-      return [SEmit $ SBlock (Block sIf)]
+  aug (SIf e seps b) = do
+    (s, t) <- typingGuard e
+    sIf <- withGuardType s t
+    return [SEmit $ SBlock (Block sIf)]
     where
       withGuardType _ TNor = throwError "Nor type for gurad?"
-      withGuardType sGuard THad =
-        do
-          -- Requirement: all sessions in the body should be in the same session
-          freeSession <- resolveSessions . leftSessions . inBlock $ b
-          prelude <- preludeIf freeSession
-          stmtsBody <- aug b
-          vCard <- getStashedEmitVar prelude
-          mergeGuardStmt <- mergeGuard vCard freeSession sGuard
-          mergeBody <- mergeIf prelude <&> concat
-          let dupStmts = (^. _3) prelude
-          return $ dupStmts ++ concatMap inBlock stmtsBody ++ mergeBody ++ mergeGuardStmt
+      withGuardType sGuard THad = do
+        -- Requirement: all sessions in the body should be in the same session
+        freeSession <- resolveSessions . leftSessions . inBlock $ b
+        prelude <- preludeIf freeSession
+        stmtsBody <- aug b
+        vCard <- getStashedEmitVar prelude
+        mergeGuardStmt <- mergeGuard vCard freeSession sGuard
+        mergeBody <- mergeIf prelude <&> concat
+        let dupStmts = (^. _3) prelude
+        return $ dupStmts ++ concatMap inBlock stmtsBody ++ mergeBody ++ mergeGuardStmt
       withGuardType _ TCH =
         throwError "Do the split mechanism here, map will not be generic enough"
       -- Convert those session to CH type if not and generate split statement
       -- for every session
       preludeIf :: Session -> Transform (Ty, Session, [Stmt], BiRangeZipper a)
-      preludeIf s =
-        do
-          (castStmts, tyEmit) <- coercionSessionCH s
-          (stashed, dupStmts, zipper) <- dupSession tyEmit s
-          return (tyEmit, stashed, castStmts ++ dupStmts, zipper)
+      preludeIf s = do
+        (castStmts, tyEmit) <- coercionSessionCH s
+        (stashed, dupStmts, zipper) <- dupSession tyEmit s
+        return (tyEmit, stashed, castStmts ++ dupStmts, zipper)
       -- Generate merge statement for every session
       mergeIf :: (Ty, Session, [Stmt], BiRangeZipper [Stmt]) -> Transform [[Stmt]]
       mergeIf (tyEmit, _, _, zipper) = zipper $ mergeRange2 tyEmit
@@ -142,81 +134,78 @@ instance Codegen Stmt where
       -- If that should be visible, then the cast should happen beforehand.
       -- The semantics of multiple sessions in one body is unclear so far
       mergeGuard :: Var -> Session -> Session -> Transform [Stmt]
-      mergeGuard vCard bodySession s =
-        do
-          -- grab an arbitrary range from the session
-          let stateCard = EEmit . ECard . EVar $ vCard
-          -- in Had type, `retypeSession1` should not fail, unless there's some
-          -- other design choices: the more you want, the more messy the entire
-          -- system will be
-          (vOldEmit, _, vNewEmit, tNewEmit) <- retypeSession1 s TCH
-          mergeSessionType bodySession s
-          -- TODO: in phase calculus, the sign of phases will depend on
-          -- `vNewEmit
-          tNew <-
-            handleWith
-              (throwError $ "`" ++ show tNewEmit ++ "` is not a sequence type")
-              ( return $ case tNewEmit of
-                  TSeq ty -> Just ty
-                  _ -> Nothing
-              )
-          return
-            [ SDafny "// Body Session + Guard Session"
-            , vNewEmit
-                `SAssign` EOp2
-                  OAdd
-                  (EEmit $ EMakeSeq tNew stateCard $ constExp (ENum 0))
-                  (EEmit $ EMakeSeq tNew stateCard $ constExp (ENum 1))
-            ]
+      mergeGuard vCard bodySession s = do
+        -- grab an arbitrary range from the session
+        let stateCard = EEmit . ECard . EVar $ vCard
+        -- in Had type, `retypeSession1` should not fail, unless there's some
+        -- other design choices: the more you want, the more messy the entire
+        -- system will be
+        (vOldEmit, _, vNewEmit, tNewEmit) <- retypeSession1 s TCH
+        mergeSessionType bodySession s
+        -- TODO: in phase calculus, the sign of phases will depend on
+        -- `vNewEmit
+        tNew <-
+          handleWith
+            (throwError $ "`" ++ show tNewEmit ++ "` is not a sequence type")
+            ( return $ case tNewEmit of
+                TSeq ty -> Just ty
+                _ -> Nothing
+            )
+        return
+          [ SDafny "// Body Session + Guard Session"
+          , vNewEmit
+              `SAssign` EOp2
+                OAdd
+                (EEmit $ EMakeSeq tNew stateCard $ constExp (ENum 0))
+                (EEmit $ EMakeSeq tNew stateCard $ constExp (ENum 1))
+          ]
       getStashedEmitVar :: (Ty, Session, [Stmt], BiRangeZipper a) -> Transform Var
       getStashedEmitVar (_, s@(Session rs), _, _) =
         case listToMaybe rs of
           Nothing -> throwError "Empty Session?"
           Just r -> findSymByRangeQTy r TCH
-  aug (SFor idx boundl boundr eguard invs seps body) =
-    do
-      (s, t) <- typingGuard eguard
-      sFor <- augByGuardType t s
-      return [SEmit $ SBlock (Block sFor)]
+  aug (SFor idx boundl boundr eguard invs seps body) = do
+    (s, t) <- typingGuard eguard
+    sFor <- augByGuardType t s
+    return [SEmit $ SBlock (Block sFor)]
     where
       augByGuardType TNor _ =
         throwError "This is an easy case: apply on states with 1"
-      augByGuardType THad sGrd =
-        do
-          (sGrdTtl, eGrdRng) <- loopSession sGrd boundl boundr
-          -- collect the sessions in the body and cast them to CH first
-          freeSession <- resolveSessions . leftSessions . inBlock $ body
-          (castStmts, tyEmit) <- coercionSessionCH freeSession
-          -- create a fresh CH metavariable for the guard session1
-          -- interestingly, the dup semantics works here!
-          tyGuardEmit <- only1 $ typing THad
-          (sGrdFrsh, sGrdDupStmts, zGrd) <- dupSession tyGuardEmit sGrdTtl
-          -- cast `sGrd` to CH type at meta-level
-          (_, _, vGrdNowEmits, tGrdNowEmits) <- retypeSession sGrd TCH
-          vGrdNowEmit <- only1 $ return vGrdNowEmits
-          let sGrdResetStmt = SAssign vGrdNowEmit (EEmit EMtSeq)
-          -- now, both `freeSession` and the new guard sessions has been
-          -- prepared
-          -- Start building the new body:
-          -- 1. split semantics again over freeSessions
-          (sStashedBdy, dupSBdy, zipperBody) <- dupSession tyEmit freeSession
-          -- 2. compile the body
-          loopBody <- aug body
-          -- 3. compile the merge of both body and the guard
-          mergeBodyStmts <- zipperBody $ mergeRange2 tyEmit
-          let mergeGuardStmt = addCHHad1 vGrdNowEmit idx
-          -- 4. put them together
-          let prelude = castStmts ++ sGrdDupStmts ++ [sGrdResetStmt]
-          let innerFor =
-                SEmit $
-                  SForEmit idx boundl boundr [] $
-                    Block
-                      ( dupSBdy
-                          ++ (SEmit . SBlock <$> loopBody)
-                          ++ concat mergeBodyStmts
-                          ++ [mergeGuardStmt]
-                      )
-          return $ prelude ++ [innerFor]
+      augByGuardType THad sGrd = do
+        (sGrdTtl, eGrdRng) <- loopSession sGrd boundl boundr
+        -- collect the sessions in the body and cast them to CH first
+        freeSession <- resolveSessions . leftSessions . inBlock $ body
+        (castStmts, tyEmit) <- coercionSessionCH freeSession
+        -- create a fresh CH metavariable for the guard session1
+        -- interestingly, the dup semantics works here!
+        tyGuardEmit <- only1 $ typing THad
+        (sGrdFrsh, sGrdDupStmts, zGrd) <- dupSession tyGuardEmit sGrdTtl
+        -- cast `sGrd` to CH type at meta-level
+        (_, _, vGrdNowEmits, tGrdNowEmits) <- retypeSession sGrd TCH
+        vGrdNowEmit <- only1 $ return vGrdNowEmits
+        let sGrdResetStmt = SAssign vGrdNowEmit (EEmit EMtSeq)
+        -- now, both `freeSession` and the new guard sessions has been
+        -- prepared
+        -- Start building the new body:
+        -- 1. split semantics again over freeSessions
+        (sStashedBdy, dupSBdy, zipperBody) <- dupSession tyEmit freeSession
+        -- 2. compile the body
+        loopBody <- aug body
+        -- 3. compile the merge of both body and the guard
+        mergeBodyStmts <- zipperBody $ mergeRange2 tyEmit
+        let mergeGuardStmt = addCHHad1 vGrdNowEmit idx
+        -- 4. put them together
+        let prelude = castStmts ++ sGrdDupStmts ++ [sGrdResetStmt]
+        let innerFor =
+              SEmit $
+                SForEmit idx boundl boundr [] $
+                  Block
+                    ( dupSBdy
+                        ++ (SEmit . SBlock <$> loopBody)
+                        ++ concat mergeBodyStmts
+                        ++ [mergeGuardStmt]
+                    )
+        return $ prelude ++ [innerFor]
       augByGuardType TCH _ =
         throwError "This is a tricky, perhaps only makes sense in GHZ-like bitvector?"
   aug s = return [s]
