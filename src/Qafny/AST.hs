@@ -40,12 +40,16 @@ data Op2
   | ONor
   | OLt
   | OLe
+  | OGt
+  | OGe
+  | OEq
   deriving (Show, Eq, Ord)
 
 data Op1
   = ONot
   deriving (Show, Eq, Ord)
 
+-- the exp is not reversible
 data Exp
   = ENum Int
   | EVar Var
@@ -57,6 +61,9 @@ data Exp
   | EApp Var Exp
   | EOp1 Op1 Exp
   | EOp2 Op2 Exp Exp
+  | RInd Var Exp -- boolean at var[exp], var must be Q type
+  | REq Exp Exp Var Exp -- compare exp == exp and store the value in var[exp], var must be Q type
+  | RLt Exp Exp Var Exp -- compare exp < exp and store the value in var[exp], var must be Q type
   | EForall Binding (Maybe Exp) Exp
   | EDafny String
   | EEmit EmitExp
@@ -164,6 +171,8 @@ leftSessions =
 
 
 -- | Output a splitted range if [r1] is the sub-range of [r2]
+
+
 subRange :: Range -> Range -> Maybe (Range, Range)
 subRange (Range r1 l1 h1) (Range r2 l2 h2) =
   do

@@ -31,6 +31,7 @@ data CtxMode
 data TEnv = TEnv
   { _kEnv :: Map.Map Var Ty
   , _ctx  :: CtxMode
+  , _qnum :: Exp -- assume each Q type variable is associated with a qubit num which is C type exp
   }
 
 data TState = TState
@@ -61,7 +62,7 @@ instance Show TEnv where
             (intercalate "\n    " . map show . Map.toList) (st ^. kEnv)
 
 initTEnv :: TEnv
-initTEnv = TEnv { _kEnv = mempty, _ctx = CtxQ }  
+initTEnv = TEnv { _kEnv = mempty, _ctx = CtxQ, _qnum = ENum 0 }  
 
 initTState :: TState
 initTState = TState
