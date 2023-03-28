@@ -52,8 +52,12 @@ infixr 6 <!>
 
 class DafnyPrinter a where
   build :: a -> Builder
-  (<!>) :: a -> Builder -> Builder
-  a <!> b = build a <> b
+
+(<!>) :: (DafnyPrinter a, DafnyPrinter b) => a -> b -> Builder
+a <!> b = build a <> build b
+
+instance DafnyPrinter Builder where
+  build = id
 
 instance DafnyPrinter Char where
   build = return . TB.singleton
@@ -69,7 +73,7 @@ instance DafnyPrinter Ty where
   build TInt     = build "int"
   build TBool    = build "bool"
   build (TQ q)   = build q
-  build (TSeq t) = "seq<" <!> t <!> build ">"
+  build (TSeq t) = "seq<" <!> t <!> ">"
   build _        = undefined
 
 instance DafnyPrinter QTy where
@@ -78,7 +82,7 @@ instance DafnyPrinter QTy where
   build TCH  = build "ch"
 
 instance DafnyPrinter Binding where
-  build (Binding x t) = x <!>  " : " <!> build t
+  build (Binding x t) = x <!>  " : " <!> t
 
 instance DafnyPrinter Toplevel where
   build (QDafny s) = build s 
@@ -104,20 +108,19 @@ instance DafnyPrinter Stmt where
         "for " <!> idf <!> " := " <!> initf <!> " to " <!> bound
           <!> "\n" <!>
           -- todo: emit invariants
-          build b
+          b
   build (SDafny s') = getIndent <> build s'
   build s = getIndent <> buildStmt s <> build ';'
     where
       buildStmt :: Stmt -> Builder
-      buildStmt (SVar bd Nothing) = build "var " <> build bd
-      buildStmt (SVar bd (Just e)) =
-        build "var " <> build bd <> build " := " <> build e
-      buildStmt (SAssign v e) = build v <> build " := " <> build e
-      buildStmt (SCall e es) = build e <> withParen (byComma es)
+      buildStmt (SVar bd Nothing) = "var " <!> bd
+      buildStmt (SVar bd (Just e)) = "var " <!> bd <!> " := " <!> e
+      buildStmt (SAssign v e) = v <!> " := " <!> e
+      buildStmt (SCall e es) = e <!> withParen (byComma es)
       buildStmt (SEmit s') = buildEmit s'
-      buildStmt e = build "// undefined builder for Stmt : " <> build (show e)
+      buildStmt e = "// undefined builder for Stmt : " <!> show e
       buildEmit :: EmitStmt -> Builder
-      buildEmit (SIfDafny e b) = "if " <!> withParen (build e) <> build b
+      buildEmit (SIfDafny e b) = "if " <!> withParen (build e) <!> b
       buildEmit _ = error "Should have been handled!!"
 
 instance DafnyPrinter Exp where
@@ -128,10 +131,10 @@ instance DafnyPrinter Exp where
   build e = "//" <!> show e <!> build " should not be in emitted form!"
 
 instance DafnyPrinter EmitExp where
-  build (ELambda v e) = build v <> build " => " <> build e
+  build (ELambda v e) = v <!> " => " <!> e
   build EMtSeq = build "[]"
   build (EMakeSeq ty e ee) =
-    "seq<" <!> ty <!> ">" <!> withParen (e <!> ", " <!> build ee)
+    "seq<" <!> ty <!> ">" <!> withParen (e <!> ", " <!> ee)
   build (EDafnyVar s) = build s
   build (EOpChained e eos) =
     e <!> foldr (\(op, e1) bs -> buildOp2 op (build e1) bs) mempty eos
@@ -142,14 +145,18 @@ instance DafnyPrinter EmitExp where
 -- | Warning: don't emit parentheses in `buildOp2` because `EOpChained` relies
 -- on this function not to be parenthesized
 buildOp2 :: Op2 -> Builder -> Builder -> Builder
-buildOp2 OAnd = flip (<>) . (" && " <!>)
-buildOp2 OOr  = flip (<>) . (" || " <!>)
-buildOp2 OAdd = flip (<>) . (" + " <!>)
-buildOp2 OMul = flip (<>) . (" * " <!>)
-buildOp2 OMod = flip (<>) . (" % " <!>)
-buildOp2 OLt  = flip (<>) . (" < " <!>)
-buildOp2 OLe  = flip (<>) . (" <= " <!>)
-buildOp2 _    = const . const $ build "Nor should not be in emitted form"
+buildOp2 op = (<!>) . (<!> opSign)
+  where
+    opSign =
+      case op of
+        OAnd  -> " && "
+        OOr   -> " || "
+        OAdd  -> " + "
+        OMul  -> " * "
+        OMod  -> " % "
+        OLt   -> " < "
+        OLe   -> " <= "
+        _     -> " ???? "
 
 buildConds :: String -> [Exp] -> Builder
 buildConds s = foldr (\x xs -> s <!> x <!> '\n' <!> xs) (build "")

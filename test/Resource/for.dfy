@@ -33,11 +33,11 @@ method For0 (n : nat)
     {
       p__8__seq__nat___emited_9 := p__seq__nat___emited_4;
       {
-        p__seq__nat___emited_4 := Map(x => 2 % 1 + x, p__seq__nat___emited_4);
+        p__seq__nat___emited_4 := Map(x => x + 1 % 2, p__seq__nat___emited_4);
       }
 
-      p__seq__nat___emited_4 := p__8__seq__nat___emited_9 + p__seq__nat___emited_4;
-      q__seq__nat___emited_7 := Map(x__lambda => Pow2(i) + x__lambda, q__seq__nat___emited_7) + q__seq__nat___emited_7;
+      p__seq__nat___emited_4 := p__seq__nat___emited_4 + p__8__seq__nat___emited_9;
+      q__seq__nat___emited_7 := q__seq__nat___emited_7 + Map(x__lambda => x__lambda + Pow2(i), q__seq__nat___emited_7);
     }
 
   }
