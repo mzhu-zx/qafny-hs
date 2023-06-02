@@ -27,6 +27,9 @@ dependencies:
 - text
 - containers
 - extra
+- fused-effects
+- fused-effects-lens
+- fused-effects-readline
 # - hashable
 # - unordered-containers
 
