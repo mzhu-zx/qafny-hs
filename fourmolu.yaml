@@ -1,6 +1,6 @@
 indentation: 2
 indent-wheres: true
-function-arrows: trailing
+function-arrows: leading
 comma-style: leading
 import-export-style: diff-friendly
 record-brace-space: true
@@ -11,3 +11,4 @@ in-style: left-align
 let-style: auto
 respectful: false
 unicode: detect
+column-limit: 80

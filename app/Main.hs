@@ -1,15 +1,20 @@
 module Main (main) where
 
-import           Qafny.AST(Ty)
-import           Qafny.Parser(scanAndParse)
-import           Qafny.Codegen(codegen)
-import           Qafny.Emit(texify)
-import           Qafny.Transform(TState)
+import           Qafny.AST          (Ty)
+import           Qafny.Codegen      (codegen)
+import           Qafny.Emit         (texify)
+import           Qafny.Parser       (scanAndParse)
+import           Qafny.Transform    (TState)
+import           Qafny.CodegenE     (produceCodegen)
+import           Qafny.Config
 
-import qualified Data.Text.Lazy as Txt
-import qualified Data.Text.Lazy.IO as Txt.IO
+import qualified Data.Text.Lazy     as Txt
+import qualified Data.Text.Lazy.IO  as Txt.IO
+
 import           System.Environment (getArgs)
-import           System.Exit (exitFailure)
+import           System.Exit        (exitFailure)
+
+
 
 parseArg :: IO String
 parseArg = fmap (head :: [String] -> String) getArgs
@@ -21,6 +26,15 @@ pipeline s =
      ir <- result
      return (texify ir, state, ev)
 
+pipelineE :: String -> Either String (Txt.Text, TState, [(String, Ty)])
+pipelineE s =
+  do ast <- scanAndParse s
+     let configs = Configs { _stdlibPath = "../../external/" }
+     let (result, state, ev) = produceCodegen configs ast
+     ir <- result
+     return (texify ir, state, ev)
+
+
 main :: IO ()
 main =
   do
@@ -29,7 +43,7 @@ main =
   where
     withProg prog = do
       s <- readFile src
-      writeOrReport $ pipeline s
+      writeOrReport $ pipelineE s
       putStrLn $ "\ESC[32mSuccess: target is emited as `" ++ tgt ++ "` \ESC[0m"
       where
         writeOrReport (Right (txt, st, emittedVars)) =
@@ -45,6 +59,6 @@ main =
         tgt = "./test/Resource/" ++ prog ++ ".dfy"
 
 -- loadDefaultFile :: IO String
--- loadDefaultFile = 
+-- loadDefaultFile =
 --   let src = "./test/Resource/3.qfy" in
 --     readFile src

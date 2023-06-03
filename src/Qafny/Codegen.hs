@@ -1,6 +1,8 @@
 {-# LANGUAGE FlexibleInstances, FlexibleContexts #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TupleSections #-}
+{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE RankNTypes #-}
 
 module Qafny.Codegen where
 
@@ -12,13 +14,13 @@ import           Control.Monad.RWS
 import           Control.Monad.Except
 import           Control.Lens
 import qualified Data.Map.Strict as Map 
+
 import           Control.Applicative (Applicative(liftA2))
 import           Data.Maybe (listToMaybe)
 
 --------------------------------------------------------------------------------
 -- | Codegen 
 --------------------------------------------------------------------------------
-
 class Codegen a where
   -- | Augmentation: perform typecheck over `a` and rewrite `a` into `[a]`
   aug :: a -> Transform [a]

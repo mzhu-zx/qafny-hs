@@ -21,6 +21,9 @@ collectMethodTypes :: AST -> [(Var, Ty)]
 collectMethodTypes a = [ (idt, TMethod (bdTypes ins) (bdTypes outs))
                        | QMethod idt ins outs _ _ _ <- a]
 
+collectMethodTypesM :: AST -> Map.Map Var Ty
+collectMethodTypesM = Map.fromList . collectMethodTypes
+
 appkEnvWithBds :: Bindings -> TEnv -> TEnv
 appkEnvWithBds bds = kEnv %~ appBds
   where appBds = Map.union $ Map.fromList [(v, t) | Binding v t <- bds]
