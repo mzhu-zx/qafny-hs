@@ -1,8 +1,10 @@
 {-# LANGUAGE FlexibleContexts, FlexibleInstances, GeneralizedNewtypeDeriving,
-             MultiParamTypeClasses, RankNTypes, TupleSections, TypeOperators,
-             UndecidableInstances #-}
+             MultiParamTypeClasses, RankNTypes, TupleSections,
+             TypeApplications, TypeOperators, UndecidableInstances #-}
 
 module Qafny.CodegenE where
+
+
 
 -- | Code Generation through Fused Effects
 
@@ -11,18 +13,16 @@ import           Control.Effect.Error         (Error)
 import           Control.Effect.Lens
 import           Control.Effect.Reader
 import           Control.Effect.State         (State)
-import           Control.Effect.Throw
-import           Control.Effect.Writer        (Writer)
-
 import           Control.Lens                 ((%~), (^.))
 import qualified Data.Map.Strict              as Map
 
 import           Control.Carrier.Error.Either (runError)
 import           Control.Carrier.Reader       (runReader)
 import           Control.Carrier.State.Strict (runState)
-import           Control.Monad.Identity       (IdentityT (runIdentityT))
+import           Effect.Gensym                (Gensym)
 import           Qafny.AST
 import           Qafny.Config
+import           Qafny.Gensym                 (runGensym)
 import           Qafny.Transform
     ( Production
     , TEnv (..)
@@ -37,6 +37,24 @@ import           Qafny.Typing
     , collectMethodTypesM
     )
 
+
+--------------------------------------------------------------------------------
+-- | Runner
+--------------------------------------------------------------------------------
+runCodegen :: Configs -> AST -> (TState, Either String AST)
+runCodegen conf ast = do
+  run . run' $ codegenAST ast
+  where
+    run' =
+      runReader conf .
+      runReader initTEnv .
+      runState initTState .
+      runError
+
+produceCodegen :: Configs -> AST -> Production AST
+produceCodegen conf ast =
+  let (st, res) = runCodegen conf ast
+  in (res, st, [])
 
 
 --------------------------------------------------------------------------------
@@ -75,7 +93,6 @@ codegenAST ast = do
   main <- local (kEnv %~ Map.union methods) $ mapM codegenToplevel ast
   return $ prelude ++ main ++ finale
 
-
 codegenToplevel
   :: ( Has (Reader TEnv) sig m
      , Has (State TState)  sig m
@@ -88,32 +105,27 @@ codegenToplevel q@(QMethod v bds rts rqs ens block) = do
   -- sync kState with kEnv because when handling Stmts, environment becomes
   -- a state!
   kSt .= tEnv ^. kEnv
-  -- (block', eVts) <- listen $ only1 $ local (const tEnv) $ aug block
-  -- let stmtsDeclare = map (\(s, t) -> SVar (Binding s t) Nothing) eVts
-  -- let totalBlock =
-  --       [SDafny "// Forward Declaration"]
-  --         ++ stmtsDeclare
-  --         ++ [ SDafny ""
-  --            , SDafny "// Method Definition"
-  --            ]
-  --         ++ inBlock block'
-  return $ QMethod v bds rts rqs ens block
+  (i, eVts, (j, block')) <- runGensym $ codegenBlock block
+  -- todo: report on the gensym state with a report effect!
+  let stmtsDeclare = map (\(s, t) -> SVar (Binding s t) Nothing) eVts
+  let totalBlock =
+        [SDafny "// Forward Declaration"]
+          ++ stmtsDeclare
+          ++ [ SDafny ""
+             , SDafny "// Method Definition"
+             ]
+          ++ inBlock block'
+  return $ QMethod v bds rts rqs ens (Block totalBlock)
 codegenToplevel q@(QDafny _) = return q
 
---------------------------------------------------------------------------------
--- | Algebra
---------------------------------------------------------------------------------
-runCodegen :: Configs -> AST -> (TState, Either String AST)
-runCodegen conf ast = do
-  run . run' $ codegenAST ast
-  where
-    run' =
-      runReader conf .
-      runReader initTEnv .
-      runState initTState .
-      runError
 
-produceCodegen :: Configs -> AST -> Production AST
-produceCodegen conf ast =
-  let (st, res) = runCodegen conf ast
-  in (res, st, [])
+codegenBlock
+  :: ( Has (Reader TEnv) sig m
+     , Has (State TState)  sig m
+     , Has (Error String) sig m
+     , Has (Gensym String) sig m
+     , Has (Gensym (String, Ty)) sig m
+     )
+  => Block
+  -> m Block
+codegenBlock = return
