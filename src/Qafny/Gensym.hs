@@ -3,10 +3,10 @@ module Qafny.Gensym(runGensym) where
 
 import qualified Carrier.Gensym.Emit as GEmit
 import qualified Carrier.Gensym.Meta as GMeta
-import           Qafny.AST           (Ty)
+import           Qafny.AST           (Ty, Binding(..), Bindings)
 
 runGensym
   :: Functor m
-  => GMeta.GensymC String (GEmit.GensymC (String, Ty) m) a
-  -> m (Int, [(String, Ty)], (Int , a))
+  => GMeta.GensymC String (GEmit.GensymC Binding m) a
+  -> m (Int, Bindings, (Int , a))
 runGensym = GEmit.runGensymEmit . GMeta.runGensymMeta @String

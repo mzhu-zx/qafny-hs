@@ -29,7 +29,7 @@ pipeline s =
 pipelineE :: String -> Either String (Txt.Text, TState, [(String, Ty)])
 pipelineE s =
   do ast <- scanAndParse s
-     let configs = Configs { _stdlibPath = "../../external/" }
+     let configs = Configs { stdlibPath = "../../external/" }
      let (result, state, ev) = produceCodegen configs ast
      ir <- result
      return (texify ir, state, ev)

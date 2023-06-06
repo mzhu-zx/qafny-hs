@@ -1,8 +1,8 @@
-{-# LANGUAGE TypeSynonymInstances, FlexibleInstances #-}
+{-# LANGUAGE FlexibleInstances, TypeSynonymInstances #-}
 
 module Qafny.Variable where
 
-import Qafny.AST (Ty(..), typeTag) 
+import           Qafny.AST (Binding (..), Ty (..), typeTag)
 
 class Variable s where
   variable :: s -> String
@@ -15,6 +15,9 @@ instance Variable Ty where
 
 instance Variable Int where
   variable = show
+
+instance Variable Binding where
+  variable (Binding s t) = variable (s, t)
 
 instance (Variable a, Variable b) => Variable (a, b) where
   variable (a, b) = variable a ++ "__" ++ variable b

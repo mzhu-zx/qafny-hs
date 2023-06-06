@@ -1,10 +1,6 @@
-{-# LANGUAGE TemplateHaskell #-}
 module Qafny.Config where
 
 import           Control.Lens.TH
 
-data Configs = Configs
-  { _stdlibPath :: String
-  }
+data Configs = Configs { stdlibPath :: String}
 
-$(makeLenses ''Configs)
