@@ -1,7 +1,6 @@
 module Main (main) where
 
 import           Qafny.AST          (Ty)
-import           Qafny.Codegen      (codegen)
 import           Qafny.Emit         (texify)
 import           Qafny.Parser       (scanAndParse)
 import           Qafny.Transform    (TState)
@@ -18,13 +17,6 @@ import           System.Exit        (exitFailure)
 
 parseArg :: IO String
 parseArg = fmap (head :: [String] -> String) getArgs
-
-pipeline :: String -> Either String (Txt.Text, TState, [(String, Ty)])
-pipeline s =
-  do ast <- scanAndParse s
-     let (result, state, ev) = codegen ast
-     ir <- result
-     return (texify ir, state, ev)
 
 pipelineE :: String -> Either String (Txt.Text, TState, [(String, Ty)])
 pipelineE s =

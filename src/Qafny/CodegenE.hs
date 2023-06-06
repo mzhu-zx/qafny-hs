@@ -11,13 +11,13 @@ module Qafny.CodegenE where
 
 -- Effects
 import           Control.Effect.Catch
-import           Control.Effect.Error           (Error)
+import           Control.Effect.Error           (Error, throwError)
 import           Control.Effect.Labelled
 import           Control.Effect.Lens
 import           Control.Effect.Reader
 import qualified Control.Effect.Reader.Labelled as L
 import           Control.Effect.State           (State)
-import           Effect.Gensym                  (Gensym)
+import           Effect.Gensym                  (Gensym, gensym)
 
 -- Handlers
 import           Control.Carrier.Error.Either   (runError)
@@ -26,7 +26,8 @@ import           Control.Carrier.State.Strict   (runState)
 import           Qafny.Gensym                   (runGensym)
 
 -- Utils
-import           Control.Lens                   (at, (%~), (?~), (^.))
+import           Control.Lens                   (at, (%~), (?~))
+import           Data.Functor                   ((<&>))
 import qualified Data.Map.Strict                as Map
 
 
@@ -40,13 +41,17 @@ import           Qafny.Transform
     , initTEnv
     , initTState
     , kEnv
-    , kSt
+    , sSt
+    , xSt
     )
-import           Qafny.Typing
-    ( appkEnvWithBds
+import           Qafny.TypingE
+    ( checkSubtype
+    , typingExp
+    , typingQEmit
     , collectMethodTypesM
+    , appkEnvWithBds
     )
-import Qafny.TypingE (typingExp, checkSubtype)
+import           Qafny.Utils                    (gensymLoc)
 
 
 --------------------------------------------------------------------------------
@@ -171,6 +176,52 @@ codegenStmt s@(SVar (Binding v t) Nothing)  = return [s]
 codegenStmt s@(SVar (Binding v t) (Just e)) = do
   te <- typingExp e
   checkSubtype t te -- check if `t` agrees with the type of `e`
-  vets <- undefined
-  return $ [ SAssign vEmitted e' |  (vEmitted, e', tEmitted) <- vets ]
+  codegenAlloc v e t <&> (: [])
+-- codegenStmt (SApply s EHad) = do
+--   qt <- typing s
+--   opCast <- opCastHad qt
+--   coercionWithOp opCast qt THad s
+--   where
+--     opCastHad TNor = return "CastNorHad"
+--     opCastHad t = throwError $ "type `" ++ show t ++ "` cannot be casted to Had type"
+
+
+
+-- | Generate statements to allocate fresh qubits for a given variable or
+-- allocate a conventional variable
+--
+codegenAlloc
+  :: ( Has (Gensym Binding) sig m
+     , Has (Gensym String) sig m
+     , Has (State TState)  sig m
+     , Has (Error String) sig m
+     )
+  => Var -> Exp -> Ty -> m Stmt
+codegenAlloc v e@(EOp2 ONor e1 e2) t@(TQ TNor) = do
+  let tEmit = typingQEmit TNor
+  let eEmit = EEmit $ EMakeSeq TNat e1 $ constExp e2
+  vEmit <- gensym (Binding v tEmit)
+  let rV = Range v (ENum 0) e1
+      sV = session1 rV
+  loc <- gensymLoc v
+  xSt %= (at v ?~ loc)
+  sSt %= (at loc ?~ (sV, TNor))
+  return $ SAssign vEmit eEmit
+codegenAlloc v e@(EOp2 ONor _ _) _ =
+  throwError "Internal: Attempt to create a Nor session that's not of nor type"
+codegenAlloc v e _ = return $ SAssign v e
+
+
+-- coercionWithOp :: String -> QTy -> QTy -> Session -> Transform [Stmt]
+-- coercionWithOp castOp sessionTy newTy s =
+--   do
+--     (vOldEmits, tOldEmit, vNewEmits, tNewEmit) <- retypeSession s newTy
+--     -- assemble the emitted terms
+--     return $
+--       concat
+--         [ [ SDafny $ "// Cast " ++ show sessionTy ++ " ==> " ++ show newTy
+--           , SAssign vNew $ EEmit (castOp `ECall` [EEmit $ EDafnyVar vOld])
+--           ]
+--         | (vOld, vNew) <- zip vOldEmits vNewEmits
+--         ]
 

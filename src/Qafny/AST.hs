@@ -106,6 +106,9 @@ data Toplevel
 data Range = Range Var Exp Exp 
            deriving (Show, Eq, Ord)
 
+newtype Loc = Loc { deref :: Var }
+  deriving (Show, Eq, Ord)
+
 newtype Session = Session [Range]
   deriving (Show, Eq, Ord)
 
