@@ -71,3 +71,5 @@ removeEmitBindings
   => [Binding] -> m ()
 removeEmitBindings bs = do
   emitSt %= (`Map.withoutKeys` Set.fromList bs)
+
+

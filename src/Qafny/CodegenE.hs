@@ -33,9 +33,10 @@ import qualified Data.Map.Strict                as Map
 
 
 -- Qafny
-import           Carrier.Cache.One              (dropCache)
+import           Carrier.Cache.One              (dropCache_, dropCache)
+import           Control.Applicative            (Applicative (liftA2))
 import           Control.Monad                  (forM)
-import           Effect.Cache                   (Cache, drawErr)
+import           Effect.Cache                   (Cache, drawDefault, drawErr)
 import           Qafny.AST
 import           Qafny.Config
 import           Qafny.Transform
@@ -43,6 +44,7 @@ import           Qafny.Transform
     , STuple
     , TEnv (..)
     , TState
+    , Zipper
     , initTEnv
     , initTState
     , kEnv
@@ -54,14 +56,20 @@ import           Qafny.TypingE
     , checkSubtype
     , checkSubtypeQ
     , collectMethodTypesM
+    , resolveSession
     , resolveSessions
     , retypeSession
     , typingExp
+    , typingGuard
     , typingQEmit
-    , typingSession, typingGuard
+    , typingSession
     )
-import           Qafny.Utils                    (findEmitSym, gensymLoc)
-
+import           Qafny.Utils
+    ( findEmitSym
+    , gensymEmit
+    , gensymLoc
+    )
+import           Text.Printf                    (printf)
 
 --------------------------------------------------------------------------------
 -- | Runner
@@ -186,14 +194,14 @@ codegenStmt s@(SVar (Binding v t) (Just e)) = do
   te <- typingExp e
   checkSubtype t te -- check if `t` agrees with the type of `e`
   codegenAlloc v e t <&> (: [])
-codegenStmt (SApply s EHad) = dropCache @STuple $ do
+codegenStmt (SApply s EHad) = dropCache_ @STuple $ do
   qt <- typingSession s
   opCast <- opCastHad qt
   castWithOp opCast s THad
   where
     opCastHad TNor = return "CastNorHad"
     opCastHad t = throwError $ "type `" ++ show t ++ "` cannot be casted to Had type"
-codegenStmt (SApply s@(Session ranges) e@(EEmit (ELambda {}))) = dropCache @STuple $ do
+codegenStmt (SApply s@(Session ranges) e@(EEmit (ELambda {}))) = dropCache_ @STuple $ do
   qt <- typingSession s
   checkSubtypeQ TCH qt
   let tyEmit = typingQEmit qt
@@ -214,10 +222,15 @@ codegenStmt'If
      )
   => Exp -> Separates -> Block
   -> m [Stmt]
-codegenStmt'If e seps b  = do
-  (locG, sG, qtG) <- typingGuard e
-  freeSession <- resolveSessions . leftSessions . inBlock $ b
-  codegenStmt'If'Had e seps b
+codegenStmt'If e seps b = do
+  -- resolve the type of the guard
+  stG@(locG, sG, qtG) <- typingGuard e
+  stB <- resolveSessions . leftSessions . inBlock $ b
+  -- act based on the type of the guard
+  stmts <- case qtG of
+    THad -> codegenStmt'If'Had stG stB e
+    _    -> undefined
+  undefined
 
 -- | Code Generation of an `If` statement with a Had session
 codegenStmt'If'Had
@@ -227,10 +240,14 @@ codegenStmt'If'Had
      , Has (Gensym String) sig m
      , Has (Gensym Binding) sig m
      )
-  => Exp -> Separates -> Block
+  => STuple -> STuple -> Block 
   -> m [Stmt]
-codegenStmt'If'Had = undefined
-
+codegenStmt'If'Had stG stB b = do
+  let (sG, sB) = (stG ^. _2, stB ^. _2)
+  stmtsCastG <- dropCache stG $ castSessionCH sG
+  (stmtsDupB, corr) <- dropCache stB $ dupState sB
+  stmtB <- SEmit . SBlock <$> codegenBlock b
+  undefined
 
 -- | Generate statements that allocate qubits if it's Nor; otherwise, keep the
 -- source statement as is.
@@ -256,7 +273,8 @@ codegenAlloc v e@(EOp2 ONor _ _) _ =
 codegenAlloc v e _ = return $ SAssign v e
 
 
--- Cast
+-- | Convert quantum type of `s` to `newTy` and emit a cast statement with a
+-- provided `op`
 castWithOp
   :: ( Has (Error String) sig m
      , Has (State TState) sig m
@@ -274,3 +292,42 @@ castWithOp op s newTy =
         , SAssign vNew $ EEmit (op `ECall` [EEmit $ EDafnyVar vOld])
         ]
       | (vOld, vNew) <- zip vOldEmits vNewEmits ]
+
+
+-- | Cast the given session to CH type!
+castSessionCH
+  :: ( Has (Error String) sig m
+     , Has (State TState) sig m
+     , Has (Gensym Binding) sig m
+     , Has (Cache STuple) sig m
+     )
+  => Session -> m [Stmt]
+castSessionCH s' = do
+  (locS, s, qtS) <- drawDefault $ resolveSession s'
+  case qtS of
+    TNor -> castWithOp "CastNorCH10" s TCH
+    THad -> castWithOp "CastHadCH10" s TCH
+    TCH -> throwError @String $
+      printf "Session `%s` is already of CH type." (show s)
+
+
+-- | Duplicate the data, i.e. sequences to be emitted by generating statement
+-- duplicating the data as well as a meta-level handler maintaining the
+-- correspondence between the old and the new data indexed by ranges
+dupState
+  :: ( Has (Error String) sig m
+     , Has (State TState) sig m
+     , Has (Gensym Binding) sig m
+     , Has (Cache STuple) sig m
+     )
+  => Session -> m ([Stmt], [(Binding, Var, Var)])
+dupState s' = do
+  (locS, s, qtS) <- drawDefault @STuple $ resolveSession s'
+  let tEmit = typingQEmit qtS
+  let bds = [ Binding x tEmit | x <- varFromSession s]
+  -- generate a set of fresh emit variables as the stashed session
+  vsEmitFresh <- forM bds gensym -- do not manipulate the `emitSt` here
+  vsEmitPrev <- forM bds findEmitSym
+  let stmts = [ SAssign vEmitFresh (EVar vEmitPrev)
+              | (vEmitFresh, vEmitPrev) <- zip vsEmitFresh vsEmitPrev ]
+  return (stmts, zip3 bds vsEmitPrev vsEmitFresh)

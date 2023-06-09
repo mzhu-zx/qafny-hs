@@ -39,9 +39,19 @@ instance Algebra sig m => Algebra (Cache s :+: sig) (CacheC s m) where
 --   (s, r) <- runState Nothing $ runCacheC c
 --   maybe cacheMiss (return . (, r)) s
 
+
+
 -- | execute the computation but drop the cache
-dropCache
+dropCache_
   :: forall s a m .
      Functor m
   => CacheC s m a -> m a
-dropCache = evalState undefined. runCacheC
+dropCache_ = evalState undefined. runCacheC
+
+-- | 
+dropCache
+  :: forall s a m .
+     Functor m
+  => s -> CacheC s m a -> m a
+dropCache s = evalState (Just s) . runCacheC
+

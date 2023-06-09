@@ -14,7 +14,7 @@ import           Qafny.AST
 --------------------------------------------------------------------------------
 -- High-Order Types
 --------------------------------------------------------------------------------
-type Zipper a r = (a -> a -> Transform r) -> Transform [r]
+type Zipper m a r = (a -> a -> m r) -> m [r]
 
 type STuple = (Loc, Session, QTy) -- STuple { unS :: (Loc, Session, QTy) }
 

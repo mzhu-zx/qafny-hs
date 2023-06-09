@@ -20,16 +20,21 @@ import           Qafny.AST
 import           Qafny.Transform
 
 -- Utils
-import           Control.Lens                   (_2, _3, at, (%~), (^.), (?~))
-import           Control.Monad                  (unless, when, forM)
+import           Control.Lens                   (_2, _3, at, (%~), (?~), (^.))
+import           Control.Monad                  (forM, unless, when)
 import           Data.Functor                   ((<&>))
 import qualified Data.List                      as List
 import qualified Data.Map.Strict                as Map
+import           Effect.Cache                   (Cache, drawDefault)
 import           Qafny.Error                    (QError (..))
-import           Qafny.Utils                    (findEmitSym, rethrowMaybe, removeEmitBindings, gensymEmit)
+import           Qafny.Utils
+    ( findEmitSym
+    , gensymEmit
+    , removeEmitBindings
+    , rethrowMaybe
+    )
 import           Text.Printf                    (printf)
-import Effect.Cache (Cache, cache, drawDefault)
-import Carrier.Cache.One (dropCache)
+
 
 
 
@@ -62,7 +67,7 @@ typingSession
      , Has (Cache STuple) sig m -- Session info
      )
   => Session -> m QTy
-typingSession se@(Session s) = do 
+typingSession se@(Session s) = do
   tup <- drawDefault $ resolveSession se
   return $ tup ^. _3
 
@@ -96,6 +101,7 @@ typingQEmit :: QTy -> Ty
 typingQEmit TNor = TSeq TNat
 typingQEmit THad = TSeq TNat
 typingQEmit TCH  = TSeq TNat
+{-# INLINE typingQEmit #-}
 
 -- | Types of binary operators
 typingOp2 :: Op2 -> (Ty, Ty, Ty)
@@ -115,7 +121,7 @@ typingGuard
      )
   => Exp -> m STuple
 typingGuard (ESession s') = resolveSession s'
-typingGuard e = throwError $ "Unsupported guard: " ++ show e
+typingGuard e             = throwError $ "Unsupported guard: " ++ show e
 
 
 --------------------------------------------------------------------------------
@@ -162,7 +168,7 @@ checkSubtypeQ t1 t2 =
 
 --------------------------------------------------------------------------------
 -- | Type Manipulation
---------------------------------------------------------------------------------  
+--------------------------------------------------------------------------------
 
 -- | Cast the type of a session to another, modify the typing state and generate
 -- new emission variable.
@@ -187,7 +193,7 @@ retypeSession s' qtNow = do
   let bdsOld = [ Binding v tOldEmit | v <- vsSession ]
   vsOldEmit <- bdsOld `forM` findEmitSym
   removeEmitBindings bdsOld
-  let tNewEmit = typingQEmit qtNow 
+  let tNewEmit = typingQEmit qtNow
   sSt %= (at locS ?~ (sResolved, qtNow))
   vsNewEmit <- vsSession `forM` (gensymEmit . (`Binding` tOldEmit))
   return (vsOldEmit, tOldEmit, vsNewEmit, tNewEmit)
