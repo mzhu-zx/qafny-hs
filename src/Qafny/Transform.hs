@@ -16,6 +16,7 @@ import           Qafny.AST
 --------------------------------------------------------------------------------
 type Zipper a r = (a -> a -> Transform r) -> Transform [r]
 
+type STuple = (Loc, Session, QTy) -- STuple { unS :: (Loc, Session, QTy) }
 
 --------------------------------------------------------------------------------
 -- General
@@ -77,27 +78,6 @@ only1 = (=<<) $
   \case
     [x] -> return x
     e -> error $ "[only1]: " ++ show e ++ "is not a singleton"
-
-
---------------------------------------------------------------------------------
--- Error Reporting
---------------------------------------------------------------------------------
-
-unknownXError :: (HasCallStack, Show b) => String -> b -> Transform a
-unknownXError meta s =
-  throwError $ prettyCallStack callStack ++ "\n" ++  meta ++ " `" ++ show s ++ "` is not in the scope"
-
-unknownVariableError :: HasCallStack => Var -> Transform a
-unknownVariableError = unknownXError "Variable"
-
-unknownSessionError :: HasCallStack => Session -> Transform a
-unknownSessionError = unknownXError "Session"
-
-unknownRangeError :: HasCallStack => Range -> Transform a
-unknownRangeError = unknownXError "Range"
-
-handleWith :: Transform a -> Transform (Maybe a) -> Transform a
-handleWith err = (>>= maybe err return)
 
 --------------------------------------------------------------------------------
 -- Wrapper

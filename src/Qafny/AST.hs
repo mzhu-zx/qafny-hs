@@ -109,7 +109,7 @@ data Range = Range Var Exp Exp
 newtype Loc = Loc { deref :: Var }
   deriving (Show, Eq, Ord)
 
-newtype Session = Session [Range]
+newtype Session = Session { unpackSession :: [Range] }
   deriving (Show, Eq, Ord)
 
 data Stmt
@@ -160,8 +160,9 @@ range1 v = Range v (ENum 0) (ENum 1)
 session1 :: Range -> Session
 session1 =  Session . (: [])
 
+-- | Extract all variables for each range in a session
 varFromSession :: Session -> [Var]
-varFromSession (Session s) = map (\(Range x _ _) -> x) s
+varFromSession (Session s) = [ x | (Range x _ _) <- s ]
 
 -- | Compute all free sessions/ranges mentioned in the LHS of application 
 leftSessions :: [Stmt] -> [Session]

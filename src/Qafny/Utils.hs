@@ -11,10 +11,12 @@ import           Control.Lens                 (at, (?~))
 import           Effect.Gensym                (Gensym, gensym)
 
 --
+import qualified Data.Map.Strict              as Map
+import qualified Data.Set                     as Set
 import           Qafny.AST                    (Binding, Loc (..))
 import           Qafny.Transform              (TState, emitSt)
 import           Qafny.Variable               (Variable (variable))
-import Text.Printf (printf)
+import           Text.Printf                  (printf)
 
 
 -- catchMaybe
@@ -51,6 +53,7 @@ gensymEmit b = do
   emitSt %= (at b ?~ name)
   return name
 
+-- | Lookup for emitted symbols in emitSt
 findEmitSym
   :: ( Has (State TState) sig m
      , Has (Error String) sig m
@@ -60,3 +63,11 @@ findEmitSym b = do
   rethrowMaybe @String
     (use (emitSt . at b)) $
     printf "the binding `%s` cannot be found in the renaming state." (show b)
+
+
+-- | Remove bindings from emitSt
+removeEmitBindings
+  :: ( Has (State TState) sig m)
+  => [Binding] -> m ()
+removeEmitBindings bs = do
+  emitSt %= (`Map.withoutKeys` Set.fromList bs)

@@ -1,4 +1,5 @@
-{-# LANGUAGE FlexibleInstances, MultiParamTypeClasses, TypeApplications #-}
+{-# LANGUAGE FlexibleInstances, MultiParamTypeClasses, TupleSections,
+             TypeApplications #-}
 
 module Qafny.TypingE where
 
@@ -8,7 +9,7 @@ module Qafny.TypingE where
 import           Control.Effect.Catch
 import           Control.Effect.Error           (Error, throwError)
 import           Control.Effect.Labelled
-import           Control.Effect.Lens            (use)
+import           Control.Effect.Lens
 import           Control.Effect.Reader
 import qualified Control.Effect.Reader.Labelled as L
 import           Control.Effect.State           (State)
@@ -19,13 +20,19 @@ import           Qafny.AST
 import           Qafny.Transform
 
 -- Utils
-import           Control.Lens                   (at, (%~))
-import           Control.Monad                  (unless, when)
+import           Control.Lens                   (_2, _3, at, (%~), (^.), (?~))
+import           Control.Monad                  (unless, when, forM)
+import           Data.Functor                   ((<&>))
 import qualified Data.List                      as List
 import qualified Data.Map.Strict                as Map
 import           Qafny.Error                    (QError (..))
-import           Qafny.Utils                    (rethrowMaybe, findEmitSym)
+import           Qafny.Utils                    (findEmitSym, rethrowMaybe, removeEmitBindings, gensymEmit)
 import           Text.Printf                    (printf)
+import Effect.Cache (Cache, cache, drawDefault)
+import Carrier.Cache.One (dropCache)
+
+
+
 
 -- | Compute the type of the given expression
 typingExp
@@ -52,38 +59,45 @@ typingExp (EOp2 op2 e1 e2) =
 typingSession
   :: ( Has (State TState) sig m
      , Has (Error String) sig m
+     , Has (Cache STuple) sig m -- Session info
      )
   => Session -> m QTy
-typingSession se@(Session s) =
-  snd <$> resolveSession se 
+typingSession se@(Session s) = do 
+  tup <- drawDefault $ resolveSession se
+  return $ tup ^. _3
 
-
--- | Examine each Range in a given Session and
+-- | Examine each Range in a given Session and resolve to a STuple
 resolveSession
   :: ( Has (State TState) sig m
      , Has (Error String) sig m
      )
-     => Session -> m (Session, QTy)
-resolveSession se@(Session rs) =
-    do
-      locs <-
-        (`mapM` rs)
-          ( \r@(Range name _ _) ->
-              use (xSt . at name) `rethrowMaybe` (show . UnknownRangeError) r
-          )
-      case List.nub locs of
-        [] -> throwError "Internal Error? An empty session has no type!"
-        [x] -> use (sSt . at x) `rethrowMaybe` (show . UnknownLocError) x
-        ss ->
-          throwError @String $ printf "`%s` is not a sub-session, counterexample: %s"
-            (show se) (show ss)
+  => Session -> m STuple
+resolveSession se@(Session rs) = do
+  locs <- forM rs $ \r@(Range name _ _) ->
+    use (xSt . at name) `rethrowMaybe` (show . UnknownRangeError) r
+  case List.nub locs of
+    [] -> throwError "Internal Error? An empty session has no type!"
+    [x] -> (use (sSt . at x) `rethrowMaybe` (show . UnknownLocError) x)
+      <&> uncurry (x,,)
+    ss ->
+      throwError @String $ printf "`%s` is not a sub-session, counterexample: %s"
+        (show se) (show ss)
 
+resolveSessions
+  :: ( Has (State TState) sig m
+     , Has (Error String) sig m
+     )
+  => [Session] -> m STuple
+resolveSessions =
+  resolveSession . Session . concatMap unpackSession
+
+-- | Type of the emitted value corresponding to its original quantum type.
 typingQEmit :: QTy -> Ty
 typingQEmit TNor = TSeq TNat
 typingQEmit THad = TSeq TNat
 typingQEmit TCH  = TSeq TNat
 
-
+-- | Types of binary operators
 typingOp2 :: Op2 -> (Ty, Ty, Ty)
 typingOp2 OAnd = (TBool, TBool, TBool)
 typingOp2 OOr  = (TBool, TBool, TBool)
@@ -95,6 +109,18 @@ typingOp2 ONor = (TNat, TNat, TQ TNor)
 typingOp2 OLt  = (TNat, TNat, TBool)
 typingOp2 OLe  = (TNat, TNat, TBool)
 
+typingGuard
+  :: ( Has (State TState) sig m
+     , Has (Error String) sig m
+     )
+  => Exp -> m STuple
+typingGuard (ESession s') = resolveSession s'
+typingGuard e = throwError $ "Unsupported guard: " ++ show e
+
+
+--------------------------------------------------------------------------------
+-- | Subtyping
+--------------------------------------------------------------------------------
 checkSubtype
   :: Has (Error String) sig m
   => Ty -> Ty -> m ()
@@ -104,7 +130,6 @@ checkSubtype t1 t2 =
       printf "Type mismatch: `%s` is not a subtype of `%s`"
       (show t1)
       (show t2))
-
 checkSubtype2
   :: Has (Error String) sig m
   => (Ty, Ty, Ty) -> Ty -> Ty -> m Ty
@@ -113,64 +138,62 @@ checkSubtype2 (top1, top2, tret) t1 t2 =
      checkSubtype top2 t2
      return tret
 
-
 sub :: Ty -> Ty -> Bool
 sub = (==)
 
 
+--------------------------------------------------------------------------------
+-- | QSubtyping
+--------------------------------------------------------------------------------
+subQ :: QTy -> QTy -> Bool
+subQ _    TCH  = True
+subQ THad THad = True
+subQ TNor TNor = True
+subQ _     _   = False
+
+checkSubtypeQ
+  :: Has (Error String) sig m
+  => QTy -> QTy -> m ()
+checkSubtypeQ t1 t2 =
+  unless (subQ t1 t2) $
+  throwError $
+  "Type mismatch: `" ++ show t1 ++ "` is not a subtype of `" ++ show t2 ++ "`"
+
+
+--------------------------------------------------------------------------------
+-- | Type Manipulation
+--------------------------------------------------------------------------------  
+
 -- | Cast the type of a session to another, modify the typing state and generate
--- new emission variable. 
--- 
+-- new emission variable.
+--
 -- However, retyping doesn't generate a new meta variable
 retypeSession
   :: ( Has (Error String) sig m
      , Has (State TState) sig m
      , Has (Gensym Binding) sig m
+     , Has (Cache STuple) sig m
      )
-  => Session -> QTy -> m (Var, Ty, Var, Ty)
-retypeSession s qtNow = do
-    (locS, qtPrev) <- resolveSession s
-    when (qtNow == qtPrev) $
-      throwError @String  $ printf
-       "Session `%s` is of type `%s`. No retyping need to be done."
-       (show s) (show qtNow)
-    -- Get info based on its previous type!
-    tOldEmit <- typingQEmit qtPrev
-    vOldEmits <- findEmitSym (Binding ())
-    undefined
-    -- let vMetas = varFromSession s
-    -- tOldEmit <- only1 $ typing qtPrev
-    -- vOldEmits <- mapM (`findSym` tOldEmit) vMetas
-    -- -- update states
-    -- -- update with new ones
-    -- sSt %= (at s ?~ qtNow)
-    -- -- update the kind state for each (probably not necessary)
-    -- foldM_ (\_ v -> kSt %= (at v ?~ TQ qtNow)) () vMetas
-    -- rbSt %= (`Map.withoutKeys` (Set.fromList $ map (,tOldEmit) vMetas))
-    -- tNewEmit <- only1 $ typing qtNow
-    -- vNewEmits <- mapM (`gensym` tNewEmit) vMetas
-    -- return (vOldEmits, tOldEmit, vNewEmits, tOldEmit)
-
-  -- do
-  --   qtPrev <- typing s
-  --   when (qtNow == qtPrev) $
-  --     throwError $
-  --       "Session `" ++ show s ++ "` is of type `" ++ show qtNow ++ "`. No retyping can be done."
-  --   let vMetas = varFromSession s
-  --   tOldEmit <- only1 $ typing qtPrev
-  --   vOldEmits <- mapM (`findSym` tOldEmit) vMetas
-  --   -- update states
-  --   -- update with new ones
-  --   sSt %= (at s ?~ qtNow)
-  --   -- update the kind state for each (probably not necessary)
-  --   foldM_ (\_ v -> kSt %= (at v ?~ TQ qtNow)) () vMetas
-  --   rbSt %= (`Map.withoutKeys` (Set.fromList $ map (,tOldEmit) vMetas))
-  --   tNewEmit <- only1 $ typing qtNow
-  --   vNewEmits <- mapM (`gensym` tNewEmit) vMetas
-  --   return (vOldEmits, tOldEmit, vNewEmits, tOldEmit)
+  => Session -> QTy -> m ([Var], Ty, [Var], Ty)
+retypeSession s' qtNow = do
+  (locS, sResolved, qtPrev) <- drawDefault $ resolveSession s'
+  when (qtNow == qtPrev) $
+    throwError @String  $ printf
+     "Session `%s` is of type `%s`. No retyping need to be done."
+     (show sResolved) (show qtNow)
+  -- Get info based on its previous type!
+  let vsSession = varFromSession sResolved
+  let tOldEmit = typingQEmit qtPrev
+  let bdsOld = [ Binding v tOldEmit | v <- vsSession ]
+  vsOldEmit <- bdsOld `forM` findEmitSym
+  removeEmitBindings bdsOld
+  let tNewEmit = typingQEmit qtNow 
+  sSt %= (at locS ?~ (sResolved, qtNow))
+  vsNewEmit <- vsSession `forM` (gensymEmit . (`Binding` tOldEmit))
+  return (vsOldEmit, tOldEmit, vsNewEmit, tNewEmit)
 
 --------------------------------------------------------------------------------
--- | Helpers 
+-- | Helpers
 --------------------------------------------------------------------------------
 -- Compute types of methods from the toplevel
 collectMethodTypes :: AST -> [(Var, Ty)]

@@ -1,7 +1,7 @@
 {-# LANGUAGE DataKinds, FlexibleContexts, FlexibleInstances,
              GeneralizedNewtypeDeriving, MultiParamTypeClasses, RankNTypes,
-             TupleSections, TypeApplications, TypeOperators,
-             UndecidableInstances #-}
+             ScopedTypeVariables, TupleSections, TypeApplications,
+             TypeOperators, UndecidableInstances #-}
 
 module Qafny.CodegenE where
 
@@ -26,16 +26,21 @@ import           Control.Carrier.State.Strict   (runState)
 import           Qafny.Gensym                   (runGensym)
 
 -- Utils
-import           Control.Lens                   (at, (%~), (?~))
+import           Control.Lens                   (at, (%~), (?~), (^.))
+import           Control.Lens.Tuple
 import           Data.Functor                   ((<&>))
 import qualified Data.Map.Strict                as Map
 
 
 -- Qafny
+import           Carrier.Cache.One              (dropCache)
+import           Control.Monad                  (forM)
+import           Effect.Cache                   (Cache, drawErr)
 import           Qafny.AST
 import           Qafny.Config
 import           Qafny.Transform
     ( Production
+    , STuple
     , TEnv (..)
     , TState
     , initTEnv
@@ -45,13 +50,17 @@ import           Qafny.Transform
     , xSt
     )
 import           Qafny.TypingE
-    ( checkSubtype
+    ( appkEnvWithBds
+    , checkSubtype
+    , checkSubtypeQ
+    , collectMethodTypesM
+    , resolveSessions
+    , retypeSession
     , typingExp
     , typingQEmit
-    , collectMethodTypesM
-    , appkEnvWithBds
+    , typingSession, typingGuard
     )
-import           Qafny.Utils                    (gensymLoc)
+import           Qafny.Utils                    (findEmitSym, gensymLoc)
 
 
 --------------------------------------------------------------------------------
@@ -177,19 +186,54 @@ codegenStmt s@(SVar (Binding v t) (Just e)) = do
   te <- typingExp e
   checkSubtype t te -- check if `t` agrees with the type of `e`
   codegenAlloc v e t <&> (: [])
--- codegenStmt (SApply s EHad) = do
---   qt <- typing s
---   opCast <- opCastHad qt
---   coercionWithOp opCast qt THad s
---   where
---     opCastHad TNor = return "CastNorHad"
---     opCastHad t = throwError $ "type `" ++ show t ++ "` cannot be casted to Had type"
+codegenStmt (SApply s EHad) = dropCache @STuple $ do
+  qt <- typingSession s
+  opCast <- opCastHad qt
+  castWithOp opCast s THad
+  where
+    opCastHad TNor = return "CastNorHad"
+    opCastHad t = throwError $ "type `" ++ show t ++ "` cannot be casted to Had type"
+codegenStmt (SApply s@(Session ranges) e@(EEmit (ELambda {}))) = dropCache @STuple $ do
+  qt <- typingSession s
+  checkSubtypeQ TCH qt
+  let tyEmit = typingQEmit qt
+  let vsRange = varFromSession s
+  vsEmit <- forM vsRange $ findEmitSym . (`Binding` tyEmit)
+  return $ mkMapCall `map` vsEmit
+  where
+    mkMapCall v = v `SAssign` EEmit (ECall "Map" [e, EVar v])
 
 
+-- | Code Generation of the `If` Statement
+codegenStmt'If
+  :: ( Has (Reader TEnv) sig m
+     , Has (State TState)  sig m
+     , Has (Error String) sig m
+     , Has (Gensym String) sig m
+     , Has (Gensym Binding) sig m
+     )
+  => Exp -> Separates -> Block
+  -> m [Stmt]
+codegenStmt'If e seps b  = do
+  (locG, sG, qtG) <- typingGuard e
+  freeSession <- resolveSessions . leftSessions . inBlock $ b
+  codegenStmt'If'Had e seps b
 
--- | Generate statements to allocate fresh qubits for a given variable or
--- allocate a conventional variable
---
+-- | Code Generation of an `If` statement with a Had session
+codegenStmt'If'Had
+  :: ( Has (Reader TEnv) sig m
+     , Has (State TState)  sig m
+     , Has (Error String) sig m
+     , Has (Gensym String) sig m
+     , Has (Gensym Binding) sig m
+     )
+  => Exp -> Separates -> Block
+  -> m [Stmt]
+codegenStmt'If'Had = undefined
+
+
+-- | Generate statements that allocate qubits if it's Nor; otherwise, keep the
+-- source statement as is.
 codegenAlloc
   :: ( Has (Gensym Binding) sig m
      , Has (Gensym String) sig m
@@ -212,16 +256,21 @@ codegenAlloc v e@(EOp2 ONor _ _) _ =
 codegenAlloc v e _ = return $ SAssign v e
 
 
--- coercionWithOp :: String -> QTy -> QTy -> Session -> Transform [Stmt]
--- coercionWithOp castOp sessionTy newTy s =
---   do
---     (vOldEmits, tOldEmit, vNewEmits, tNewEmit) <- retypeSession s newTy
---     -- assemble the emitted terms
---     return $
---       concat
---         [ [ SDafny $ "// Cast " ++ show sessionTy ++ " ==> " ++ show newTy
---           , SAssign vNew $ EEmit (castOp `ECall` [EEmit $ EDafnyVar vOld])
---           ]
---         | (vOld, vNew) <- zip vOldEmits vNewEmits
---         ]
-
+-- Cast
+castWithOp
+  :: ( Has (Error String) sig m
+     , Has (State TState) sig m
+     , Has (Gensym Binding) sig m
+     , Has (Cache STuple) sig m
+     )
+  => String -> Session -> QTy -> m [Stmt]
+castWithOp op s newTy =
+  do
+    (vOldEmits, tOldEmit, vNewEmits, tNewEmit) <- retypeSession s newTy
+    sessionTy <- drawErr @STuple <&> (^. _3)
+    -- assemble the emitted terms
+    return . concat $
+      [ [ SDafny $ "// Cast " ++ show sessionTy ++ " ==> " ++ show newTy
+        , SAssign vNew $ EEmit (op `ECall` [EEmit $ EDafnyVar vOld])
+        ]
+      | (vOld, vNew) <- zip vOldEmits vNewEmits ]
