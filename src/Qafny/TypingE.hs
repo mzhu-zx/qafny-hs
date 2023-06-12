@@ -25,6 +25,7 @@ import           Control.Monad                  (forM, unless, when)
 import           Data.Functor                   ((<&>))
 import qualified Data.List                      as List
 import qualified Data.Map.Strict                as Map
+import qualified Data.Set                       as Set
 import           Effect.Cache                   (Cache, drawDefault)
 import           Qafny.Error                    (QError (..))
 import           Qafny.Utils
@@ -170,8 +171,25 @@ checkSubtypeQ t1 t2 =
 -- | Type Manipulation
 --------------------------------------------------------------------------------
 
--- | Cast the type of a session to another, modify the typing state and generate
--- new emission variable.
+
+retypeSession1
+  :: ( Has (Error String) sig m
+     , Has (State TState) sig m
+     , Has (Gensym Binding) sig m
+     , Has (Cache STuple) sig m
+     )
+  => Session -> QTy -> m (Var, Ty, Var, Ty)
+retypeSession1 s' qtNow = do
+  (vsPrev, tPrev, vsNow, tNow) <- retypeSession s' qtNow
+  case (vsPrev, vsNow) of
+    ([vPrev], [vNow]) ->
+      return (vPrev, tPrev, vNow, tNow)
+    _ ->
+      throwError @String $ printf "%s and %s contains more than 1 session!"
+        (show vsPrev) (show vsNow)
+
+-- | Cast the type of a session to a given qtype, modify the typing state and
+-- emit variable.
 --
 -- However, retyping doesn't generate a new meta variable
 retypeSession
@@ -197,6 +215,31 @@ retypeSession s' qtNow = do
   sSt %= (at locS ?~ (sResolved, qtNow))
   vsNewEmit <- vsSession `forM` (gensymEmit . (`Binding` tOldEmit))
   return (vsOldEmit, tOldEmit, vsNewEmit, tNewEmit)
+
+
+-- Merge two given session tuples if both of them are of CH type.
+mergeSTuples
+  :: ( Has (State TState) sig m
+     , Has (Error String) sig m
+     )
+  => STuple -> STuple -> m ()
+mergeSTuples
+  stM@(locMain, sMain@(Session rsMain), qtMain)
+  stA@(locAux, sAux@(Session rsAux), qtAux) =
+  do
+    -- Sanity Check
+    unless (qtMain == qtAux && qtAux == TCH) $
+      throwError @String $ printf "%s and %s have different Q types!"
+        (show stM) (show stA)
+    -- start merge
+    let newSession = Session $ rsMain ++ rsAux
+    let vsMetaAux =  varFromSession sAux
+    let newAuxLocs = Map.fromList $ [(v, locMain) | v <- vsMetaAux]
+    xSt %= Map.union newAuxLocs -- use Main's loc for aux
+    sSt %=
+      (`Map.withoutKeys` Set.singleton locAux) . -- GC aux's loc
+      (at locMain ?~ (newSession, TCH))          -- update main's state
+    return ()
 
 --------------------------------------------------------------------------------
 -- | Helpers

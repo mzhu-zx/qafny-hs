@@ -33,7 +33,7 @@ import qualified Data.Map.Strict                as Map
 
 
 -- Qafny
-import           Carrier.Cache.One              (dropCache_, dropCache)
+import           Carrier.Cache.One              (dropCache_, dropCache, readCache)
 import           Control.Applicative            (Applicative (liftA2))
 import           Control.Monad                  (forM)
 import           Effect.Cache                   (Cache, drawDefault, drawErr)
@@ -62,7 +62,7 @@ import           Qafny.TypingE
     , typingExp
     , typingGuard
     , typingQEmit
-    , typingSession
+    , typingSession, retypeSession1, mergeSTuples
     )
 import           Qafny.Utils
     ( findEmitSym
@@ -210,6 +210,8 @@ codegenStmt (SApply s@(Session ranges) e@(EEmit (ELambda {}))) = dropCache_ @STu
   return $ mkMapCall `map` vsEmit
   where
     mkMapCall v = v `SAssign` EEmit (ECall "Map" [e, EVar v])
+codegenStmt (SIf e seps b) = codegenStmt'If e seps b
+codegenStmt s = error $ "Unimplemented:\n\t" ++ show s ++ "\n"
 
 
 -- | Code Generation of the `If` Statement
@@ -228,9 +230,9 @@ codegenStmt'If e seps b = do
   stB <- resolveSessions . leftSessions . inBlock $ b
   -- act based on the type of the guard
   stmts <- case qtG of
-    THad -> codegenStmt'If'Had stG stB e
+    THad -> codegenStmt'If'Had stG stB b
     _    -> undefined
-  undefined
+  return stmts
 
 -- | Code Generation of an `If` statement with a Had session
 codegenStmt'If'Had
@@ -244,10 +246,61 @@ codegenStmt'If'Had
   -> m [Stmt]
 codegenStmt'If'Had stG stB b = do
   let (sG, sB) = (stG ^. _2, stB ^. _2)
+  -- 1. cast the guard and duplicate the body session
   stmtsCastG <- dropCache stG $ castSessionCH sG
   (stmtsDupB, corr) <- dropCache stB $ dupState sB
+  -- 2. codegen the body
   stmtB <- SEmit . SBlock <$> codegenBlock b
-  undefined
+  -- TODO: left vs right merge strategy
+  (cardMain, cardStash) <- cardStatesCorr corr
+  -- 3. merge duplicated body sessions and merge the body with the guard
+  stmtsG <- mergeHadGuard stG stB cardMain cardStash
+  let stmtsMerge = mergeEmitted corr 
+  return $ stmtsCastG ++ stmtsDupB ++ [stmtB] ++ stmtsMerge ++ stmtsG
+
+
+-- | Assume `stG` is a Had guard, cast it into `CH` type and merge it with
+-- the session in`stB`. The number of kets in the generated states depends on
+-- the number of kets in the body and that in the stashed body 
+mergeHadGuard
+  :: ( Has (State TState) sig m
+     , Has (Error String) sig m
+     , Has (Gensym Binding) sig m
+     )
+  => STuple -> STuple -> Exp -> Exp -> m [Stmt]
+mergeHadGuard stG' stB cardBody cardStashed = do
+  (stG, (_, _, vGENow, tGENow)) <-
+    readCache stG' $ retypeSession1 undefined TCH
+  mergeSTuples stB stG
+  return
+    [ SDafny "// Body Session + Guard Session"
+    , vGENow
+        `SAssign` EOp2 OAdd
+          (EEmit $ EMakeSeq tGENow cardBody $ constExp (ENum 1))
+          (EEmit $ EMakeSeq tGENow cardStashed $ constExp (ENum 0))
+    ]
+  
+
+
+-- Emit two expressions representing the number of kets in two states in
+-- correspondence 
+cardStatesCorr
+  :: (Has (Error String) sig m)
+  => [(Binding, Var, Var)]
+  -> m (Exp, Exp)
+cardStatesCorr ((_, vStash ,vMain) : _) =
+  return ( EEmit . ECard . EVar $ vStash
+         , EEmit . ECard . EVar $ vMain)
+cardStatesCorr a =
+  throwError $ "State cardinality of an empty correspondence is undefined!"
+
+
+-- Merge the two sessions in correspondence
+mergeEmitted :: [(Binding, Var, Var)] -> [Stmt]
+mergeEmitted corr =
+  [ SAssign vMain (EOp2 OAdd (EVar vMain) (EVar vStash))
+  | (_, vMain, vStash) <- corr ]
+
 
 -- | Generate statements that allocate qubits if it's Nor; otherwise, keep the
 -- source statement as is.
@@ -311,9 +364,13 @@ castSessionCH s' = do
       printf "Session `%s` is already of CH type." (show s)
 
 
--- | Duplicate the data, i.e. sequences to be emitted by generating statement
--- duplicating the data as well as a meta-level handler maintaining the
--- correspondence between the old and the new data indexed by ranges
+-- | Duplicate the data, i.e. sequences to be emitted, by generating statement
+-- duplicating the data as well as the correspondence between the range
+-- bindings, emitted variables from the fresh copy and the original emitted
+-- varaibles
+--
+-- However, this does not add the generated symbols to the typing environment or
+-- modifying the existing bindings!p
 dupState
   :: ( Has (Error String) sig m
      , Has (State TState) sig m
@@ -327,7 +384,7 @@ dupState s' = do
   let bds = [ Binding x tEmit | x <- varFromSession s]
   -- generate a set of fresh emit variables as the stashed session
   vsEmitFresh <- forM bds gensym -- do not manipulate the `emitSt` here
-  vsEmitPrev <- forM bds findEmitSym
+  vsEmitPrev <- forM bds findEmitSym -- the only place where state is used!
   let stmts = [ SAssign vEmitFresh (EVar vEmitPrev)
               | (vEmitFresh, vEmitPrev) <- zip vsEmitFresh vsEmitPrev ]
   return (stmts, zip3 bds vsEmitPrev vsEmitFresh)

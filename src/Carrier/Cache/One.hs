@@ -13,6 +13,7 @@ import           Control.Effect.Error         (Error, throwError)
 import           Control.Effect.State         (get, put)
 import           Data.Functor                 (($>), (<&>))
 import           Effect.Cache
+import Data.Maybe (fromJust)
 
 newtype CacheC s m a = CacheC { runCacheC :: StateC (Maybe s) m a }
   deriving (Applicative, Functor, Monad)
@@ -31,15 +32,13 @@ instance Algebra sig m => Algebra (Cache s :+: sig) (CacheC s m) where
 --   (,r) <$> maybe eval return s
 
 -- -- | execute the computation and returns both cached value and the answer
--- withCache
---   :: forall s a sig m .
---      (Has (Error String) sig m)
---   => CacheC s m a -> m (s, a)
--- withCache c = do
---   (s, r) <- runState Nothing $ runCacheC c
---   maybe cacheMiss (return . (, r)) s
-
-
+readCache
+  :: forall s a sig m .
+     (Has (Error String) sig m)
+  => s -> CacheC s m a -> m (s, a)
+readCache s' c = do
+  (s, r) <- runState (Just s') $ runCacheC c
+  return (fromJust s, r)
 
 -- | execute the computation but drop the cache
 dropCache_
