@@ -99,7 +99,7 @@ newtype Block = Block { inBlock :: [Stmt] }
   deriving (Show, Eq)
 
 data Toplevel
-  = QMethod Var Bindings Returns Requires Ensures Block
+  = QMethod Var Bindings Returns Requires Ensures (Maybe Block)
   | QDafny String
   deriving (Show, Eq)
 

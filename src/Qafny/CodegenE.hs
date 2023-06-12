@@ -133,20 +133,20 @@ codegenToplevel
      )
   => Toplevel
   -> m Toplevel
-codegenToplevel q@(QMethod v bds rts rqs ens block) = do
+codegenToplevel q@(QMethod v bds rts rqs ens (Just block)) = do
   tEnv <- asks $ appkEnvWithBds bds
   (i, emitBds, (j, block')) <- runGensym $ codegenBlock block
   -- todo: report on the gensym state with a report effect!
   let stmtsDeclare = [ SVar bds' Nothing  | bds' <- emitBds ]
-  let totalBlock =
-        [SDafny "// Forward Declaration"]
-          ++ stmtsDeclare
-          ++ [ SDafny ""
-             , SDafny "// Method Definition"
-             ]
-          ++ inBlock block'
-  return $ QMethod v bds rts rqs ens (Block totalBlock)
-codegenToplevel q@(QDafny _) = return q
+  let blockStmts =
+        [ SDafny "// Forward Declaration" ]
+        ++ stmtsDeclare
+        ++ [ SDafny ""
+           , SDafny "// Method Definition"
+           ]
+        ++ inBlock block'
+  return $ QMethod v bds rts rqs ens (Just . Block $ blockStmts)
+codegenToplevel q = return q
 
 
 codegenBlock

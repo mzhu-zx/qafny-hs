@@ -55,9 +55,11 @@ class DafnyPrinter a where
 
 (<!>) :: (DafnyPrinter a, DafnyPrinter b) => a -> b -> Builder
 a <!> b = build a <> build b
+{-# INLINE (<!>) #-}
 
 instance DafnyPrinter Builder where
   build = id
+  {-# INLINE build #-}
 
 instance DafnyPrinter Char where
   build = return . TB.singleton
@@ -86,13 +88,13 @@ instance DafnyPrinter Binding where
 
 instance DafnyPrinter Toplevel where
   build (QDafny s) = build s 
-  build (QMethod idt bds rets reqs ens block) =
+  build (QMethod idt bds rets reqs ens blockHuh) =
     "method " <!> idt <!> " " <!>
-    withParen (byComma bds) <> 
-    buildRets rets <> line <>
-    buildConds "requires" reqs <> 
-    buildConds "ens" reqs <>
-    build block
+    withParen (byComma bds) <!> 
+    buildRets rets <!> line <!>
+    buildConds "requires" reqs <!> 
+    buildConds "ens" reqs <!>
+    maybe line build blockHuh
     where buildRets [] = mempty
           buildRets r  = build " returns " <> withParen (byComma bds)
 

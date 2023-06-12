@@ -74,11 +74,11 @@ toplevels
 toplevel                                                                  
   :  dafny                            { QDafny $1                            }
   | "method" id '(' bindings ')'                                          
-    requireEnsures block                                                  
+    requireEnsures blockOpt                                                  
                                       { let (rs, es) = $6 in                 
                                           QMethod $2 $4 [] rs es $7          }
   | "method" id '(' bindings ')' "returns" '(' bindings ')'               
-    requireEnsures block                                                  
+    requireEnsures blockOpt                                                  
                                       { let (rs, es) = $10 in                
                                           QMethod $2 $4 $8 rs es $11         }
 
@@ -121,6 +121,11 @@ ty
   | "had"                             { TQ $ THad                            }
   | "ch"                              { TQ $ TCH                             }
                                                                           
+
+blockOpt                                                                     
+  : {- empty -}                       { Nothing                              }
+  | block                             { Just $1                              }
+
 block                                                                     
   : '{' stmts '}'                     { Block $2                             }
                                                                           
