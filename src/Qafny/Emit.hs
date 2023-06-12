@@ -8,6 +8,8 @@ import           Qafny.AST
 import           Data.Text.Lazy(Text)
 import qualified Data.Text.Lazy.Builder as TB
 import           Control.Monad.Reader
+import Data.Maybe (maybeToList)
+import Debug.Trace (trace, traceShow)
 
 -------------------- Builder --------------------
 
@@ -31,22 +33,36 @@ space = return $ TB.singleton ' '
 withIncr2 :: Builder -> Builder
 withIncr2 = local (+ 2)
 
-getIndent :: Builder
-getIndent = do n <- ask
-               build $ replicate n ' '
+indent :: Builder
+indent = do n <- ask
+            build $ replicate n ' '
 
 withParen :: Builder -> Builder
 withParen b = build '(' <> b <> build ')'
 
 withBrace :: Builder -> Builder
-withBrace b = getIndent <> build "{\n" <> b <> getIndent <> build "}\n"
+withBrace b = indent <> build "{\n" <> b <> indent <> build "}\n"
 
 byComma :: DafnyPrinter a => [a] -> Builder
 byComma [] = mempty
 byComma (x:xs) = foldl (\ys y -> ys  <> build ", " <> build y) (build x) xs
 
+-- | Build each element and separate them by a newline without producing any
+-- newline in the end  
 byLine :: DafnyPrinter a => [a] -> Builder
-byLine = foldr (\y ys -> build y <> build "\n" <> ys) mempty
+byLine (x : xs) = foldl (\ys y -> ys <!> line <!> y) (build x) xs
+byLine [] = mempty
+
+-- | Build each element and separate them by a newline without producing any
+-- newline in the end but with a leading newline if the list is nonempty
+byLine' :: DafnyPrinter a => [a] -> Builder
+byLine' = foldr (\y ys -> line <!> y <!> ys) mempty 
+
+
+
+lineHuh :: [a] -> Builder
+lineHuh [] = mempty
+lineHuh _  = line
 
 infixr 6 <!>
 
@@ -90,13 +106,12 @@ instance DafnyPrinter Toplevel where
   build (QDafny s) = build s 
   build (QMethod idt bds rets reqs ens blockHuh) =
     "method " <!> idt <!> " " <!>
-    withParen (byComma bds) <!> 
-    buildRets rets <!> line <!>
-    buildConds "requires" reqs <!> 
-    buildConds "ens" reqs <!>
-    maybe line build blockHuh
+    withParen (byComma bds) <!> buildRets rets <!>
+    (withIncr2 . byLine' $ (indent <!>) <$> reqEns) <!>
+    byLine' (maybeToList blockHuh)
     where buildRets [] = mempty
-          buildRets r  = build " returns " <> withParen (byComma bds)
+          buildRets r  = build " returns " <> withParen (byComma r)
+          reqEns = buildConds "requires" reqs ++ buildConds "ensures" ens
 
 instance DafnyPrinter Block where
   build = withBrace . withIncr2 . byLine . inBlock
@@ -104,15 +119,15 @@ instance DafnyPrinter Block where
 instance DafnyPrinter Stmt where
   build (SEmit (SBlock b)) = build b
   build (SEmit f@(SForEmit idf initf bound invs b)) =
-    getIndent <> buildFor
+    indent <> buildFor
     where
       buildFor =
         "for " <!> idf <!> " := " <!> initf <!> " to " <!> bound
           <!> "\n" <!>
           -- todo: emit invariants
           b
-  build (SDafny s') = getIndent <> build s'
-  build s = getIndent <> buildStmt s <> build ';'
+  build (SDafny s') = indent <> build s'
+  build s = indent <> buildStmt s <> build ';'
     where
       buildStmt :: Stmt -> Builder
       buildStmt (SVar bd Nothing) = "var " <!> bd
@@ -158,10 +173,11 @@ buildOp2 op = (<!>) . (<!> opSign)
         OMod  -> " % "
         OLt   -> " < "
         OLe   -> " <= "
-        _     -> " ???? "
+        OGt   -> " > "
+        OGe   -> " >= "
 
-buildConds :: String -> [Exp] -> Builder
-buildConds s = foldr (\x xs -> s <!> x <!> '\n' <!> xs) (build "")
+buildConds :: String -> [Exp] -> [Builder]
+buildConds s = map ((s <!> " ") <!>)
 
 texify :: DafnyPrinter a => a -> Text
 texify = TB.toLazyText . flip runReader 0 . doBuild . build

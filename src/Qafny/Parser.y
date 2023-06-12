@@ -174,6 +174,7 @@ expr
   | atomic "||" atomic                { EOp2 OOr $1 $3                       }
   | atomic '*' atomic                 { EOp2 OMul $1 $3                      }
   | expr '\%' expr                    { EOp2 OMod $1 $3                      }
+  | expr '>' expr                     { EOp2 OGt $1 $3                      }
   | '(' expr ')'                      { $2                                   }
                                                                             
 atomic                                                                      
