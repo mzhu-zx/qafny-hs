@@ -11,12 +11,12 @@ import opened Power2
 method GHZ0 (n : nat)
 {
   // Forward Declaration
-  var q : seq<nat>;
-  var p : seq<nat>;
-  var p : seq<nat>;
-  var q : seq<nat>;
-  var p : seq<nat>;
-  var q : seq<nat>;
+  var q__seq__nat____5 : seq<nat>;
+  var p__seq__nat____4 : seq<nat>;
+  var p__seq__nat____3 : seq<nat>;
+  var q__seq__nat____2 : seq<nat>;
+  var p__seq__nat____1 : seq<nat>;
+  var q__seq__nat____0 : seq<nat>;
   
   // Method Definition
   q__seq__nat____0 := seq<nat>(1, _ => 0);
@@ -27,10 +27,12 @@ method GHZ0 (n : nat)
   p__seq__nat____3 := CastNorCH10(p__seq__nat____1);
   p__seq__nat____4 := p__seq__nat____3;
   {
-    p__seq__nat____3 := Map(x => x + 1 % 2, p__seq__nat____3);  }
+    p__seq__nat____3 := Map(x => x + 1 % 2, p__seq__nat____3);
+  }
 
   p__seq__nat____3 := p__seq__nat____3 + p__seq__nat____4;
   // Body Session + Guard Session
-  q__seq__nat____5 := seq<seq<nat>>(|p__seq__nat____3|, _ => 1) + seq<seq<nat>>(|p__seq__nat____4|, _ => 0);}
+  q__seq__nat____5 := seq<nat>(|p__seq__nat____3|, _ => 1) + seq<nat>(|p__seq__nat____4|, _ => 0);
+}
 
 }

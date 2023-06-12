@@ -47,11 +47,14 @@ byComma :: DafnyPrinter a => [a] -> Builder
 byComma [] = mempty
 byComma (x:xs) = foldl (\ys y -> ys  <> build ", " <> build y) (build x) xs
 
--- | Build each element and separate them by a newline without producing any
--- newline in the end  
 byLine :: DafnyPrinter a => [a] -> Builder
-byLine (x : xs) = foldl (\ys y -> ys <!> line <!> y) (build x) xs
-byLine [] = mempty
+byLine = foldr (\y ys -> y <!> line <!> ys) mempty
+
+-- | Build each element and separate them by a newline and produce any newline
+-- in the end
+byLine'' :: DafnyPrinter a => [a] -> Builder
+byLine'' (x : xs) = foldl (\ys y -> ys <!> line <!> y) (build x) xs
+byLine'' [] = mempty
 
 -- | Build each element and separate them by a newline without producing any
 -- newline in the end but with a leading newline if the list is nonempty

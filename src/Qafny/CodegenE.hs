@@ -119,10 +119,11 @@ codegenToplevel
   => Toplevel
   -> m Toplevel
 codegenToplevel q@(QMethod v bds rts rqs ens (Just block)) = do
-  (i, emitBds, (j, block')) <-
+  (i, emitBdsNames, (j, block')) <-
     runGensym $ local (appkEnvWithBds bds) $ codegenBlock block
   -- todo: report on the gensym state with a report effect!
-  let stmtsDeclare = [ SVar bds' Nothing  | bds' <- emitBds ]
+  let stmtsDeclare = [ SVar (Binding vEmit tEmit) Nothing
+                     | (Binding _ tEmit, vEmit) <- emitBdsNames ]
   let blockStmts =
         [ SDafny "// Forward Declaration" ]
         ++ stmtsDeclare
@@ -262,12 +263,13 @@ mergeHadGuard stG' stB cardBody cardStashed = do
   (_, _, vGENow, tGENow) <- retypeSession1 stG' TCH
   stG <- resolveSession (stG' ^. _2)
   mergeSTuples stB stG
+  let ~(TSeq tInSeq) = tGENow
   return
     [ SDafny "// Body Session + Guard Session"
     , vGENow
         `SAssign` EOp2 OAdd
-          (EEmit $ EMakeSeq tGENow cardBody $ constExp (ENum 1))
-          (EEmit $ EMakeSeq tGENow cardStashed $ constExp (ENum 0))
+          (EEmit $ EMakeSeq tInSeq cardBody $ constExp (ENum 1))
+          (EEmit $ EMakeSeq tInSeq cardStashed $ constExp (ENum 0))
     ]
 
 

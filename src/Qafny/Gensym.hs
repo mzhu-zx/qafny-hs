@@ -8,5 +8,5 @@ import           Qafny.AST           (Ty, Binding(..), Bindings)
 runGensym
   :: Functor m
   => GMeta.GensymC String (GEmit.GensymC Binding m) a
-  -> m (Int, Bindings, (Int , a))
+  -> m (Int, [(Binding, String)], (Int , a))
 runGensym = GEmit.runGensymEmit . GMeta.runGensymMeta @String
