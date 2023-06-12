@@ -2,6 +2,9 @@
 #import opened Mul
 #import opened Power2
 #import opened Unity
+#
+#// For Qafny Commit: 31dab660309f76006aa91f928e716dc3d852005b
+#
 
 method DeutschJozsa (n : nat)
   // requires n > 0
