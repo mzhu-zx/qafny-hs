@@ -36,7 +36,7 @@ import           Qafny.Utils
     , rethrowMaybe
     )
 import           Text.Printf                    (printf)
-import Debug.Trace (traceM)
+import Debug.Trace (traceM, traceStack)
 
 
 
@@ -61,23 +61,14 @@ typingExp (EOp2 op2 e1 e2) =
      checkSubtype2 top t1 t2
 -- typing e = throwError $ "Typing for "  ++ show e ++ " is unimplemented!"
 
+
 -- | Compute the quantum type of a given (possibly incomplete) session
 --
 -- For example, a session `s = { x [0..1], y [0..1]}` can be treated as the
 -- composition of `s1 ⊠ s2 = s`. Therefore, when dereferencing `s1`, it should
 -- resolve and give me `s` instead of `s1` as the session itself is inseparable!
 --
-typingSession
-  :: ( Has (State TState) sig m
-     , Has (Error String) sig m
-     , Has (Cache STuple) sig m -- Session info
-     )
-  => Session -> m QTy
-typingSession se@(Session s) = do
-  tup <- drawDefault $ resolveSession se
-  return $ tup ^. _3
-
--- | Examine each Range in a given Session and resolve to a STuple
+-- Examine each Range in a given Session and resolve to a STuple
 resolveSession
   :: ( Has (State TState) sig m
      , Has (Error String) sig m
@@ -168,7 +159,7 @@ checkSubtypeQ
   => QTy -> QTy -> m ()
 checkSubtypeQ t1 t2 =
   unless (subQ t1 t2) $
-  throwError $
+  traceStack "" . throwError $
   "Type mismatch: `" ++ show t1 ++ "` is not a subtype of `" ++ show t2 ++ "`"
 
 
@@ -181,11 +172,10 @@ retypeSession1
   :: ( Has (Error String) sig m
      , Has (State TState) sig m
      , Has (Gensym Binding) sig m
-     , Has (Cache STuple) sig m
      )
-  => Session -> QTy -> m (Var, Ty, Var, Ty)
-retypeSession1 s' qtNow = do
-  (vsPrev, tPrev, vsNow, tNow) <- retypeSession s' qtNow
+  => STuple -> QTy -> m (Var, Ty, Var, Ty)
+retypeSession1 st qtNow = do
+  (vsPrev, tPrev, vsNow, tNow) <- retypeSession st qtNow
   case (vsPrev, vsNow) of
     ([vPrev], [vNow]) ->
       return (vPrev, tPrev, vNow, tNow)
@@ -201,11 +191,10 @@ retypeSession
   :: ( Has (Error String) sig m
      , Has (State TState) sig m
      , Has (Gensym Binding) sig m
-     , Has (Cache STuple) sig m
      )
-  => Session -> QTy -> m ([Var], Ty, [Var], Ty)
-retypeSession s' qtNow = do
-  (locS, sResolved, qtPrev) <- drawDefault $ resolveSession s'
+  => STuple -> QTy -> m ([Var], Ty, [Var], Ty)
+retypeSession st qtNow = do
+  let (locS, sResolved, qtPrev) = st
   when (qtNow == qtPrev) $
     throwError @String  $ printf
      "Session `%s` is of type `%s`. No retyping need to be done."

@@ -1,10 +1,27 @@
-include "../../external/QPreludeUntyped.dfy"
+include "../../external//QPreludeUntyped.dfy"
+include "../../external//libraries/src/Collections/Sequences/Seq.dfy"
+include "../../external//libraries/src/NonlinearArithmetic/Power2.dfy"
+
+// target Dafny version: 3.12.0
+abstract module QafnyDefault {
+import opened QPreludeUntyped
+import opened Seq
+import opened Power2
 
 method DeutschJozsa (n : nat)
 {
-  var q__seq__nat___emited_1 : seq<nat> := seq<nat>(1, _ => 0);
-  var p__seq__nat___emited_2 : seq<nat> := seq<nat>(n, _ => 1);
-  var q__seq__nat___emited_3 : seq<nat> := CastNorHad(q__seq__nat___emited_1);
-  var p__seq__nat___emited_4 : seq<nat> := CastNorHad(p__seq__nat___emited_2);
-}
+  // Forward Declaration
+  var p : seq<nat>;
+  var q : seq<nat>;
+  var p : seq<nat>;
+  var q : seq<nat>;
+  
+  // Method Definition
+  q__seq__nat____0 := seq<nat>(1, _ => 0);
+  p__seq__nat____1 := seq<nat>(n, _ => 1);
+  // Cast TNor ==> THad
+  q__seq__nat____2 := CastNorHad(q__seq__nat____0);
+  // Cast TNor ==> THad
+  p__seq__nat____3 := CastNorHad(p__seq__nat____1);}
 
+}

@@ -67,7 +67,6 @@ import           Qafny.TypingE
     , typingExp
     , typingGuard
     , typingQEmit
-    , typingSession
     )
 import           Qafny.Utils
     ( findEmitSym
@@ -181,18 +180,20 @@ codegenStmt s@(SVar (Binding v t) (Just e)) = do
   te <- typingExp e
   checkSubtype t te -- check if `t` agrees with the type of `e`
   codegenAlloc v e t <&> (: [])
-codegenStmt (SApply s EHad) = dropCache_ @STuple $ do
-  qt <- typingSession s
+codegenStmt (SApply s EHad) = do
+  st@(_, _, qt) <- resolveSession s
   opCast <- opCastHad qt
-  castWithOp opCast s THad
+  castWithOp opCast st THad
   where
     opCastHad TNor = return "CastNorHad"
     opCastHad t = throwError $ "type `" ++ show t ++ "` cannot be casted to Had type"
-codegenStmt (SApply s@(Session ranges) e@(EEmit (ELambda {}))) = dropCache_ @STuple $ do
-  qt <- typingSession s
+codegenStmt (SApply s@(Session ranges) e@(EEmit (ELambda {}))) = do
+  st@(_, _, qt) <- resolveSession s
   checkSubtypeQ TCH qt
   let tyEmit = typingQEmit qt
-  let vsRange = varFromSession s
+  -- it's important not to use a fully resolved `s` here, because you don't want
+  -- to apply the op to the entire session but only a part of it. 
+  let vsRange = varFromSession s 
   vsEmit <- forM vsRange $ findEmitSym . (`Binding` tyEmit)
   return $ mkMapCall `map` vsEmit
   where
@@ -231,16 +232,18 @@ codegenStmt'If'Had
      )
   => STuple -> STuple -> Block
   -> m [Stmt]
-codegenStmt'If'Had stG stB b = do
-  let (sG, sB) = (stG ^. _2, stB ^. _2)
+codegenStmt'If'Had stG stB' b = do
+  -- 0. extract session, this will not be changed
+  let sB = stB' ^. _2
   -- 1. cast the guard and duplicate the body session
-  stmtsCastG <- dropCache stG $ castSessionCH sG
-  (stmtsDupB, corr) <- dropCache stB $ dupState sB
+  stmtsCastG <- castSessionCH stB'
+  (stmtsDupB, corr) <- dupState sB
   -- 2. codegen the body
   stmtB <- SEmit . SBlock <$> codegenBlock b
   -- TODO: left vs right merge strategy
   (cardMain, cardStash) <- cardStatesCorr corr
   -- 3. merge duplicated body sessions and merge the body with the guard
+  stB <- resolveSession sB
   stmtsG <- mergeHadGuard stG stB cardMain cardStash
   let stmtsMerge = mergeEmitted corr
   return $ stmtsCastG ++ stmtsDupB ++ [stmtB] ++ stmtsMerge ++ stmtsG
@@ -256,8 +259,8 @@ mergeHadGuard
      )
   => STuple -> STuple -> Exp -> Exp -> m [Stmt]
 mergeHadGuard stG' stB cardBody cardStashed = do
-  (stG, (_, _, vGENow, tGENow)) <-
-    readCache stG' $ retypeSession1 undefined TCH
+  (_, _, vGENow, tGENow) <- retypeSession1 stG' TCH
+  stG <- resolveSession (stG' ^. _2)
   mergeSTuples stB stG
   return
     [ SDafny "// Body Session + Guard Session"
@@ -319,13 +322,12 @@ castWithOp
   :: ( Has (Error String) sig m
      , Has (State TState) sig m
      , Has (Gensym Binding) sig m
-     , Has (Cache STuple) sig m
      )
-  => String -> Session -> QTy -> m [Stmt]
+  => String -> STuple -> QTy -> m [Stmt]
 castWithOp op s newTy =
   do
     (vOldEmits, tOldEmit, vNewEmits, tNewEmit) <- retypeSession s newTy
-    sessionTy <- drawErr @STuple <&> (^. _3)
+    let sessionTy = s ^. _3
     -- assemble the emitted terms
     return . concat $
       [ [ SDafny $ "// Cast " ++ show sessionTy ++ " ==> " ++ show newTy
@@ -339,17 +341,15 @@ castSessionCH
   :: ( Has (Error String) sig m
      , Has (State TState) sig m
      , Has (Gensym Binding) sig m
-     , Has (Cache STuple) sig m
      )
-  => Session -> m [Stmt]
-castSessionCH s' = do
-  (locS, s, qtS) <- drawDefault $ resolveSession s'
+  => STuple -> m [Stmt]
+castSessionCH st@(locS, s, qtS) = do
   case qtS of
-    TNor -> castWithOp "CastNorCH10" s TCH
-    THad -> castWithOp "CastHadCH10" s TCH
+    TNor -> castWithOp "CastNorCH10" st TCH
+    THad -> castWithOp "CastHadCH10" st TCH
     TCH -> throwError @String $
-      printf "Session `%s` is already of CH type." (show s)
-
+      printf "Session `%s` is already of CH type." (show st)
+  
 
 -- | Duplicate the data, i.e. sequences to be emitted, by generating statement
 -- duplicating the data as well as the correspondence between the range
@@ -362,11 +362,10 @@ dupState
   :: ( Has (Error String) sig m
      , Has (State TState) sig m
      , Has (Gensym Binding) sig m
-     , Has (Cache STuple) sig m
      )
   => Session -> m ([Stmt], [(Binding, Var, Var)])
 dupState s' = do
-  (locS, s, qtS) <- drawDefault @STuple $ resolveSession s'
+  (locS, s, qtS) <- resolveSession s'
   let tEmit = typingQEmit qtS
   let bds = [ Binding x tEmit | x <- varFromSession s]
   -- generate a set of fresh emit variables as the stashed session
