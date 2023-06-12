@@ -8,7 +8,7 @@
 #// For Qafny Commit: 06badb404e5a1a5603b72ee1dc8c5b72fc5333e5
 #
 method DeutschJozsa(n : nat) returns (m : nat)
-  requires n > 0
+#  requires n > 0
 #{
 #  var q : qreg := nor(n, _ => 0);
 #  var p : qreg := nor(1, _ => 1);
