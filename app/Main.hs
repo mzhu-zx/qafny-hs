@@ -4,7 +4,7 @@ import           Qafny.AST          (Ty)
 import           Qafny.Emit         (texify)
 import           Qafny.Parser       (scanAndParse)
 import           Qafny.Transform    (TState)
-import           Qafny.CodegenE     (produceCodegen)
+import           Qafny.Runner       (produceCodegen)
 import           Qafny.Config
 
 import qualified Data.Text.Lazy     as Txt

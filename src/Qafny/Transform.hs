@@ -14,22 +14,20 @@ import           Qafny.AST
 --------------------------------------------------------------------------------
 -- High-Order Types
 --------------------------------------------------------------------------------
-type Zipper m a r = (a -> a -> m r) -> m [r]
-
 type STuple = (Loc, Session, QTy) -- STuple { unS :: (Loc, Session, QTy) }
 
 --------------------------------------------------------------------------------
 -- General
 --------------------------------------------------------------------------------
-type Transform a = ExceptT String (RWS TEnv [(String, Ty)] TState) a
-
 data CtxMode
   = CtxC
   | CtxQ
   deriving Show
 
+type KEnv = Map.Map Var Ty
+
 data TEnv = TEnv
-  { _kEnv :: Map.Map Var Ty
+  { _kEnv :: KEnv
   , _ctx  :: CtxMode
   , _qnum :: Exp -- assume each Q type variable is associated with a qubit num which is C type exp
   }
@@ -38,7 +36,6 @@ data TEnv = TEnv
 data TState = TState
   { _sSt  :: Map.Map Loc (Session, QTy) -- session type state
   , _xSt  :: Map.Map Var Loc            -- range reference state
-  , _kSt  :: Map.Map Var Ty             -- kind state
   , _emitSt :: Map.Map Binding Var
   }
 
@@ -46,9 +43,7 @@ $(makeLenses ''TState)
 $(makeLenses ''TEnv)
 
 instance Show TState where
-  show st = "  Kind State:\n    " ++
-            (intercalate "\n    " . map show . Map.toList) (st ^. kSt) ++
-            "\n  Session Reference State:\n    " ++
+  show st = "\n  Session Reference State:\n    " ++
             (intercalate "\n    " . map show . Map.toList) (st ^. xSt) ++
             "\n  Session State:\n    " ++
             (intercalate "\n    " . map show . Map.toList) (st ^. sSt) ++
@@ -66,27 +61,5 @@ initTState :: TState
 initTState = TState
   { _sSt = mempty
   , _xSt = mempty
-  , _kSt = mempty
   , _emitSt = mempty}
 
---------------------------------------------------------------------------------
--- Combinator
---------------------------------------------------------------------------------
-
-only1 :: (HasCallStack, Show a) => Transform [a] -> Transform a
-only1 = (=<<) $
-  \case
-    [x] -> return x
-    e -> error $ "[only1]: " ++ show e ++ "is not a singleton"
-
---------------------------------------------------------------------------------
--- Wrapper
---------------------------------------------------------------------------------
-type Production a = (Either String a, TState, [(String, Ty)])
-
-runTransform :: Transform a -> Production a
-runTransform = fuseError . (\x -> runRWS x initTEnv initTState) . runExceptT
-  where
-    -- fuseError :: (Either String a, TState, [String]) -> (Either String a, TState, [String])
-    fuseError (eit, st, writ) =
-      (first (++ "\ESC[0m\nCodegen terminted with an error!\n" ++ show st) eit, st, writ)

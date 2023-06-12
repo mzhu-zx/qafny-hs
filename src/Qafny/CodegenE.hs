@@ -33,18 +33,21 @@ import qualified Data.Map.Strict                as Map
 
 
 -- Qafny
-import           Carrier.Cache.One              (dropCache_, dropCache, readCache)
+import           Carrier.Cache.One
+    ( dropCache
+    , dropCache_
+    , readCache
+    )
 import           Control.Applicative            (Applicative (liftA2))
 import           Control.Monad                  (forM)
-import           Effect.Cache                   (Cache, drawDefault, drawErr)
+import           Effect.Cache                   (Cache, drawDefault, drawErr, draw)
+import           GHC.Stack                      (HasCallStack)
 import           Qafny.AST
 import           Qafny.Config
 import           Qafny.Transform
-    ( Production
-    , STuple
+    ( STuple
     , TEnv (..)
     , TState
-    , Zipper
     , initTEnv
     , initTState
     , kEnv
@@ -56,13 +59,15 @@ import           Qafny.TypingE
     , checkSubtype
     , checkSubtypeQ
     , collectMethodTypesM
+    , mergeSTuples
     , resolveSession
     , resolveSessions
     , retypeSession
+    , retypeSession1
     , typingExp
     , typingGuard
     , typingQEmit
-    , typingSession, retypeSession1, mergeSTuples
+    , typingSession
     )
 import           Qafny.Utils
     ( findEmitSym
@@ -70,25 +75,6 @@ import           Qafny.Utils
     , gensymLoc
     )
 import           Text.Printf                    (printf)
-
---------------------------------------------------------------------------------
--- | Runner
---------------------------------------------------------------------------------
-runCodegen :: Configs -> AST -> (TState, Either String AST)
-runCodegen conf ast = do
-  run . run' $ codegenAST ast
-  where
-    run' =
-      runReader conf .
-      runReader initTEnv .
-      runState initTState .
-      runError
-
-produceCodegen :: Configs -> AST -> Production AST
-produceCodegen conf ast =
-  let (st, res) = runCodegen conf ast
-  in (res, st, [])
-
 
 --------------------------------------------------------------------------------
 -- | Codegen
@@ -134,8 +120,8 @@ codegenToplevel
   => Toplevel
   -> m Toplevel
 codegenToplevel q@(QMethod v bds rts rqs ens (Just block)) = do
-  tEnv <- asks $ appkEnvWithBds bds
-  (i, emitBds, (j, block')) <- runGensym $ codegenBlock block
+  (i, emitBds, (j, block')) <-
+    runGensym $ local (appkEnvWithBds bds) $ codegenBlock block
   -- todo: report on the gensym state with a report effect!
   let stmtsDeclare = [ SVar bds' Nothing  | bds' <- emitBds ]
   let blockStmts =
@@ -167,6 +153,7 @@ codegenStmts
      , Has (Error String) sig m
      , Has (Gensym String) sig m
      , Has (Gensym Binding) sig m
+     , HasCallStack
      )
   => [Stmt]
   -> m [Stmt]
@@ -242,7 +229,7 @@ codegenStmt'If'Had
      , Has (Gensym String) sig m
      , Has (Gensym Binding) sig m
      )
-  => STuple -> STuple -> Block 
+  => STuple -> STuple -> Block
   -> m [Stmt]
 codegenStmt'If'Had stG stB b = do
   let (sG, sB) = (stG ^. _2, stB ^. _2)
@@ -255,13 +242,13 @@ codegenStmt'If'Had stG stB b = do
   (cardMain, cardStash) <- cardStatesCorr corr
   -- 3. merge duplicated body sessions and merge the body with the guard
   stmtsG <- mergeHadGuard stG stB cardMain cardStash
-  let stmtsMerge = mergeEmitted corr 
+  let stmtsMerge = mergeEmitted corr
   return $ stmtsCastG ++ stmtsDupB ++ [stmtB] ++ stmtsMerge ++ stmtsG
 
 
 -- | Assume `stG` is a Had guard, cast it into `CH` type and merge it with
 -- the session in`stB`. The number of kets in the generated states depends on
--- the number of kets in the body and that in the stashed body 
+-- the number of kets in the body and that in the stashed body
 mergeHadGuard
   :: ( Has (State TState) sig m
      , Has (Error String) sig m
@@ -279,11 +266,11 @@ mergeHadGuard stG' stB cardBody cardStashed = do
           (EEmit $ EMakeSeq tGENow cardBody $ constExp (ENum 1))
           (EEmit $ EMakeSeq tGENow cardStashed $ constExp (ENum 0))
     ]
-  
+
 
 
 -- Emit two expressions representing the number of kets in two states in
--- correspondence 
+-- correspondence
 cardStatesCorr
   :: (Has (Error String) sig m)
   => [(Binding, Var, Var)]
@@ -314,7 +301,7 @@ codegenAlloc
 codegenAlloc v e@(EOp2 ONor e1 e2) t@(TQ TNor) = do
   let tEmit = typingQEmit TNor
   let eEmit = EEmit $ EMakeSeq TNat e1 $ constExp e2
-  vEmit <- gensym (Binding v tEmit)
+  vEmit <- gensymEmit (Binding v tEmit)
   let rV = Range v (ENum 0) e1
       sV = session1 rV
   loc <- gensymLoc v

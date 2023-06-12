@@ -29,7 +29,8 @@ dependencies:
 - extra
 - fused-effects
 - fused-effects-lens
-- fused-effects-readline
+# - fused-effects-readline
+# - fused-effects-exceptions
 # - hashable
 # - unordered-containers
 

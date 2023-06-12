@@ -5,7 +5,7 @@ module Qafny.Utils where
 import           Control.Carrier.State.Church (State)
 import           Control.Effect.Error         (Error, Has, throwError)
 import           Control.Effect.Lens
-import           Control.Lens                 (at, (?~))
+import           Control.Lens                 (at, (?~), (^.))
 
 --
 import           Effect.Gensym                (Gensym, gensym)
@@ -17,6 +17,8 @@ import           Qafny.AST                    (Binding, Loc (..))
 import           Qafny.Transform              (TState, emitSt)
 import           Qafny.Variable               (Variable (variable))
 import           Text.Printf                  (printf)
+import GHC.Stack (HasCallStack, CallStack)
+import Debug.Trace (traceStack, trace)
 
 
 -- catchMaybe
@@ -29,12 +31,13 @@ import           Text.Printf                  (printf)
 
 -- | Catch the error in the Maybe and rethrow it as an Error
 rethrowMaybe
-  :: Has (Error e) sig m
+  :: ( Has (Error String) sig m
+     , HasCallStack )
   => m (Maybe a)
-  -> e
+  -> String
   -> m a
 rethrowMaybe mayFail err =
-  mayFail >>= maybe (throwError err) return
+  mayFail >>= maybe (error err) return
 
 
 gensymLoc
@@ -60,9 +63,12 @@ findEmitSym
      )
   => Binding -> m String
 findEmitSym b = do
-  rethrowMaybe @String
-    (use (emitSt . at b)) $
-    printf "the binding `%s` cannot be found in the renaming state." (show b)
+  st <- use emitSt
+  rethrowMaybe
+    (return (st ^. at b)) $
+    printf "the binding `%s` cannot be found in the renaming state.\n%s"
+      (show b)
+      (show st)
 
 
 -- | Remove bindings from emitSt

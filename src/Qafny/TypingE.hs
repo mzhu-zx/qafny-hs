@@ -26,7 +26,8 @@ import           Data.Functor                   ((<&>))
 import qualified Data.List                      as List
 import qualified Data.Map.Strict                as Map
 import qualified Data.Set                       as Set
-import           Effect.Cache                   (Cache, drawDefault)
+import           Effect.Cache                   (Cache, drawDefault, draw, cache)
+import           GHC.Stack                      (HasCallStack)
 import           Qafny.Error                    (QError (..))
 import           Qafny.Utils
     ( findEmitSym
@@ -35,6 +36,7 @@ import           Qafny.Utils
     , rethrowMaybe
     )
 import           Text.Printf                    (printf)
+import Debug.Trace (traceM)
 
 
 
@@ -43,12 +45,15 @@ import           Text.Printf                    (printf)
 -- | Compute the type of the given expression
 typingExp
   :: ( Has (State TState) sig m
+     , Has (Reader TEnv) sig m
      , Has (Error String) sig m
+     , HasCallStack
      )
   => Exp -> m Ty
 typingExp (ENum _)  = return TNat
-typingExp (EVar x)  =
-  use (kSt . at x) `rethrowMaybe` (show . UnknownVariableError) x
+typingExp (EVar x)  = do
+  env <- view kEnv
+  return (env ^. at x) `rethrowMaybe` (show $ UnknownVariableError x env) 
 typingExp (EOp2 op2 e1 e2) =
   do let top = typingOp2 op2
      t1 <- typingExp e1

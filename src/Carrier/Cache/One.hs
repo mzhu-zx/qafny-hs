@@ -8,7 +8,7 @@ module Carrier.Cache.One where
 -- | A carrier for 'Cache' effect, extract the cached value
 
 import           Control.Algebra
-import           Control.Carrier.State.Strict (StateC, evalState, runState)
+import           Control.Carrier.State.Church (StateC, evalState, runState)
 import           Control.Effect.Error         (Error, throwError)
 import           Control.Effect.State         (get, put)
 import           Data.Functor                 (($>), (<&>))
@@ -20,7 +20,7 @@ newtype CacheC s m a = CacheC { runCacheC :: StateC (Maybe s) m a }
 
 instance Algebra sig m => Algebra (Cache s :+: sig) (CacheC s m) where
   alg hdl sig ctx = CacheC $ case sig of
-    L (Cache s) -> put (Nothing :: Maybe s) $> ctx
+    L (Cache s) -> put (Just s) $> ctx
     L Draw      -> get <&> (<$ ctx)
     R other     -> alg (runCacheC . hdl) (R other) ctx
 
@@ -37,20 +37,20 @@ readCache
      (Has (Error String) sig m)
   => s -> CacheC s m a -> m (s, a)
 readCache s' c = do
-  (s, r) <- runState (Just s') $ runCacheC c
+  (s, r) <- runState (curry return) (Just s') $ runCacheC c
   return (fromJust s, r)
 
 -- | execute the computation but drop the cache
 dropCache_
   :: forall s a m .
-     Functor m
+     Applicative m
   => CacheC s m a -> m a
-dropCache_ = evalState undefined. runCacheC
+dropCache_ = evalState Nothing . runCacheC
 
 -- | 
 dropCache
   :: forall s a m .
-     Functor m
+     Applicative m
   => s -> CacheC s m a -> m a
 dropCache s = evalState (Just s) . runCacheC
 
