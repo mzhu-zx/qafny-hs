@@ -8,6 +8,9 @@ import opened QPreludeUntyped
 import opened Seq
 import opened Power2
 
+
+// For Qafny Commit: 02c5e1c765cb2ec44498b77776fb363bd25b2e9a
+
 method GHZ0 (n : nat)
 {
   // Forward Declaration
