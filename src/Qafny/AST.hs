@@ -150,6 +150,9 @@ typeTag TBool    = "bool"
 typeTag (TSeq t) = "seq__" ++ typeTag t ++ "__"
 typeTag _        = "unsupported"
 
+qComment :: String -> Stmt
+qComment = SDafny . ("// " ++)
+
 --------------------------------------------------------------------------------
 -- | Session Utils
 --------------------------------------------------------------------------------

@@ -39,7 +39,7 @@ import           Carrier.Cache.One
     , readCache
     )
 import           Control.Applicative            (Applicative (liftA2))
-import           Control.Monad                  (forM)
+import           Control.Monad                  (forM, when)
 import           Effect.Cache                   (Cache, drawDefault, drawErr, draw)
 import           GHC.Stack                      (HasCallStack)
 import           Qafny.AST
@@ -125,10 +125,10 @@ codegenToplevel q@(QMethod v bds rts rqs ens (Just block)) = do
   let stmtsDeclare = [ SVar (Binding vEmit tEmit) Nothing
                      | (Binding _ tEmit, vEmit) <- emitBdsNames ]
   let blockStmts =
-        [ SDafny "// Forward Declaration" ]
+        [ qComment "Forward Declaration" ]
         ++ stmtsDeclare
         ++ [ SDafny ""
-           , SDafny "// Method Definition"
+           , qComment "Method Definition"
            ]
         ++ inBlock block'
   return $ QMethod v bds rts rqs ens (Just . Block $ blockStmts)
@@ -206,7 +206,7 @@ codegenStmt s = error $ "Unimplemented:\n\t" ++ show s ++ "\n"
 -- | Code Generation of the `If` Statement
 codegenStmt'If
   :: ( Has (Reader TEnv) sig m
-     , Has (State TState)  sig m
+     , Has (State TState) sig m
      , Has (Error String) sig m
      , Has (Gensym String) sig m
      , Has (Gensym Binding) sig m
@@ -216,12 +216,17 @@ codegenStmt'If
 codegenStmt'If e seps b = do
   -- resolve the type of the guard
   stG@(locG, sG, qtG) <- typingGuard e
-  stB <- resolveSessions . leftSessions . inBlock $ b
+  stB'@(_, sB, qtB) <- resolveSessions . leftSessions . inBlock $ b
+  let annotateCastB = qComment $
+        printf "Cast Body Session %s => %s" (show qtB) (show TCH)
+  (stmtsCastB, stB) <- case qtB of
+    TCH -> return ([], stB')
+    _   -> (,) . (annotateCastB :) <$> castSessionCH stB' <*> resolveSession sB
   -- act based on the type of the guard
   stmts <- case qtG of
     THad -> codegenStmt'If'Had stG stB b
     _    -> undefined
-  return stmts
+  return $ stmtsCastB ++ stmts
 
 -- | Code Generation of an `If` statement with a Had session
 codegenStmt'If'Had
@@ -237,7 +242,6 @@ codegenStmt'If'Had stG stB' b = do
   -- 0. extract session, this will not be changed
   let sB = stB' ^. _2
   -- 1. cast the guard and duplicate the body session
-  stmtsCastG <- castSessionCH stB'
   (stmtsDupB, corr) <- dupState sB
   -- 2. codegen the body
   stmtB <- SEmit . SBlock <$> codegenBlock b
@@ -247,7 +251,7 @@ codegenStmt'If'Had stG stB' b = do
   stB <- resolveSession sB
   stmtsG <- mergeHadGuard stG stB cardMain cardStash
   let stmtsMerge = mergeEmitted corr
-  return $ stmtsCastG ++ stmtsDupB ++ [stmtB] ++ stmtsMerge ++ stmtsG
+  return $ stmtsDupB ++ [stmtB] ++ stmtsMerge ++ stmtsG
 
 
 -- | Assume `stG` is a Had guard, cast it into `CH` type and merge it with
@@ -265,7 +269,7 @@ mergeHadGuard stG' stB cardBody cardStashed = do
   mergeSTuples stB stG
   let ~(TSeq tInSeq) = tGENow
   return
-    [ SDafny "// Body Session + Guard Session"
+    [ qComment "Merge: Body session + the Guard session."
     , vGENow
         `SAssign` EOp2 OAdd
           (EEmit $ EMakeSeq tInSeq cardBody $ constExp (ENum 1))
@@ -332,7 +336,7 @@ castWithOp op s newTy =
     let sessionTy = s ^. _3
     -- assemble the emitted terms
     return . concat $
-      [ [ SDafny $ "// Cast " ++ show sessionTy ++ " ==> " ++ show newTy
+      [ [ qComment $ "Cast " ++ show sessionTy ++ " ==> " ++ show newTy
         , SAssign vNew $ EEmit (op `ECall` [EEmit $ EDafnyVar vOld])
         ]
       | (vOld, vNew) <- zip vOldEmits vNewEmits ]
