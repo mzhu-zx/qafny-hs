@@ -1,3 +1,7 @@
+#
+#// For Qafny Commit: 561f5bbbcb1f81abacf2654b75761d1370184ad4
+#
+
 method GHZ0 (n : nat)
   // requires n > 0
 {

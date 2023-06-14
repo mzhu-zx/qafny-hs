@@ -9,7 +9,7 @@ import opened Seq
 import opened Power2
 
 
-// For Qafny Commit: 02c5e1c765cb2ec44498b77776fb363bd25b2e9a
+// For Qafny Commit: 561f5bbbcb1f81abacf2654b75761d1370184ad4
 
 method GHZ0 (n : nat)
 {
@@ -26,6 +26,7 @@ method GHZ0 (n : nat)
   p__seq__nat____1 := seq<nat>(1, _ => 0);
   // Cast TNor ==> THad
   q__seq__nat____2 := CastNorHad(q__seq__nat____0);
+  // Cast Body Session TNor => TCH
   // Cast TNor ==> TCH
   p__seq__nat____3 := CastNorCH10(p__seq__nat____1);
   p__seq__nat____4 := p__seq__nat____3;
@@ -34,7 +35,7 @@ method GHZ0 (n : nat)
   }
 
   p__seq__nat____3 := p__seq__nat____3 + p__seq__nat____4;
-  // Body Session + Guard Session
+  // Merge: Body session + the Guard session.
   q__seq__nat____5 := seq<nat>(|p__seq__nat____3|, _ => 1) + seq<nat>(|p__seq__nat____4|, _ => 0);
 }
 
