@@ -20,9 +20,6 @@ import           Control.Effect.State           (State)
 import           Effect.Gensym                  (Gensym, gensym)
 
 -- Handlers
-import           Control.Carrier.Error.Either   (runError)
-import           Control.Carrier.Reader         (runReader)
-import           Control.Carrier.State.Strict   (runState)
 import           Qafny.Gensym                   (runGensym)
 
 -- Utils
@@ -33,14 +30,7 @@ import qualified Data.Map.Strict                as Map
 
 
 -- Qafny
-import           Carrier.Cache.One
-    ( dropCache
-    , dropCache_
-    , readCache
-    )
-import           Control.Applicative            (Applicative (liftA2))
-import           Control.Monad                  (forM, when)
-import           Effect.Cache                   (Cache, drawDefault, drawErr, draw)
+import           Control.Monad                  (forM)
 import           GHC.Stack                      (HasCallStack)
 import           Qafny.AST
 import           Qafny.Config
@@ -48,8 +38,6 @@ import           Qafny.Transform
     ( STuple
     , TEnv (..)
     , TState
-    , initTEnv
-    , initTState
     , kEnv
     , sSt
     , xSt
@@ -193,8 +181,8 @@ codegenStmt (SApply s@(Session ranges) e@(EEmit (ELambda {}))) = do
   checkSubtypeQ TCH qt
   let tyEmit = typingQEmit qt
   -- it's important not to use a fully resolved `s` here, because you don't want
-  -- to apply the op to the entire session but only a part of it. 
-  let vsRange = varFromSession s 
+  -- to apply the op to the entire session but only a part of it.
+  let vsRange = varFromSession s
   vsEmit <- forM vsRange $ findEmitSym . (`Binding` tyEmit)
   return $ mkMapCall `map` vsEmit
   where
@@ -355,7 +343,7 @@ castSessionCH st@(locS, s, qtS) = do
     THad -> castWithOp "CastHadCH10" st TCH
     TCH -> throwError @String $
       printf "Session `%s` is already of CH type." (show st)
-  
+
 
 -- | Duplicate the data, i.e. sequences to be emitted, by generating statement
 -- duplicating the data as well as the correspondence between the range

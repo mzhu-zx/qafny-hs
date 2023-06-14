@@ -10,8 +10,6 @@ import           Qafny.AST                    (AST, Ty)
 import           Qafny.CodegenE               (codegenAST)
 import           Qafny.Config                 (Configs)
 import           Qafny.Transform
-import GHC.Stack (HasCallStack)
-import Debug.Trace (traceStack)
 
 --------------------------------------------------------------------------------
 -- Wrapper

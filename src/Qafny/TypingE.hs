@@ -20,13 +20,13 @@ import           Qafny.AST
 import           Qafny.Transform
 
 -- Utils
-import           Control.Lens                   (_2, _3, at, (%~), (?~), (^.))
+import           Control.Lens                   (at, (%~), (?~), (^.))
 import           Control.Monad                  (forM, unless, when)
 import           Data.Functor                   ((<&>))
 import qualified Data.List                      as List
 import qualified Data.Map.Strict                as Map
 import qualified Data.Set                       as Set
-import           Effect.Cache                   (Cache, drawDefault, draw, cache)
+import           Debug.Trace                    (traceM, traceStack)
 import           GHC.Stack                      (HasCallStack)
 import           Qafny.Error                    (QError (..))
 import           Qafny.Utils
@@ -36,7 +36,6 @@ import           Qafny.Utils
     , rethrowMaybe
     )
 import           Text.Printf                    (printf)
-import Debug.Trace (traceM, traceStack)
 
 
 
@@ -53,7 +52,7 @@ typingExp
 typingExp (ENum _)  = return TNat
 typingExp (EVar x)  = do
   env <- view kEnv
-  return (env ^. at x) `rethrowMaybe` (show $ UnknownVariableError x env) 
+  return (env ^. at x) `rethrowMaybe` (show $ UnknownVariableError x env)
 typingExp (EOp2 op2 e1 e2) =
   do let top = typingOp2 op2
      t1 <- typingExp e1
