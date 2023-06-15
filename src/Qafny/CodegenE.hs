@@ -187,23 +187,10 @@ codegenStmt (SApply s@(Session ranges) e@(EEmit (ELambda {}))) = do
   return $ mkMapCall `map` vsEmit
   where
     mkMapCall v = v `SAssign` EEmit (ECall "Map" [e, EVar v])
-codegenStmt (SIf e seps b) = codegenStmt'If e seps b
-codegenStmt s = error $ "Unimplemented:\n\t" ++ show s ++ "\n"
-
-
--- | Code Generation of the `If` Statement
-codegenStmt'If
-  :: ( Has (Reader TEnv) sig m
-     , Has (State TState) sig m
-     , Has (Error String) sig m
-     , Has (Gensym String) sig m
-     , Has (Gensym Binding) sig m
-     )
-  => Exp -> Separates -> Block
-  -> m [Stmt]
-codegenStmt'If e seps b = do
+codegenStmt (SIf e seps b) = do
   -- resolve the type of the guard
-  stG@(locG, sG, qtG) <- typingGuard e
+  stG@(_, _, qtG) <- typingGuard e
+  -- resolve the body session
   stB'@(_, sB, qtB) <- resolveSessions . leftSessions . inBlock $ b
   let annotateCastB = qComment $
         printf "Cast Body Session %s => %s" (show qtB) (show TCH)
@@ -215,6 +202,15 @@ codegenStmt'If e seps b = do
     THad -> codegenStmt'If'Had stG stB b
     _    -> undefined
   return $ stmtsCastB ++ stmts
+
+codegenStmt (SFor idx boundl boundr eG invs seps body) = do
+  -- resolve the type of the guard
+  stG@(_, _, qtG) <- typingGuard eG
+  freeSession <- resolveSessions . leftSessions . inBlock $ body
+  undefined
+
+codegenStmt s = error $ "Unimplemented:\n\t" ++ show s ++ "\n"
+
 
 -- | Code Generation of an `If` statement with a Had session
 codegenStmt'If'Had
