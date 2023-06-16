@@ -222,6 +222,7 @@ mergeSTuples
   do
     -- Sanity Check
     unless (qtMain == qtAux && qtAux == TCH) $
+      traceStack "" $
       throwError @String $ printf "%s and %s have different Q types!"
         (show stM) (show stA)
     -- start merge

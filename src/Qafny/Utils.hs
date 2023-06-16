@@ -29,6 +29,11 @@ import Debug.Trace (traceStack, trace)
 -- catchMaybe mayFail fail' =
 --   mayFail >>= maybe fail' return
 
+throwError'
+  :: ( Has (Error String) sig m )
+  => String -> m a
+throwError' = throwError @String
+
 -- | Catch the error in the Maybe and rethrow it as an Error
 rethrowMaybe
   :: ( Has (Error String) sig m

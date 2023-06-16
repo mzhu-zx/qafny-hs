@@ -30,7 +30,7 @@ import qualified Data.Map.Strict                as Map
 
 
 -- Qafny
-import           Control.Monad                  (forM)
+import           Control.Monad                  (forM, unless)
 import           GHC.Stack                      (HasCallStack)
 import           Qafny.AST
 import           Qafny.Config
@@ -60,6 +60,7 @@ import           Qafny.Utils
     ( findEmitSym
     , gensymEmit
     , gensymLoc
+    , throwError'
     )
 import           Text.Printf                    (printf)
 
@@ -205,9 +206,38 @@ codegenStmt (SIf e seps b) = do
 
 codegenStmt (SFor idx boundl boundr eG invs seps body) = do
   -- resolve the type of the guard
-  stG@(_, _, qtG) <- typingGuard eG
-  freeSession <- resolveSessions . leftSessions . inBlock $ body
-  undefined
+  stG@(_, sG, qtG) <- typingGuard eG
+  stB'@(_, sB, qtB) <- resolveSessions . leftSessions . inBlock $ body
+  (stmtsCastB, stB) <- case qtB of
+    TCH -> return ([], stB')
+    _   -> (,) <$> castSessionCH stB' <*> resolveSession (stB' ^. _2)
+  -- what to do with the guard session is unsure...
+  (stmtsDupG, gCorr) <- dupState sG
+  (sL, eConstraint) <- makeLoopSession sG boundl boundr
+
+  (stmtsPrelude, stmtsBody) <- case qtG of
+    THad -> do (stGSplited, stmtsSplitG) <- splitHadSession stG sL
+               (_, _, ~[vEmitG], tEmitG)<- retypeSession stGSplited TCH
+               let cardVEmitG = EEmit . ECard . EVar $ vEmitG
+               let stmtsInitG =
+                     [ qComment "Retype from Had to CH and initialize with 0"
+                     , SAssign vEmitG $
+                         EEmit $ EMakeSeq TNat cardVEmitG $ constExp $ ENum 0 ]
+               -- Make a temporary counter to record `Pow`s when coverting a Had
+               -- to a CH session (not added to `emitSt` on purpose!)
+               -- vEmitCounter <- gensym (Binding "had_counter" TNat)
+               -- let stmtsInitCounter =
+               --       [ qComment "Initialize Had Power Counter"
+               --       , SAssign vEmitCounter (ENum 1) ]
+               -- Resolve again to get the new quantum type!
+               stG' <- resolveSession (stGSplited ^. _2)
+               stmtsCGHad <-
+                 codegenStmt'For'Had stB stG' vEmitG idx body
+               return $ ( stmtsInitG -- ++ stmtsInitCounter
+                        , stmtsSplitG ++ stmtsCGHad)
+    _    -> undefined
+  let innerFor = SEmit $ SForEmit idx boundl boundr [] $ Block stmtsBody
+  return $ stmtsCastB ++ stmtsDupG ++ stmtsPrelude ++ [innerFor]
 
 codegenStmt s = error $ "Unimplemented:\n\t" ++ show s ++ "\n"
 
@@ -238,6 +268,43 @@ codegenStmt'If'Had stG stB' b = do
   return $ stmtsDupB ++ [stmtB] ++ stmtsMerge ++ stmtsG
 
 
+-- | Code Generation of a `For` statement with a Had session
+codegenStmt'For'Had
+  :: ( Has (Reader TEnv) sig m
+     , Has (State TState)  sig m
+     , Has (Error String) sig m
+     , Has (Gensym String) sig m
+     , Has (Gensym Binding) sig m
+     )
+  => STuple -> STuple -> Var -> Var -> Block
+  -> m [Stmt]
+codegenStmt'For'Had stB stG vEmitG vIdx b = do
+  -- 0. extract session, this will not be changed
+  let sB = stB ^. _2
+  -- 1. duplicate the guard
+  (stmtsDupB, corrB) <- dupState sB
+  -- 3. codegen the body
+  stmtB <- SEmit . SBlock <$> codegenBlock b
+  -- 4. merge the main body with the stashed
+  let stmtsMergeB = mergeEmitted corrB
+
+  -- 5. (Proposed) compute the value for the had ket from the counter and the
+  -- body cardinality
+  -- 
+  -- (cardMain, cardStash) <- cardStatesCorr corrB
+  -- let stmtsUpdateG =
+  --       hadGuardMergeExp vEmitG tEmitG cardMain cardStash (EVar vEmitCounter)
+  -- 
+  -- TODO: in the current implementation, if the number of kets is changed in
+  -- the body, this strategy is incorrect!
+
+  -- 5. (Compromise) double the counter
+  let stmtAdd1 = addCHHad1 vEmitG vIdx
+  mergeSTuples stB stG
+  return $ stmtsDupB ++ [stmtB] ++ stmtsMergeB ++ [stmtAdd1]
+
+
+
 -- | Assume `stG` is a Had guard, cast it into `CH` type and merge it with
 -- the session in`stB`. The number of kets in the generated states depends on
 -- the number of kets in the body and that in the stashed body
@@ -247,19 +314,30 @@ mergeHadGuard
      , Has (Gensym Binding) sig m
      )
   => STuple -> STuple -> Exp -> Exp -> m [Stmt]
-mergeHadGuard stG' stB cardBody cardStashed = do
+mergeHadGuard = mergeHadGuardWith (ENum 0)
+
+mergeHadGuardWith
+  :: ( Has (State TState) sig m
+     , Has (Error String) sig m
+     , Has (Gensym Binding) sig m
+     )
+  => Exp -> STuple -> STuple -> Exp -> Exp -> m [Stmt]
+mergeHadGuardWith eBase stG' stB cardBody cardStashed = do
   (_, _, vGENow, tGENow) <- retypeSession1 stG' TCH
   stG <- resolveSession (stG' ^. _2)
   mergeSTuples stB stG
-  let ~(TSeq tInSeq) = tGENow
-  return
-    [ qComment "Merge: Body session + the Guard session."
-    , vGENow
-        `SAssign` EOp2 OAdd
-          (EEmit $ EMakeSeq tInSeq cardBody $ constExp (ENum 1))
-          (EEmit $ EMakeSeq tInSeq cardStashed $ constExp (ENum 0))
-    ]
+  return $ hadGuardMergeExp vGENow tGENow cardBody cardStashed eBase
 
+hadGuardMergeExp :: Var -> Ty -> Exp -> Exp -> Exp -> [Stmt]
+hadGuardMergeExp vEmit tEmit cardMain cardStash eBase =
+  let ~(TSeq tInSeq) = tEmit
+  in [ qComment "Merge: Body session + the Guard session."
+     , vEmit
+       `SAssign` EOp2 OAdd
+        (EEmit $ EMakeSeq tInSeq cardMain $
+          constExp $ EOp2 OAdd eBase (ENum 1))
+        (EEmit $ EMakeSeq tInSeq cardStash $ constExp eBase)
+     ]
 
 
 -- Emit two expressions representing the number of kets in two states in
@@ -337,7 +415,7 @@ castSessionCH st@(locS, s, qtS) = do
   case qtS of
     TNor -> castWithOp "CastNorCH10" st TCH
     THad -> castWithOp "CastHadCH10" st TCH
-    TCH -> throwError @String $
+    TCH -> throwError' $
       printf "Session `%s` is already of CH type." (show st)
 
 
@@ -347,7 +425,7 @@ castSessionCH st@(locS, s, qtS) = do
 -- varaibles
 --
 -- However, this does not add the generated symbols to the typing environment or
--- modifying the existing bindings!p
+-- modifying the existing bindings!
 dupState
   :: ( Has (Error String) sig m
      , Has (State TState) sig m
@@ -364,3 +442,64 @@ dupState s' = do
   let stmts = [ SAssign vEmitFresh (EVar vEmitPrev)
               | (vEmitFresh, vEmitPrev) <- zip vsEmitFresh vsEmitPrev ]
   return (stmts, zip3 bds vsEmitPrev vsEmitFresh)
+
+-- | Assemble a session collected from the guard with bounds and emit a check.
+--
+-- Precondition: Split has been performed at the subtyping stage so that it's
+-- guaranteed that only one range can be in the session
+--
+makeLoopSession
+  :: Has (Error String) sig m
+  => Session -> Exp -> Exp -> m (Session, Exp)
+makeLoopSession (Session [Range r sl sh]) l h =
+  return
+    ( Session [Range r l h]
+    , EEmit (EOpChained l [(OLe, sl), (OLt, sh), (OLe, h)])
+    )
+makeLoopSession s _ _ =
+  throwError $
+    "Session `"
+      ++ show s
+      ++ "` contains more than 1 range, this should be resolved at the typing stage"
+
+
+--------------------------------------------------------------------------------
+-- | Split Semantics
+--------------------------------------------------------------------------------
+-- | Given a Had Session and a partition, if the session contains more qubits
+-- than the partition, then split the session, return the STuple containing only
+-- this partition and generates statements to perform the split in Dafny.n
+splitHadSession
+  :: ( Has (Error String) sig m
+     )
+  => STuple -> Session
+  -> m (STuple, [Stmt])
+splitHadSession sFull@(locS, Session [rS], THad) (Session [rS']) = do
+  if rS == rS'
+    then return (sFull, [])
+    else undefined -- TODO: implement the split
+splitHadSession sFull sPart =
+  throwError' $
+    printf "%s or %s is not a singleton Had session!" (show sFull) (show sPart)
+
+--------------------------------------------------------------------------------
+-- | Merge Semantics
+--------------------------------------------------------------------------------
+-- | Merge semantics of a Had qubit into one CH emitted state
+-- uses the name of the emitted seq as well as the index name
+addCHHad1 :: Var -> Var -> Stmt
+addCHHad1 vEmit idx =
+  SAssign vEmit $
+    EOp2 OAdd (EVar vEmit) (EEmit $ ECall "Map" [eLamPlusPow2, EVar vEmit])
+  where
+    vfresh = "x__lambda"
+    eLamPlusPow2 =
+      EEmit . ELambda vfresh $
+        EOp2 OAdd (EVar vfresh) (EEmit (ECall "Pow2" [EVar idx]))
+
+
+-- | Multiply the Had coutner by 2
+doubleHadCounter :: Var -> Stmt
+doubleHadCounter vCounter =
+  SAssign vCounter $ EOp2 OMul (ENum 2) (EVar vCounter)
+  

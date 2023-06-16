@@ -333,7 +333,6 @@ mergeRange2 tyEmit rMain@(Range vMain _ _) rStash@(Range vStash _ _) =
 
 -- | Merge semantics of a Had qubit into one CH emitted state
 -- uses the name of the emitted seq as well as the index name
-
 addCHHad1 :: Var -> Var -> Stmt
 addCHHad1 vEmit idx =
   SAssign vEmit $
