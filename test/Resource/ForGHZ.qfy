@@ -1,0 +1,18 @@
+method GHZ(q : nor, n : nat)
+//  requires { q[0 .. n] :: nor ↦ Σ i ∈ [0 .. 1] . (_, 0) }
+  requires (n >= 3)
+{
+  // induce superposition on the first qubit
+  q[0..1] *= H;
+
+  // always take the ith qubit as the controller 
+  for i in [0 .. (n - 1)] with q[i .. (i + 1)]
+    // provide hints on how to perform separation
+    separates q[(i + 1) .. (i + 2)]
+    // invariant {
+    //   q [0 .. (i + 1)] :: ch01 ↦ Σ j ∈ [0 .. 2] . Σ k ∈ [0 .. j] . (_, j)
+    // }
+  {
+    q[(i + 1) .. (i + 2)] *= λ (x => (x + 1) % 2);
+  }
+}

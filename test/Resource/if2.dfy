@@ -44,7 +44,7 @@ method GHZ0 (n : nat)
 
   g__seq__nat____5 := g__seq__nat____5 + g__seq__nat____6;
   // Merge: Body session + the Guard session.
-  q__seq__nat____7 := seq<nat>(|g__seq__nat____5|, _ => 1) + seq<nat>(|g__seq__nat____6|, _ => 0);
+  q__seq__nat____7 := seq<nat>(|g__seq__nat____5|, _ => 0 + 1) + seq<nat>(|g__seq__nat____6|, _ => 0);
   g__seq__nat____8 := g__seq__nat____5;
   q__seq__nat____9 := q__seq__nat____7;
   {
@@ -55,7 +55,7 @@ method GHZ0 (n : nat)
   g__seq__nat____5 := g__seq__nat____5 + g__seq__nat____8;
   q__seq__nat____7 := q__seq__nat____7 + q__seq__nat____9;
   // Merge: Body session + the Guard session.
-  p__seq__nat____10 := seq<nat>(|g__seq__nat____5|, _ => 1) + seq<nat>(|g__seq__nat____8|, _ => 0);
+  p__seq__nat____10 := seq<nat>(|g__seq__nat____5|, _ => 0 + 1) + seq<nat>(|g__seq__nat____8|, _ => 0);
 }
 
 }

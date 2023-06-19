@@ -35,6 +35,7 @@ data Op2
   = OAnd
   | OOr
   | OAdd
+  | OSub
   | OMul
   | OMod
   | ONor

@@ -1,5 +1,10 @@
 {
-module Qafny.Lexer(runScanner, Token (..)) where
+module Qafny.Lexer(
+  runScanner,
+  module Qafny.Token
+) where
+
+import Qafny.Token
 }
 
 %wrapper "posn"
@@ -15,6 +20,8 @@ $digit = 0-9
 @aand = (&&)
 @aor = (\|\|)
 @adot = (\.\.)
+@age = (>=)
+@ale = (\<\=)
 @eq = (==)
 @arrow = (=>)
 
@@ -43,7 +50,7 @@ token :-
   for              { emit $  TFor                }
   in               { emit $  TIn                 }
   with             { emit $  TWith               }
-  invariants       { emit $  TInv                }
+  invariant        { emit $  TInv                }
   H                { emit $  THApp               }
   QFT              { emit $  TQFT                }
   RQFT             { emit $  TRQFT               }
@@ -54,14 +61,17 @@ token :-
   @qassign         { emit $  TApply              }
   @eq              { emit $  TEq                 }
   @arrow           { emit $  TArrow              }
+  @age             { emit $  TGe                 }
+  @ale             { emit $  TLe                 }
   \*               { emit $  TMul                }
   \+               { emit $  TAdd                }
+  \-               { emit $  TSub                }
   \%               { emit $  TMod                }
   \[               { emit $  TLBracket           }
   \]               { emit $  TRBracket           }
   @aand            { emit $  TAnd                }
   @aor             { emit $  TOr                 }
-  @adot            { emit $  TDot                }
+  @adot            { emit $  TDots               }
   \|               { emit $  TBar                }
   \(               { emit $  TLPar               }
   \)               { emit $  TRPar               }
@@ -73,61 +83,6 @@ token :-
   \:               { emit $  TColon              }
   \;               { emit $  TSemi               }
 {
-
-data Token = TDafny String
-           | TLitInt Int
-           | TRequires
-           | TEnsures
-           | TMethod
-           | TAssert
-           | TLPar
-           | TRPar
-           | TLAng
-           | TRAng
-           | TLBrace
-           | TRBrace
-           | TLBracket
-           | TRBracket
-           | TForall
-           | TBar
-           | TEOF
-           | TReturns
-           | TNat
-           | TInt
-           | TBool
-           | TIn
-           | TSeq
-           | TNor
-           | TArrow
-           | THad
-           | TCH
-           | TId String
-           | TComma
-           | TColon
-           | TAssign
-           | TApply
-           | TEq
-           | TSemi
-           | TVar
-           | TIf
-           | TCl
-           | TMul
-           | TAdd
-           | TMod
-           | TAnd
-           | TOr
-           | TNot
-           | TDot
-           | THApp
-           | TQFT
-           | TRQFT
-           | TMea
-           | TSeparates
-           | TInv
-           | TWith
-           | TFor
-           deriving (Show, Eq)
-
 -- alexScanTokens str = go (alexStartPos, '\n', [], str)
 --   where
 --     go inp@(pos, _, _, str) =
@@ -138,10 +93,13 @@ data Token = TDafny String
 --         AlexError (AlexPn _ line column, _, _, _) -> error $ unwords
 --           [ "lexical error at", show line, "line,", show column, "column" ]
 -- 
-runScanner :: String -> Either String [Token]
+runScanner :: String -> Either String [SToken]
 runScanner = return . alexScanTokens
 
-pushToken f p = f
-emit t p s = t 
+srclocFromPosn :: AlexPosn -> SrcLoc
+srclocFromPosn (AlexPn _ l c) = SrcLoc {sLine = l, sColumn = c}
+
+pushToken f p s = (srclocFromPosn p, f s)
+emit t p _ = (srclocFromPosn p, t)
 
 }

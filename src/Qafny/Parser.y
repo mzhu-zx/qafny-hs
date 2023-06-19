@@ -7,61 +7,64 @@ import           Control.Monad
 }
 
 %name runParser
-%tokentype { L.Token }
+%tokentype { L.SToken }
 %error { parseError }
 %monad { Parser }{ >>= }{ return }
 
 %token
-digits                { L.TLitInt $$  }
-dafny                 { L.TDafny $$   }
-"method"              { L.TMethod     }
-"ensures"             { L.TEnsures    }
-"requires"            { L.TRequires   }
-"separates"           { L.TSeparates  }
-"invariants"          { L.TInv        }
-"with"                { L.TWith       }
-"for"                 { L.TFor        }
-"returns"             { L.TReturns    }
-"not"                 { L.TNot        }
-"nat"                 { L.TNat        }
-"int"                 { L.TInt        }
-"in"                  { L.TIn         }
-"bool"                { L.TBool       }
-"seq"                 { L.TSeq        }
-"nor"                 { L.TNor        }
-"had"                 { L.THad        }
-"H"                   { L.THApp       }
-"QFT"                 { L.TQFT        }
-"RQFT"                { L.TRQFT       }
-"meas"                { L.TMea        }
-"ch"                  { L.TCH         }
-"var"                 { L.TVar        }
-"if"                  { L.TIf         }
-"λ"                   { L.TCl         }
-"assert"              { L.TAssert     }
-"||"                  { L.TOr         }
-"&&"                  { L.TAnd        }
-'+'                   { L.TAdd        }
-'*'                   { L.TMul        }
-'\%'                  { L.TMod        }
-'|'                   { L.TBar        }
-'('                   { L.TLPar       }
-')'                   { L.TRPar       }
-'<'                   { L.TLAng       }
-'>'                   { L.TRAng       }
-'['                   { L.TLBracket   }
-']'                   { L.TRBracket   }
-'{'                   { L.TLBrace     }
-'}'                   { L.TRBrace     }
-id                    { L.TId $$      }
-','                   { L.TComma      }
-':'                   { L.TColon      }
-';'                   { L.TSemi       }
-"=="                  { L.TEq         }
-"=>"                  { L.TArrow      }
-":="                  { L.TAssign     }
-"*="                  { L.TApply      }
-".."                  { L.TDot        }
+digits                { ( _, L.TLitInt $$ ) }
+dafny                 { ( _, L.TDafny $$  ) }
+"method"              { ( _, L.TMethod    ) }
+"ensures"             { ( _, L.TEnsures   ) }
+"requires"            { ( _, L.TRequires  ) }
+"separates"           { ( _, L.TSeparates ) }
+"invariant"           { ( _, L.TInv       ) }
+"with"                { ( _, L.TWith      ) }
+"for"                 { ( _, L.TFor       ) }
+"returns"             { ( _, L.TReturns   ) }
+"not"                 { ( _, L.TNot       ) }
+"nat"                 { ( _, L.TNat       ) }
+"int"                 { ( _, L.TInt       ) }
+"in"                  { ( _, L.TIn        ) }
+"bool"                { ( _, L.TBool      ) }
+"seq"                 { ( _, L.TSeq       ) }
+"nor"                 { ( _, L.TNor       ) }
+"had"                 { ( _, L.THad       ) }
+"H"                   { ( _, L.THApp      ) }
+"QFT"                 { ( _, L.TQFT       ) }
+"RQFT"                { ( _, L.TRQFT      ) }
+"meas"                { ( _, L.TMea       ) }
+"ch"                  { ( _, L.TCH        ) }
+"var"                 { ( _, L.TVar       ) }
+"if"                  { ( _, L.TIf        ) }
+"λ"                   { ( _, L.TCl        ) }
+"assert"              { ( _, L.TAssert    ) }
+"||"                  { ( _, L.TOr        ) }
+"&&"                  { ( _, L.TAnd       ) }
+'+'                   { ( _, L.TAdd       ) }
+'-'                   { ( _, L.TSub       ) }
+'*'                   { ( _, L.TMul       ) }
+'\%'                  { ( _, L.TMod       ) }
+'|'                   { ( _, L.TBar       ) }
+'('                   { ( _, L.TLPar      ) }
+')'                   { ( _, L.TRPar      ) }
+'<'                   { ( _, L.TLAng      ) }
+'>'                   { ( _, L.TRAng      ) }
+'['                   { ( _, L.TLBracket  ) }
+']'                   { ( _, L.TRBracket  ) }
+'{'                   { ( _, L.TLBrace    ) }
+'}'                   { ( _, L.TRBrace    ) }
+id                    { ( _, L.TId $$     ) }
+','                   { ( _, L.TComma     ) }
+':'                   { ( _, L.TColon     ) }
+';'                   { ( _, L.TSemi      ) }
+"=="                  { ( _, L.TEq        ) }
+"=>"                  { ( _, L.TArrow     ) }
+">="                  { ( _, L.TGe        ) }
+"<="                  { ( _, L.TLe        ) }
+":="                  { ( _, L.TAssign    ) }
+"*="                  { ( _, L.TApply     ) }
+".."                  { ( _, L.TDots      ) }
 
 %%
 AST
@@ -90,7 +93,6 @@ invs
 
 separates :: { Session }
   : "separates" session               { $2                                   }
-{-  : "separates" session               {% separatesOnly $1                    } -}
 
 conds
   : {- empty -}                       { []                                   }
@@ -99,7 +101,7 @@ conds
 cond                                                                      
   : "requires" expr                   { Requires $2                          }
   | "ensures" expr                    { Ensures $2                           }
-  | "invariants" expr                 { Invariants $2                        }
+  | "invariant" expr                  { Invariants $2                        }
                                                                           
 bindings                                                                  
   : bindings_                         { reverse $1                           }
@@ -145,7 +147,7 @@ stmt
   | session "*=" expr ';'             { SApply $1 $3                         }
   | "if" '(' expr ')' separates block
                                       { SIf $3 $5 $6                         }
-  | "for" id "in" '[' atomic ".." atomic ']' "with" expr invs separates block
+  | "for" id "in" '[' expr ".." expr ']' "with" expr invs separates block
                                       { SFor $2 $5 $7 $10 $11 $12 $13        }
                                                                           
 session :: { Session }                                                               
@@ -159,24 +161,42 @@ range
   : id '[' expr ".." expr ']'         { Range $1 $3 $5                       }
                                                                           
 expr                                                                      
-  : atomic                            { $1                                   }
-  | session                           { ESession $1                          }
-  | "H"                               { EHad                                 }
-  | "QFT"                             { EQFT                                 }
-  | "RQFT"                            { ERQFT                                }
-  | "meas" id                         { EMea $2                              }
-  | "not" atomic                      { EOp1 ONot $2                         }
-  | "nor" '(' atomic ',' digits ')'   { EOp2 ONor $3 (ENum $5)               }
-  | "λ" '(' id "=>" expr ')'          { EEmit $ ELambda $3 $5                }
-  | id '(' atomic ')'                 { EApp $1 $3                           }
-  | atomic '+' atomic                 { EOp2 OAdd $1 $3                      }
-  | atomic "&&" atomic                { EOp2 OAnd $1 $3                      }
-  | atomic "||" atomic                { EOp2 OOr $1 $3                       }
-  | atomic '*' atomic                 { EOp2 OMul $1 $3                      }
-  | expr '\%' expr                    { EOp2 OMod $1 $3                      }
-  | expr '>' expr                     { EOp2 OGt $1 $3                      }
-  | '(' expr ')'                      { $2                                   }
-                                                                            
+  : atomic                            { $1                     }
+  | session                           { ESession $1            }
+  | "H"                               { EHad                   }
+  | "QFT"                             { EQFT                   }
+  | "RQFT"                            { ERQFT                  }
+  | "meas" id                         { EMea $2                }
+  | "not" atomic                      { EOp1 ONot $2           }
+  | "nor" '(' atomic ',' digits ')'   { EOp2 ONor $3 (ENum $5) }
+  | "λ" '(' id "=>" expr ')'          { EEmit $ ELambda $3 $5  }
+  | id '(' atomic ')'                 { EApp $1 $3             }
+  | atomic "&&" atomic                { EOp2 OAnd $1 $3        }
+  | atomic "||" atomic                { EOp2 OOr $1 $3         }
+  | cmpExpr                           { $1                     }
+  | arithExpr                         { $1                     }
+  | '(' expr ')'                      { $2                     }
+
+cmpExpr :: { Exp }
+ : expr cmp expr            { EOp2 $2 $1 $3 }
+
+cmp :: { Op2 }
+ : '>'                      { OGt }
+ | '<'                      { OLt }
+ | ">="                     { OGe }
+ | "<="                     { OLe }
+
+arithExpr :: { Exp }
+ : expr arith expr            { EOp2 $2 $1 $3 }
+
+arith :: { Op2 }
+ : '+'                      { OAdd }
+ | '-'                      { OSub }
+ | '*'                      { OMul }
+ | '\%'                     { OMod }
+
+
+
 atomic                                                                      
   : digits                            { ENum $1                              }
   | id                                { EVar $1                              }

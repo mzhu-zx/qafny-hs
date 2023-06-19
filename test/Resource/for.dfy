@@ -9,6 +9,7 @@ import opened Seq
 import opened Power2
 
 method For0 (n : nat)
+  requires n > 0
 {
   // Forward Declaration
   var p__seq__nat____6 : seq<nat>;
@@ -20,8 +21,8 @@ method For0 (n : nat)
   var q__seq__nat____0 : seq<nat>;
   
   // Method Definition
-  q__seq__nat____0 := seq<nat>(1, _ => 0);
-  p__seq__nat____1 := seq<nat>(1, _ => 0);
+  q__seq__nat____0 := seq<nat>(n, _ => 0);
+  p__seq__nat____1 := seq<nat>(n, _ => 0);
   // Cast TNor ==> THad
   q__seq__nat____2 := CastNorHad(q__seq__nat____0);
   // Cast TNor ==> TCH
@@ -29,7 +30,7 @@ method For0 (n : nat)
   q__seq__nat____4 := q__seq__nat____2;
   // Retype from Had to CH and initialize with 0
   q__seq__nat____5 := seq<nat>(|q__seq__nat____5|, _ => 0);
-  for i := 0 to 1
+  for i := 0 to n
   {
     p__seq__nat____6 := p__seq__nat____3;
     {
