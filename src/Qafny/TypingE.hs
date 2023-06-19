@@ -20,14 +20,7 @@ import           Qafny.AST
 import           Qafny.Transform
 
 -- Utils
-import           Control.Lens
-    ( Each (each)
-    , at
-    , (%~)
-    , (?~)
-    , (^.)
-    , (%%~)
-    )
+import           Control.Lens                   (at, (%~), (?~), (^.))
 import           Control.Monad                  (forM, unless, when)
 import           Data.Functor                   ((<&>))
 import qualified Data.List                      as List
@@ -242,7 +235,7 @@ mergeSTuples
     -- xSt %= Map.union newAuxLocs -- use Main's loc for aux
     xSt %= Map.map
       (\rLoc -> [ (r, loc')
-                | (r, loc) <- rLoc, 
+                | (r, loc) <- rLoc,
                   let loc' = if loc == locAux then locMain else loc])
     sSt %=
       (`Map.withoutKeys` Set.singleton locAux) . -- GC aux's loc

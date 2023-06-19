@@ -23,14 +23,14 @@ import           Effect.Gensym                  (Gensym, gensym)
 import           Qafny.Gensym                   (runGensym)
 
 -- Utils
-import           Control.Lens                   (non, at, (%~), (?~), (^.))
+import           Control.Lens                   (at, non, (%~), (?~), (^.))
 import           Control.Lens.Tuple
 import           Data.Functor                   ((<&>))
 import qualified Data.Map.Strict                as Map
 
 
 -- Qafny
-import           Control.Monad                  (forM, unless)
+import           Control.Monad                  (forM)
 import           GHC.Stack                      (HasCallStack)
 import           Qafny.AST
 import           Qafny.Config
@@ -290,11 +290,11 @@ codegenStmt'For'Had stB stG vEmitG vIdx b = do
 
   -- 5. (Proposed) compute the value for the had ket from the counter and the
   -- body cardinality
-  -- 
+  --
   -- (cardMain, cardStash) <- cardStatesCorr corrB
   -- let stmtsUpdateG =
   --       hadGuardMergeExp vEmitG tEmitG cardMain cardStash (EVar vEmitCounter)
-  -- 
+  --
   -- TODO: in the current implementation, if the number of kets is changed in
   -- the body, this strategy is incorrect!
 
@@ -502,4 +502,4 @@ addCHHad1 vEmit idx =
 doubleHadCounter :: Var -> Stmt
 doubleHadCounter vCounter =
   SAssign vCounter $ EOp2 OMul (ENum 2) (EVar vCounter)
-  
+

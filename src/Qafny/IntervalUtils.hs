@@ -1,9 +1,9 @@
 module Qafny.IntervalUtils where
 
+import           Debug.Trace    (trace)
 import           Qafny.AST      (Exp (..), Range (..))
 import           Qafny.Interval
-import Debug.Trace (trace)
-import Text.Printf (printf)
+import           Text.Printf    (printf)
 
 type NInt = Interval Nat
 
