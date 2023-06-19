@@ -10,11 +10,16 @@ import           Data.List            (intercalate)
 import qualified Data.Map.Strict      as Map
 import           GHC.Stack
 import           Qafny.AST
+import           Text.Printf          (printf)
 
 --------------------------------------------------------------------------------
 -- High-Order Types
 --------------------------------------------------------------------------------
-type STuple = (Loc, Session, QTy) -- STuple { unS :: (Loc, Session, QTy) }
+newtype STuple = STuple { unSTup :: (Loc, Session, QTy) } -- STuple { unS :: (Loc, Session, QTy) }
+
+instance Show STuple where
+  show (STuple (loc, s, qt)) =
+    printf " <%s :: %s ↦ %s>" (show loc) (show qt) (show s)
 
 --------------------------------------------------------------------------------
 -- General
@@ -34,8 +39,8 @@ data TEnv = TEnv
 
 
 data TState = TState
-  { _sSt  :: Map.Map Loc (Session, QTy) -- session type state
-  , _xSt  :: Map.Map Var Loc            -- range reference state
+  { _sSt    :: Map.Map Loc (Session, QTy) -- session type state
+  , _xSt    :: Map.Map Var Loc            -- range reference state
   , _emitSt :: Map.Map Binding Var
   }
 
@@ -46,7 +51,7 @@ instance Show TState where
   show st = "\n  Session Reference State:\n    " ++
             (intercalate "\n    " . map show . Map.toList) (st ^. xSt) ++
             "\n  Session State:\n    " ++
-            (intercalate "\n    " . map show . Map.toList) (st ^. sSt) ++
+            (intercalate "\n    " . map show . ((\(x, (y,z)) -> STuple (x, y, z)) <$>) . Map.toList) (st ^. sSt) ++
             "\n  Renaming State:\n    " ++
             (intercalate "\n    " . map show . Map.toList) (st ^. emitSt)
 
@@ -61,5 +66,6 @@ initTState :: TState
 initTState = TState
   { _sSt = mempty
   , _xSt = mempty
-  , _emitSt = mempty}
+  , _emitSt = mempty
+  }
 

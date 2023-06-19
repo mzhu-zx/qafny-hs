@@ -79,7 +79,7 @@ resolveSession se@(Session rs) = do
   case List.nub locs of
     [] -> throwError "Internal Error? An empty session has no type!"
     [x] -> (use (sSt . at x) `rethrowMaybe` (show . UnknownLocError) x)
-      <&> uncurry (x,,)
+      <&> STuple . uncurry (x,,)
     ss ->
       throwError @String $ printf "`%s` is not a sub-session, counterexample: %s"
         (show se) (show ss)
@@ -193,7 +193,7 @@ retypeSession
      )
   => STuple -> QTy -> m ([Var], Ty, [Var], Ty)
 retypeSession st qtNow = do
-  let (locS, sResolved, qtPrev) = st
+  let STuple(locS, sResolved, qtPrev) = st
   when (qtNow == qtPrev) $
     throwError @String  $ printf
      "Session `%s` is of type `%s`. No retyping need to be done."
@@ -217,8 +217,8 @@ mergeSTuples
      )
   => STuple -> STuple -> m ()
 mergeSTuples
-  stM@(locMain, sMain@(Session rsMain), qtMain)
-  stA@(locAux, sAux@(Session rsAux), qtAux) =
+  stM@(STuple (locMain, sMain@(Session rsMain), qtMain))
+  stA@(STuple (locAux, sAux@(Session rsAux), qtAux)) =
   do
     -- Sanity Check
     unless (qtMain == qtAux && qtAux == TCH) $

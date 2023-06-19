@@ -1,6 +1,7 @@
 module Qafny.AST where
 
 import Control.Monad (guard)
+import Text.Printf (printf)
 
 data Ty
   = TNat
@@ -105,13 +106,22 @@ data Toplevel
   deriving (Show, Eq)
 
 data Range = Range Var Exp Exp 
-           deriving (Show, Eq, Ord)
+  deriving (Eq, Ord)
+
+instance Show Range where
+  show (Range x y z) = printf "%s[%s .. %s]" x (show y) (show z)
 
 newtype Loc = Loc { deref :: Var }
-  deriving (Show, Eq, Ord)
+  deriving (Eq, Ord)
+
+instance Show Loc where
+  show = deref
 
 newtype Session = Session { unpackSession :: [Range] }
-  deriving (Show, Eq, Ord)
+  deriving (Eq, Ord)
+
+instance Show Session where
+  show = show . unpackSession
 
 data Stmt
   = SAssert Exp

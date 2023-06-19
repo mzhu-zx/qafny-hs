@@ -35,7 +35,7 @@ import           GHC.Stack                      (HasCallStack)
 import           Qafny.AST
 import           Qafny.Config
 import           Qafny.Transform
-    ( STuple
+    ( STuple (..)
     , TEnv (..)
     , TState
     , kEnv
@@ -171,14 +171,14 @@ codegenStmt s@(SVar (Binding v t) (Just e)) = do
   checkSubtype t te -- check if `t` agrees with the type of `e`
   codegenAlloc v e t <&> (: [])
 codegenStmt (SApply s EHad) = do
-  st@(_, _, qt) <- resolveSession s
+  st@(STuple(_, _, qt)) <- resolveSession s
   opCast <- opCastHad qt
   castWithOp opCast st THad
   where
     opCastHad TNor = return "CastNorHad"
     opCastHad t = throwError $ "type `" ++ show t ++ "` cannot be casted to Had type"
 codegenStmt (SApply s@(Session ranges) e@(EEmit (ELambda {}))) = do
-  st@(_, _, qt) <- resolveSession s
+  st@(STuple (_, _, qt)) <- resolveSession s
   checkSubtypeQ TCH qt
   let tyEmit = typingQEmit qt
   -- it's important not to use a fully resolved `s` here, because you don't want
@@ -190,9 +190,9 @@ codegenStmt (SApply s@(Session ranges) e@(EEmit (ELambda {}))) = do
     mkMapCall v = v `SAssign` EEmit (ECall "Map" [e, EVar v])
 codegenStmt (SIf e seps b) = do
   -- resolve the type of the guard
-  stG@(_, _, qtG) <- typingGuard e
+  stG@(STuple (_, _, qtG)) <- typingGuard e
   -- resolve the body session
-  stB'@(_, sB, qtB) <- resolveSessions . leftSessions . inBlock $ b
+  stB'@(STuple( _, sB, qtB)) <- resolveSessions . leftSessions . inBlock $ b
   let annotateCastB = qComment $
         printf "Cast Body Session %s => %s" (show qtB) (show TCH)
   (stmtsCastB, stB) <- case qtB of
@@ -206,11 +206,11 @@ codegenStmt (SIf e seps b) = do
 
 codegenStmt (SFor idx boundl boundr eG invs seps body) = do
   -- resolve the type of the guard
-  stG@(_, sG, qtG) <- typingGuard eG
-  stB'@(_, sB, qtB) <- resolveSessions . leftSessions . inBlock $ body
+  stG@(STuple (_, sG, qtG)) <- typingGuard eG
+  stB'@(STuple (_, sB, qtB)) <- resolveSessions . leftSessions . inBlock $ body
   (stmtsCastB, stB) <- case qtB of
     TCH -> return ([], stB')
-    _   -> (,) <$> castSessionCH stB' <*> resolveSession (stB' ^. _2)
+    _   -> (,) <$> castSessionCH stB' <*> resolveSession (unSTup stB' ^. _2)
   -- what to do with the guard session is unsure...
   (stmtsDupG, gCorr) <- dupState sG
   (sL, eConstraint) <- makeLoopSession sG boundl boundr
@@ -230,7 +230,7 @@ codegenStmt (SFor idx boundl boundr eG invs seps body) = do
                --       [ qComment "Initialize Had Power Counter"
                --       , SAssign vEmitCounter (ENum 1) ]
                -- Resolve again to get the new quantum type!
-               stG' <- resolveSession (stGSplited ^. _2)
+               stG' <- resolveSession (unSTup stGSplited ^. _2)
                stmtsCGHad <-
                  codegenStmt'For'Had stB stG' vEmitG idx body
                return $ ( stmtsInitG -- ++ stmtsInitCounter
@@ -254,7 +254,7 @@ codegenStmt'If'Had
   -> m [Stmt]
 codegenStmt'If'Had stG stB' b = do
   -- 0. extract session, this will not be changed
-  let sB = stB' ^. _2
+  let sB = unSTup stB' ^. _2
   -- 1. cast the guard and duplicate the body session
   (stmtsDupB, corr) <- dupState sB
   -- 2. codegen the body
@@ -280,7 +280,7 @@ codegenStmt'For'Had
   -> m [Stmt]
 codegenStmt'For'Had stB stG vEmitG vIdx b = do
   -- 0. extract session, this will not be changed
-  let sB = stB ^. _2
+  let sB = unSTup stB ^. _2
   -- 1. duplicate the guard
   (stmtsDupB, corrB) <- dupState sB
   -- 3. codegen the body
@@ -324,7 +324,7 @@ mergeHadGuardWith
   => Exp -> STuple -> STuple -> Exp -> Exp -> m [Stmt]
 mergeHadGuardWith eBase stG' stB cardBody cardStashed = do
   (_, _, vGENow, tGENow) <- retypeSession1 stG' TCH
-  stG <- resolveSession (stG' ^. _2)
+  stG <- resolveSession (unSTup stG' ^. _2)
   mergeSTuples stB stG
   return $ hadGuardMergeExp vGENow tGENow cardBody cardStashed eBase
 
@@ -395,7 +395,7 @@ castWithOp
 castWithOp op s newTy =
   do
     (vOldEmits, tOldEmit, vNewEmits, tNewEmit) <- retypeSession s newTy
-    let sessionTy = s ^. _3
+    let sessionTy = unSTup s ^. _3
     -- assemble the emitted terms
     return . concat $
       [ [ qComment $ "Cast " ++ show sessionTy ++ " ==> " ++ show newTy
@@ -411,7 +411,7 @@ castSessionCH
      , Has (Gensym Binding) sig m
      )
   => STuple -> m [Stmt]
-castSessionCH st@(locS, s, qtS) = do
+castSessionCH st@(STuple (locS, s, qtS)) = do
   case qtS of
     TNor -> castWithOp "CastNorCH10" st TCH
     THad -> castWithOp "CastHadCH10" st TCH
@@ -433,7 +433,7 @@ dupState
      )
   => Session -> m ([Stmt], [(Binding, Var, Var)])
 dupState s' = do
-  (locS, s, qtS) <- resolveSession s'
+  STuple (locS, s, qtS) <- resolveSession s'
   let tEmit = typingQEmit qtS
   let bds = [ Binding x tEmit | x <- varFromSession s]
   -- generate a set of fresh emit variables as the stashed session
@@ -474,7 +474,7 @@ splitHadSession
      )
   => STuple -> Session
   -> m (STuple, [Stmt])
-splitHadSession sFull@(locS, Session [rS], THad) (Session [rS']) = do
+splitHadSession sFull@(STuple (locS, Session [rS], THad)) (Session [rS']) = do
   if rS == rS'
     then return (sFull, [])
     else undefined -- TODO: implement the split

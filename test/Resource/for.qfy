@@ -5,8 +5,8 @@ method For0 (n : nat)
   var p : nor := nor(n, 0);
   q[0 .. 1] *= H;
   for i in [0 .. n] with q[i .. (i + 1)]
-    separates p[0 .. (i + 1)]
+    separates p[0 .. n]
   {
-    p[0 .. (i + 1)] *= λ (x => (x + 1) % 2);
+    p[0 .. n] *= λ (x => (x + 1) % 2);
   }
 }
