@@ -36,7 +36,7 @@ method GHZ0 (n : nat)
 
   p__seq__nat____3 := p__seq__nat____3 + p__seq__nat____4;
   // Merge: Body session + the Guard session.
-  q__seq__nat____5 := seq<nat>(|p__seq__nat____3|, _ => 1) + seq<nat>(|p__seq__nat____4|, _ => 0);
+  q__seq__nat____5 := seq<nat>(|p__seq__nat____3|, _ => 0 + 1) + seq<nat>(|p__seq__nat____4|, _ => 0);
 }
 
 }

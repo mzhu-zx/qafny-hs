@@ -23,7 +23,7 @@ import           Effect.Gensym                  (Gensym, gensym)
 import           Qafny.Gensym                   (runGensym)
 
 -- Utils
-import           Control.Lens                   (at, (%~), (?~), (^.))
+import           Control.Lens                   (non, at, (%~), (?~), (^.))
 import           Control.Lens.Tuple
 import           Data.Functor                   ((<&>))
 import qualified Data.Map.Strict                as Map
@@ -376,7 +376,7 @@ codegenAlloc v e@(EOp2 ONor e1 e2) t@(TQ TNor) = do
   let rV = Range v (ENum 0) e1
       sV = session1 rV
   loc <- gensymLoc v
-  xSt %= (at v ?~ loc)
+  xSt %= (at v . non [] %~ ((rV, loc) :))
   sSt %= (at loc ?~ (sV, TNor))
   return $ SAssign vEmit eEmit
 codegenAlloc v e@(EOp2 ONor _ _) _ =

@@ -18,10 +18,10 @@ import opened Unity
 method DeutschJozsa (n : nat)
 {
   // Forward Declaration
-  var p : seq<nat>;
-  var q : seq<nat>;
-  var p : seq<nat>;
-  var q : seq<nat>;
+  var p__seq__nat____3 : seq<nat>;
+  var q__seq__nat____2 : seq<nat>;
+  var p__seq__nat____1 : seq<nat>;
+  var q__seq__nat____0 : seq<nat>;
   
   // Method Definition
   q__seq__nat____0 := seq<nat>(1, _ => 0);
@@ -29,12 +29,14 @@ method DeutschJozsa (n : nat)
   // Cast TNor ==> THad
   q__seq__nat____2 := CastNorHad(q__seq__nat____0);
   // Cast TNor ==> THad
-  p__seq__nat____3 := CastNorHad(p__seq__nat____1);}
+  p__seq__nat____3 := CastNorHad(p__seq__nat____1);
+}
 
 method CrossMinus (n : nat, m : nat, q : nat, p : nat)
 {
   // Forward Declaration
   
-  // Method Definition}
+  // Method Definition
+}
 
 }

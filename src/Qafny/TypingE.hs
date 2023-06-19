@@ -20,7 +20,14 @@ import           Qafny.AST
 import           Qafny.Transform
 
 -- Utils
-import           Control.Lens                   (at, (%~), (?~), (^.))
+import           Control.Lens
+    ( Each (each)
+    , at
+    , (%~)
+    , (?~)
+    , (^.)
+    , (%%~)
+    )
 import           Control.Monad                  (forM, unless, when)
 import           Data.Functor                   ((<&>))
 import qualified Data.List                      as List
@@ -29,6 +36,8 @@ import qualified Data.Set                       as Set
 import           Debug.Trace                    (traceM, traceStack)
 import           GHC.Stack                      (HasCallStack)
 import           Qafny.Error                    (QError (..))
+import           Qafny.Interval                 ((⊑))
+import           Qafny.IntervalUtils            (rangeToNInt)
 import           Qafny.Utils
     ( findEmitSym
     , gensymEmit
@@ -74,9 +83,10 @@ resolveSession
      )
   => Session -> m STuple
 resolveSession se@(Session rs) = do
-  locs <- forM rs $ \r@(Range name _ _) ->
-    use (xSt . at name) `rethrowMaybe` (show . UnknownRangeError) r
-  case List.nub locs of
+  locs <- forM rs $ \r@(Range name _ _) -> do
+    rlocs <- use (xSt . at name) `rethrowMaybe` (show . UnknownRangeError) r
+    return [loc | rangeToNInt r ⊑ rangeToNInt r, (r', loc) <- rlocs]
+  case List.nub . concat $ locs of
     [] -> throwError "Internal Error? An empty session has no type!"
     [x] -> (use (sSt . at x) `rethrowMaybe` (show . UnknownLocError) x)
       <&> STuple . uncurry (x,,)
@@ -227,9 +237,13 @@ mergeSTuples
         (show stM) (show stA)
     -- start merge
     let newSession = Session $ rsMain ++ rsAux
-    let vsMetaAux =  varFromSession sAux
-    let newAuxLocs = Map.fromList $ [(v, locMain) | v <- vsMetaAux]
-    xSt %= Map.union newAuxLocs -- use Main's loc for aux
+    -- let vsMetaAux =  varFromSession sAux
+    -- let newAuxLocs = Map.fromList $ [(v, locMain) | v <- vsMetaAux]
+    -- xSt %= Map.union newAuxLocs -- use Main's loc for aux
+    xSt %= Map.map
+      (\rLoc -> [ (r, loc')
+                | (r, loc) <- rLoc, 
+                  let loc' = if loc == locAux then locMain else loc])
     sSt %=
       (`Map.withoutKeys` Set.singleton locAux) . -- GC aux's loc
       (at locMain ?~ (newSession, TCH))          -- update main's state
