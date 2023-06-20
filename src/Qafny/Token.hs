@@ -17,6 +17,7 @@ data Token
   | TVar | TIf | TCl | TFor
   | TWith
   | TMea
+  | TUnicodeMap
 
   -- Delimiters
   | TLPar | TRPar
@@ -24,15 +25,19 @@ data Token
   | TLBrace | TRBrace
   | TLBracket | TRBracket
   | TBar | TComma | TColon | TSemi
-  | TDots
+  | TDots | TDot
 
   -- Quantifiers
   | TForall
   | TIn
+  | TUnicodeIn
+  | TUnicodeSum
+
   -- Types
   | TArrow
   | TNat | TInt | TBool
   | TSeq | TNor | THad | TCH
+
   -- Identifiers
   | TId String
 

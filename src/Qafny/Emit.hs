@@ -1,15 +1,13 @@
-{-# language FlexibleContexts, FlexibleInstances #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE FlexibleContexts, FlexibleInstances, GeneralizedNewtypeDeriving #-}
 
 module Qafny.Emit where
 
 import           Qafny.AST
 
-import           Data.Text.Lazy(Text)
-import qualified Data.Text.Lazy.Builder as TB
 import           Control.Monad.Reader
-import Data.Maybe (maybeToList)
-import Debug.Trace (trace, traceShow)
+import           Data.Maybe             (maybeToList)
+import           Data.Text.Lazy         (Text)
+import qualified Data.Text.Lazy.Builder as TB
 
 -------------------- Builder --------------------
 
@@ -44,7 +42,7 @@ withBrace :: Builder -> Builder
 withBrace b = indent <> build "{\n" <> b <> indent <> build "}\n"
 
 byComma :: DafnyPrinter a => [a] -> Builder
-byComma [] = mempty
+byComma []     = mempty
 byComma (x:xs) = foldl (\ys y -> ys  <> build ", " <> build y) (build x) xs
 
 byLine :: DafnyPrinter a => [a] -> Builder
@@ -54,12 +52,12 @@ byLine = foldr (\y ys -> y <!> line <!> ys) mempty
 -- in the end
 byLine'' :: DafnyPrinter a => [a] -> Builder
 byLine'' (x : xs) = foldl (\ys y -> ys <!> line <!> y) (build x) xs
-byLine'' [] = mempty
+byLine'' []       = mempty
 
 -- | Build each element and separate them by a newline without producing any
 -- newline in the end but with a leading newline if the list is nonempty
 byLine' :: DafnyPrinter a => [a] -> Builder
-byLine' = foldr (\y ys -> line <!> y <!> ys) mempty 
+byLine' = foldr (\y ys -> line <!> y <!> ys) mempty
 
 
 
@@ -82,7 +80,7 @@ instance DafnyPrinter Builder where
 
 instance DafnyPrinter Char where
   build = return . TB.singleton
-  
+
 instance DafnyPrinter String where
   build = return . TB.fromString
 
@@ -106,7 +104,7 @@ instance DafnyPrinter Binding where
   build (Binding x t) = x <!>  " : " <!> t
 
 instance DafnyPrinter Toplevel where
-  build (QDafny s) = build s 
+  build (QDafny s) = build s
   build (QMethod idt bds rets reqs ens blockHuh) =
     "method " <!> idt <!> " " <!>
     withParen (byComma bds) <!> buildRets rets <!>
@@ -141,23 +139,27 @@ instance DafnyPrinter Stmt where
       buildStmt e = "// undefined builder for Stmt : " <!> show e
       buildEmit :: EmitStmt -> Builder
       buildEmit (SIfDafny e b) = "if " <!> withParen (build e) <!> b
-      buildEmit _ = error "Should have been handled!!"
+      buildEmit _              = error "Should have been handled!!"
 
 instance DafnyPrinter Exp where
   build (ENum n) = build $ show n
   build (EVar v) = build v
   build (EEmit e) = build e
   build (EOp2 op e1 e2) = buildOp2 op (build e1) (build e2)
+  build (EForall x eb e) = "forall " <!> x  <!> beb eb <!>  " :: " <!> e
+    where beb (Just eb') = " | " <!> eb'
+          beb Nothing    = mempty
   build e = "//" <!> show e <!> build " should not be in emitted form!"
 
 instance DafnyPrinter EmitExp where
   build (ELambda v e) = v <!> " => " <!> e
+  build (ESelect e1 e2) = e1 <!> "[" <!> e2 <!> "]"
   build EMtSeq = build "[]"
   build (EMakeSeq ty e ee) =
     "seq<" <!> ty <!> ">" <!> withParen (e <!> ", " <!> ee)
   build (EDafnyVar s) = build s
   build (EOpChained e eos) =
-    e <!> foldr (\(op, e1) bs -> buildOp2 op (build e1) bs) mempty eos
+    foldl (\el (op, er) -> buildOp2 op el (build er)) (build e) eos
   build (ECard e) = "|" <!> e <!> build "|"
   build (ECall e es) = e <!> withParen (byComma es)
 
@@ -169,15 +171,18 @@ buildOp2 op = (<!>) . (<!> opSign)
   where
     opSign =
       case op of
-        OAnd  -> " && "
-        OOr   -> " || "
-        OAdd  -> " + "
-        OMul  -> " * "
-        OMod  -> " % "
-        OLt   -> " < "
-        OLe   -> " <= "
-        OGt   -> " > "
-        OGe   -> " >= "
+        OAnd -> " && "
+        OOr  -> " || "
+        OAdd -> " + "
+        OSub -> " - "
+        OMul -> " * "
+        OMod -> " % "
+        OEq  -> " == "
+        OLt  -> " < "
+        OLe  -> " <= "
+        OGt  -> " > "
+        OGe  -> " >= "
+        _    -> "\\ unsupprted " ++ show op
 
 buildConds :: String -> [Exp] -> [Builder]
 buildConds s = map ((s <!> " ") <!>)

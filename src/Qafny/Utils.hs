@@ -61,6 +61,9 @@ gensymEmit b = do
   emitSt %= (at b ?~ name)
   return name
 
+
+-- TODO: Binding can cause aliasing, Var is not sufficient, I need to define
+-- `RBinding = (Range, Ty)` to avoid aliasing!
 -- | Lookup for emitted symbols in emitSt
 findEmitSym
   :: ( Has (State TState) sig m

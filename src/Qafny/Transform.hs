@@ -40,7 +40,7 @@ data TEnv = TEnv
 
 data TState = TState
   { _sSt    :: Map.Map Loc (Session, QTy) -- session type state
-  , _xSt    :: Map.Map Var [(Range, Loc)]          -- range reference state
+  , _xSt    :: Map.Map Var [(Range, Loc)] -- range reference state
   , _emitSt :: Map.Map Binding Var
   }
 

@@ -12,6 +12,7 @@ import Qafny.Token
 $alpha = [a-zA-Z]
 $digit = 0-9
 
+@digits = ($digit)+
 @dafny = \#(~\n)*
 @comment = (\/\/)(~\n)*
 @id = ($alpha) ($alpha | $digit | \_ | \')*
@@ -19,7 +20,8 @@ $digit = 0-9
 @qassign = (\*=)
 @aand = (&&)
 @aor = (\|\|)
-@adot = (\.\.)
+@adots = (\.\.)
+@adot = (\.)
 @age = (>=)
 @ale = (\<\=)
 @eq = (==)
@@ -49,6 +51,9 @@ token :-
   "λ"              { emit $  TCl                 }
   for              { emit $  TFor                }
   in               { emit $  TIn                 }
+  "∈"              { emit $  TUnicodeIn          }
+  "Σ"              { emit $  TUnicodeSum         }
+  "↦"              { emit $  TUnicodeMap         }
   with             { emit $  TWith               }
   invariant        { emit $  TInv                }
   H                { emit $  THApp               }
@@ -56,7 +61,7 @@ token :-
   RQFT             { emit $  TRQFT               }
   meas             { emit $  TMea                }
   @id              { pushToken $ TId             }
-  $digit           { pushToken $ TLitInt . read  }
+  @digits          { pushToken $ TLitInt . read  }
   @assign          { emit $  TAssign             }
   @qassign         { emit $  TApply              }
   @eq              { emit $  TEq                 }
@@ -71,7 +76,8 @@ token :-
   \]               { emit $  TRBracket           }
   @aand            { emit $  TAnd                }
   @aor             { emit $  TOr                 }
-  @adot            { emit $  TDots               }
+  @adots           { emit $  TDots               }
+  @adot            { emit $  TDot                }
   \|               { emit $  TBar                }
   \(               { emit $  TLPar               }
   \)               { emit $  TRPar               }

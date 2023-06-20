@@ -78,7 +78,7 @@ resolveSession
 resolveSession se@(Session rs) = do
   locs <- forM rs $ \r@(Range name _ _) -> do
     rlocs <- use (xSt . at name) `rethrowMaybe` (show . UnknownRangeError) r
-    return [loc | rangeToNInt r ⊑ rangeToNInt r, (r', loc) <- rlocs]
+    return [ loc |  (r', loc) <- rlocs, rangeToNInt r ⊑ rangeToNInt r' ]
   case List.nub . concat $ locs of
     [] -> throwError "Internal Error? An empty session has no type!"
     [x] -> (use (sSt . at x) `rethrowMaybe` (show . UnknownLocError) x)

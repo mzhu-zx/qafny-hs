@@ -38,6 +38,9 @@ dafny                 { ( _, L.TDafny $$  ) }
 "var"                 { ( _, L.TVar       ) }
 "if"                  { ( _, L.TIf        ) }
 "λ"                   { ( _, L.TCl        ) }
+"Σ"                   { ( _, L.TUnicodeSum        ) }
+"∈"                   { ( _, L.TUnicodeIn        ) }
+"↦"                   { ( _, L.TUnicodeMap        ) }
 "assert"              { ( _, L.TAssert    ) }
 "||"                  { ( _, L.TOr        ) }
 "&&"                  { ( _, L.TAnd       ) }
@@ -57,6 +60,7 @@ dafny                 { ( _, L.TDafny $$  ) }
 id                    { ( _, L.TId $$     ) }
 ','                   { ( _, L.TComma     ) }
 ':'                   { ( _, L.TColon     ) }
+'.'                   { ( _, L.TDot       ) }
 ';'                   { ( _, L.TSemi      ) }
 "=="                  { ( _, L.TEq        ) }
 "=>"                  { ( _, L.TArrow     ) }
@@ -103,13 +107,16 @@ cond
   | "ensures" expr                    { Ensures $2                           }
   | "invariant" expr                  { Invariants $2                        }
                                                                           
-bindings                                                                  
-  : bindings_                         { reverse $1                           }
+bindings
+  : manyComma(binding)                     { $1 }
+
+manyComma(p)                                                                  
+  : manyComma_(p)                     { reverse $1                           }
                                                                           
-bindings_                                                                 
+manyComma_(p)
   : {- empty -}                       { []                                   }
-  | binding                           { [$1]                                 }
-  | bindings_ ',' binding             { $3 : $1                              }
+  | p                                 { [$1]                                 }
+  | manyComma_(p) ',' p               { $3 : $1                              }
                                                                           
 binding                                                                   
   : id ':' ty                         { Binding $1 $3                        }
@@ -119,10 +126,13 @@ ty
   | "int"                             { TInt                                 }
   | "bool"                            { TBool                                }
   | "seq" '<' ty '>'                  { TSeq $3                              }
-  | "nor"                             { TQ $ TNor                            }
-  | "had"                             { TQ $ THad                            }
-  | "ch"                              { TQ $ TCH                             }
-                                                                          
+  | qty                               { TQ $ $1 }
+          
+qty :: { QTy }
+  : "nor"                             { TNor                            }
+  | "had"                             { THad                            }
+  | "ch"                              { TCH                             }
+                                                                
 
 blockOpt                                                                     
   : {- empty -}                       { Nothing                              }
@@ -131,12 +141,17 @@ blockOpt
 block                                                                     
   : '{' stmts '}'                     { Block $2                             }
                                                                           
-stmts                                                                     
-  : stmts_                            { reverse $1                           }
+
+many(p)                                                                  
+  : many_(p)                          { reverse $1                           }
                                                                           
-stmts_                                                                    
+many_(p)
   : {- empty -}                       { []                                   }
-  | stmts_ stmt                       { $2 : $1                              }
+  | many_(p) p                        { $2 : $1                              }
+
+
+stmts                                                                     
+  : many(stmt)                        { reverse $1                           }
                                                                           
                                                                           
 stmt                                                                      
@@ -159,9 +174,20 @@ session_
                                                                           
 range                                                                     
   : id '[' expr ".." expr ']'         { Range $1 $3 $5                       }
-                                                                          
+                                                                
+spec ::   { Exp }
+  : '{' session ':'  qty "↦" qspec '}' { ESpec $2 $4 $6                      }
+
+qspec ::  { Exp }
+  : "Σ" id "∈" '[' expr ".." expr ']' '.' tuple(expr)
+                                      { EQSpec $2 (Intv $5 $7) $10    }
+
+tuple(p)
+  : '(' manyComma(p) ')'              { $2 }
+
 expr                                                                      
   : atomic                            { $1                     }
+  | spec                              { $1                     }
   | session                           { ESession $1            }
   | "H"                               { EHad                   }
   | "QFT"                             { EQFT                   }
@@ -194,7 +220,6 @@ arith :: { Op2 }
  | '-'                      { OSub }
  | '*'                      { OMul }
  | '\%'                     { OMod }
-
 
 
 atomic                                                                      

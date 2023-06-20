@@ -1,7 +1,7 @@
 module Qafny.AST where
 
-import Control.Monad (guard)
-import Text.Printf (printf)
+import           Control.Monad (guard)
+import           Text.Printf   (printf)
 
 data Ty
   = TNat
@@ -25,7 +25,7 @@ data QTy
   deriving (Show, Eq, Ord)
 
 type Var = String
-  
+
 data Binding
   = Binding Var Ty
   deriving (Show, Eq, Ord)
@@ -63,13 +63,16 @@ data Exp
   | EApp Var Exp
   | EOp1 Op1 Exp
   | EOp2 Op2 Exp Exp
-  | RInd Var Exp -- boolean at var[exp], var must be Q type
-  | REq Exp Exp Var Exp -- compare exp == exp and store the value in var[exp], var must be Q type
-  | RLt Exp Exp Var Exp -- compare exp < exp and store the value in var[exp], var must be Q type
   | EForall Binding (Maybe Exp) Exp
   | EDafny String
   | EEmit EmitExp
   | ESession Session
+  | ESpec Session QTy Exp
+  | EQSpec Var Intv [Exp]
+  -- ?
+  | RInd Var Exp -- boolean at var[exp], var must be Q type
+  | REq Exp Exp Var Exp -- compare exp == exp and store the value in var[exp], var must be Q type
+  | RLt Exp Exp Var Exp -- compare exp < exp and store the value in var[exp], var must be Q type
   deriving (Show, Eq, Ord)
 
 -- | EmitExp : Unsafe Expressions for Codegen Only
@@ -79,7 +82,8 @@ data EmitExp
   | EMakeSeq Ty Exp EmitExp
   | ECard Exp
   | ECall Var [Exp]
-  | EDafnyVar Var 
+  | ESelect Exp Exp
+  | EDafnyVar Var
   | EOpChained Exp [(Op2, Exp)]
   deriving  (Show, Eq, Ord)
 
@@ -105,7 +109,10 @@ data Toplevel
   | QDafny String
   deriving (Show, Eq)
 
-data Range = Range Var Exp Exp 
+data Intv = Intv Exp Exp
+  deriving (Eq, Show, Ord)
+
+data Range = Range Var Exp Exp
   deriving (Eq, Ord)
 
 instance Show Range where
@@ -137,7 +144,7 @@ data Stmt
   deriving (Show, Eq)
 
 data EmitStmt
-  = SIfDafny Exp Block 
+  = SIfDafny Exp Block
   | SBlock Block
   | SForEmit Var Exp Exp [Exp] Block
   deriving (Show, Eq)
@@ -178,7 +185,7 @@ session1 =  Session . (: [])
 varFromSession :: Session -> [Var]
 varFromSession (Session s) = [ x | (Range x _ _) <- s ]
 
--- | Compute all free sessions/ranges mentioned in the LHS of application 
+-- | Compute all free sessions/ranges mentioned in the LHS of application
 leftSessions :: [Stmt] -> [Session]
 leftSessions =
   concatMap perStmt
@@ -195,7 +202,7 @@ subRange :: Range -> Range -> Maybe (Range, Range)
 subRange (Range r1 l1 h1) (Range r2 l2 h2) =
   do
     guard $ r1 == r2
-    bl <- abstractLeq l1 l2 
+    bl <- abstractLeq l1 l2
     br <- abstractLeq h1 h2
     -- FIXME : Signature not correct
     Nothing
@@ -215,10 +222,10 @@ reduceExp (EOp2 op e1 e2) =
     v2 <- reduceExp e2
     reflectOp op v1 v2
   where
-    reflectOp OAdd = Just .: (+) 
+    reflectOp OAdd = Just .: (+)
     reflectOp OMul = Just .: (*)
     reflectOp _    = const $ const Nothing
 reduceExp _ = Nothing
 
 (.:) :: (c -> d) -> (a -> b -> c) -> a -> b -> d
-(.:) g f2 x y = g (f2 x y) 
+(.:) g f2 x y = g (f2 x y)

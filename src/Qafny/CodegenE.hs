@@ -30,7 +30,7 @@ import qualified Data.Map.Strict                as Map
 
 
 -- Qafny
-import           Control.Monad                  (forM)
+import           Control.Monad                  (forM, forM_, unless)
 import           GHC.Stack                      (HasCallStack)
 import           Qafny.AST
 import           Qafny.Config
@@ -108,8 +108,9 @@ codegenToplevel
   => Toplevel
   -> m Toplevel
 codegenToplevel q@(QMethod v bds rts rqs ens (Just block)) = do
-  (i, emitBdsNames, (j, block')) <-
-    runGensym $ local (appkEnvWithBds bds) $ codegenBlock block
+  (i, emitBdsNames, (j, (rqs', block'))) <-
+    runGensym $ local (appkEnvWithBds bds) $
+      (,) <$> codegenRequires rqs <*> codegenBlock block
   -- todo: report on the gensym state with a report effect!
   let stmtsDeclare = [ SVar (Binding vEmit tEmit) Nothing
                      | (Binding _ tEmit, vEmit) <- emitBdsNames ]
@@ -120,9 +121,52 @@ codegenToplevel q@(QMethod v bds rts rqs ens (Just block)) = do
            , qComment "Method Definition"
            ]
         ++ inBlock block'
-  return $ QMethod v bds rts rqs ens (Just . Block $ blockStmts)
+  return $ QMethod v bds rts rqs' ens (Just . Block $ blockStmts)
 codegenToplevel q = return q
 
+
+codegenRequires
+  :: ( Has (State TState)  sig m
+     , Has (Error String) sig m
+     , Has (Gensym String) sig m
+     , Has (Gensym Binding) sig m
+     )
+  => Requires -> m Requires
+codegenRequires rqs = forM rqs $ \rq -> 
+  -- TODO: I need to check if sessions from different `requires` clauses are
+  -- indeed disjoint! 
+  case rq of
+    ESpec s qt espec -> do
+      sLoc <- gensymLoc "requires"
+      sSt %= (at sLoc ?~ (s, qt))
+      let xMap = [ (v, [(r, sLoc)]) | r@(Range v _ _) <- unpackSession s ]
+      let tyEmit = typingQEmit qt
+      let bdsEmit = [ Binding v tyEmit | v <- varFromSession s ]
+      vsEmit <- forM bdsEmit gensymEmit
+      xSt %= Map.unionWith (++) (Map.fromListWith (++) xMap)
+      case espec of
+        EQSpec v intv body -> codegenSpec vsEmit v intv body
+        _ -> undefined
+    _ ->
+      return rq
+  
+codegenSpec
+  :: ( Has (Error String) sig m
+     , Has (State TState) sig m
+     )
+  => [Var] -> Var -> Intv -> [Exp] -> m Exp
+codegenSpec vsEmit bind (Intv l r) eValues = do
+  unless (length vsEmit == length eValues) $
+    throwError' $ printf
+      "The number of values doesn't agree with that of sessions: %s %s"
+      (show vsEmit) (show eValues)
+  let eBound = Just (EEmit (EOpChained l [(OLe, EVar bind), (OLt, r)]))
+  let eSelect x = EEmit (ESelect (EVar x) (EVar bind))
+  let es = [ EForall (Binding bind TNat) eBound (EOp2 OEq (eSelect vE) eV)
+           | (vE, eV) <- zip vsEmit eValues]
+  return $ case es of
+    [] -> EBool True
+    x : xs -> EEmit (EOpChained x [ (OAnd, x') | x' <- xs ])
 
 codegenBlock
   :: ( Has (Reader TEnv) sig m
