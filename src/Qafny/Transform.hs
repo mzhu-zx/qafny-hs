@@ -15,7 +15,7 @@ import           Text.Printf          (printf)
 --------------------------------------------------------------------------------
 -- High-Order Types
 --------------------------------------------------------------------------------
-newtype STuple = STuple { unSTup :: (Loc, Session, QTy) } -- STuple { unS :: (Loc, Session, QTy) }
+newtype STuple = STuple { unSTup :: (Loc, Partition, QTy) } -- STuple { unS :: (Loc, Partition, QTy) }
 
 instance Show STuple where
   show (STuple (loc, s, qt)) =
@@ -39,7 +39,7 @@ data TEnv = TEnv
 
 
 data TState = TState
-  { _sSt    :: Map.Map Loc (Session, QTy) -- session type state
+  { _sSt    :: Map.Map Loc (Partition, QTy) -- partition type state
   , _xSt    :: Map.Map Var [(Range, Loc)] -- range reference state
   , _emitSt :: Map.Map Binding Var
   }
@@ -48,9 +48,9 @@ $(makeLenses ''TState)
 $(makeLenses ''TEnv)
 
 instance Show TState where
-  show st = "\n  Session Reference State:\n    " ++
+  show st = "\n  Partition Reference State:\n    " ++
             (intercalate "\n    " . map show . Map.toList) (st ^. xSt) ++
-            "\n  Session State:\n    " ++
+            "\n  Partition State:\n    " ++
             (intercalate "\n    " . map show . ((\(x, (y,z)) -> STuple (x, y, z)) <$>) . Map.toList) (st ^. sSt) ++
             "\n  Renaming State:\n    " ++
             (intercalate "\n    " . map show . Map.toList) (st ^. emitSt)

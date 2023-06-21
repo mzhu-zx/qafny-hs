@@ -8,7 +8,7 @@ type Parser a = Either String a
 withParse :: String -> String
 withParse = ("Parser Error: " ++)
 
-separatesOnly :: Conds -> Parser Session
+separatesOnly :: Conds -> Parser Partition
 separatesOnly (Separates s) = return s
 separatesOnly c             =
   Left $ withParse $ show c ++ "is not a `separates` specification"

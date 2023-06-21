@@ -63,37 +63,37 @@ typingExp (EOp2 op2 e1 e2) =
 -- typing e = throwError $ "Typing for "  ++ show e ++ " is unimplemented!"
 
 
--- | Compute the quantum type of a given (possibly incomplete) session
+-- | Compute the quantum type of a given (possibly incomplete) partition
 --
--- For example, a session `s = { x [0..1], y [0..1]}` can be treated as the
+-- For example, a partition `s = { x [0..1], y [0..1]}` can be treated as the
 -- composition of `s1 ⊠ s2 = s`. Therefore, when dereferencing `s1`, it should
--- resolve and give me `s` instead of `s1` as the session itself is inseparable!
+-- resolve and give me `s` instead of `s1` as the partition itself is inseparable!
 --
--- Examine each Range in a given Session and resolve to a STuple
-resolveSession
+-- Examine each Range in a given Partition and resolve to a STuple
+resolvePartition
   :: ( Has (State TState) sig m
      , Has (Error String) sig m
      )
-  => Session -> m STuple
-resolveSession se@(Session rs) = do
+  => Partition -> m STuple
+resolvePartition se@(Partition rs) = do
   locs <- forM rs $ \r@(Range name _ _) -> do
     rlocs <- use (xSt . at name) `rethrowMaybe` (show . UnknownRangeError) r
     return [ loc |  (r', loc) <- rlocs, rangeToNInt r ⊑ rangeToNInt r' ]
   case List.nub . concat $ locs of
-    [] -> throwError "Internal Error? An empty session has no type!"
+    [] -> throwError "Internal Error? An empty partition has no type!"
     [x] -> (use (sSt . at x) `rethrowMaybe` (show . UnknownLocError) x)
       <&> STuple . uncurry (x,,)
     ss ->
-      throwError @String $ printf "`%s` is not a sub-session, counterexample: %s"
+      throwError @String $ printf "`%s` is not a sub-partition, counterexample: %s"
         (show se) (show ss)
 
-resolveSessions
+resolvePartitions
   :: ( Has (State TState) sig m
      , Has (Error String) sig m
      )
-  => [Session] -> m STuple
-resolveSessions =
-  resolveSession . Session . concatMap unpackSession
+  => [Partition] -> m STuple
+resolvePartitions =
+  resolvePartition . Partition . concatMap unpackPartition
 
 -- | Type of the emitted value corresponding to its original quantum type.
 typingQEmit :: QTy -> Ty
@@ -119,7 +119,7 @@ typingGuard
      , Has (Error String) sig m
      )
   => Exp -> m STuple
-typingGuard (ESession s') = resolveSession s'
+typingGuard (EPartition s') = resolvePartition s'
 typingGuard e             = throwError $ "Unsupported guard: " ++ show e
 
 
@@ -170,58 +170,58 @@ checkSubtypeQ t1 t2 =
 --------------------------------------------------------------------------------
 
 
-retypeSession1
+retypePartition1
   :: ( Has (Error String) sig m
      , Has (State TState) sig m
      , Has (Gensym Binding) sig m
      )
   => STuple -> QTy -> m (Var, Ty, Var, Ty)
-retypeSession1 st qtNow = do
-  (vsPrev, tPrev, vsNow, tNow) <- retypeSession st qtNow
+retypePartition1 st qtNow = do
+  (vsPrev, tPrev, vsNow, tNow) <- retypePartition st qtNow
   case (vsPrev, vsNow) of
     ([vPrev], [vNow]) ->
       return (vPrev, tPrev, vNow, tNow)
     _ ->
-      throwError @String $ printf "%s and %s contains more than 1 session!"
+      throwError @String $ printf "%s and %s contains more than 1 partition!"
         (show vsPrev) (show vsNow)
 
--- | Cast the type of a session to a given qtype, modify the typing state and
+-- | Cast the type of a partition to a given qtype, modify the typing state and
 -- emit variable.
 --
 -- However, retyping doesn't generate a new meta variable
-retypeSession
+retypePartition
   :: ( Has (Error String) sig m
      , Has (State TState) sig m
      , Has (Gensym Binding) sig m
      )
   => STuple -> QTy -> m ([Var], Ty, [Var], Ty)
-retypeSession st qtNow = do
+retypePartition st qtNow = do
   let STuple(locS, sResolved, qtPrev) = st
   when (qtNow == qtPrev) $
     throwError @String  $ printf
-     "Session `%s` is of type `%s`. No retyping need to be done."
+     "Partition `%s` is of type `%s`. No retyping need to be done."
      (show sResolved) (show qtNow)
   -- Get info based on its previous type!
-  let vsSession = varFromSession sResolved
+  let vsPartition = varFromPartition sResolved
   let tOldEmit = typingQEmit qtPrev
-  let bdsOld = [ Binding v tOldEmit | v <- vsSession ]
+  let bdsOld = [ Binding v tOldEmit | v <- vsPartition ]
   vsOldEmit <- bdsOld `forM` findEmitSym
   removeEmitBindings bdsOld
   let tNewEmit = typingQEmit qtNow
   sSt %= (at locS ?~ (sResolved, qtNow))
-  vsNewEmit <- vsSession `forM` (gensymEmit . (`Binding` tOldEmit))
+  vsNewEmit <- vsPartition `forM` (gensymEmit . (`Binding` tOldEmit))
   return (vsOldEmit, tOldEmit, vsNewEmit, tNewEmit)
 
 
--- Merge two given session tuples if both of them are of CH type.
+-- Merge two given partition tuples if both of them are of CH type.
 mergeSTuples
   :: ( Has (State TState) sig m
      , Has (Error String) sig m
      )
   => STuple -> STuple -> m ()
 mergeSTuples
-  stM@(STuple (locMain, sMain@(Session rsMain), qtMain))
-  stA@(STuple (locAux, sAux@(Session rsAux), qtAux)) =
+  stM@(STuple (locMain, sMain@(Partition rsMain), qtMain))
+  stA@(STuple (locAux, sAux@(Partition rsAux), qtAux)) =
   do
     -- Sanity Check
     unless (qtMain == qtAux && qtAux == TCH) $
@@ -229,8 +229,8 @@ mergeSTuples
       throwError @String $ printf "%s and %s have different Q types!"
         (show stM) (show stA)
     -- start merge
-    let newSession = Session $ rsMain ++ rsAux
-    -- let vsMetaAux =  varFromSession sAux
+    let newPartition = Partition $ rsMain ++ rsAux
+    -- let vsMetaAux =  varFromPartition sAux
     -- let newAuxLocs = Map.fromList $ [(v, locMain) | v <- vsMetaAux]
     -- xSt %= Map.union newAuxLocs -- use Main's loc for aux
     xSt %= Map.map
@@ -239,7 +239,7 @@ mergeSTuples
                   let loc' = if loc == locAux then locMain else loc])
     sSt %=
       (`Map.withoutKeys` Set.singleton locAux) . -- GC aux's loc
-      (at locMain ?~ (newSession, TCH))          -- update main's state
+      (at locMain ?~ (newPartition, TCH))          -- update main's state
     return ()
 
 --------------------------------------------------------------------------------

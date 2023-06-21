@@ -65,9 +65,9 @@ checkSubtypeQ t1 t2 =
 class Typing a t where
   typing :: a -> Transform t
 
--- | resolve the typing of a coarse session
-instance Typing Session QTy where
-  typing se@(Session s) = resolveSession se >>= getSessionType
+-- | resolve the typing of a coarse partition
+instance Typing Partition QTy where
+  typing se@(Partition s) = resolvePartition se >>= getPartitionType
 
 instance Typing Exp Ty where
   typing (ENum _)  = return TNat
@@ -98,16 +98,16 @@ instance Typing QTy [Ty] where
   typing TCH  = return [TSeq TNat]
 
 
--- | Gather sessions used in the guard
-typingGuard :: Exp -> Transform (Session, QTy)
-typingGuard (ESession s') = 
+-- | Gather partitions used in the guard
+typingGuard :: Exp -> Transform (Partition, QTy)
+typingGuard (EPartition s') = 
   do 
-    s <- resolveSession s'
-    handleWith (unknownSessionError s) (uses (sSt . at s) ((s, ) <$>))
+    s <- resolvePartition s'
+    handleWith (unknownPartitionError s) (uses (sSt . at s) ((s, ) <$>))
 typingGuard e = throwError $ "Unsupported guard: " ++ show e
 
 -- | Find the type of the emitted term
-typingEmit :: Session -> Transform [Ty]
+typingEmit :: Partition -> Transform [Ty]
 typingEmit s = (typing s :: Transform QTy) >>= typing
 
 -- | Find the emitted symbol by the range name and quantum type
@@ -121,16 +121,16 @@ deallocOrphan vMeta tyEmit =
   rbSt %= (`Map.withoutKeys` Set.singleton (vMeta, tyEmit))
     
 
--- | Change the type of a session and returns something
--- retyping doesn't emit a new session symbol 
-retypeSession :: Session -> QTy -> Transform ([Var], Ty, [Var], Ty)
-retypeSession s qtNow =
+-- | Change the type of a partition and returns something
+-- retyping doesn't emit a new partition symbol 
+retypePartition :: Partition -> QTy -> Transform ([Var], Ty, [Var], Ty)
+retypePartition s qtNow =
   do
     qtPrev <- typing s
     when (qtNow == qtPrev) $
       throwError $
-        "Session `" ++ show s ++ "` is of type `" ++ show qtNow ++ "`. No retyping can be done."
-    let vMetas = varFromSession s
+        "Partition `" ++ show s ++ "` is of type `" ++ show qtNow ++ "`. No retyping can be done."
+    let vMetas = varFromPartition s
     tOldEmit <- only1 $ typing qtPrev
     vOldEmits <- mapM (`findSym` tOldEmit) vMetas
     -- update states
@@ -143,14 +143,14 @@ retypeSession s qtNow =
     vNewEmits <- mapM (`gensym` tNewEmit) vMetas
     return (vOldEmits, tOldEmit, vNewEmits, tOldEmit)
 
-retypeSession1 :: Session -> QTy -> Transform (Var, Ty, Var, Ty)
-retypeSession1 s qtNow =
+retypePartition1 :: Partition -> QTy -> Transform (Var, Ty, Var, Ty)
+retypePartition1 s qtNow =
   do
     qtPrev <- typing s
     when (qtNow == qtPrev) $
       throwError $
-        "Session `" ++ show s ++ "` is of type `" ++ show qtNow ++ "`. No retyping can be done."
-    vMeta <- only1 $ return $ varFromSession s
+        "Partition `" ++ show s ++ "` is of type `" ++ show qtNow ++ "`. No retyping can be done."
+    vMeta <- only1 $ return $ varFromPartition s
     tOldEmit <- only1 $ typing qtPrev
     vOldEmit <- vMeta `findSym` tOldEmit
     -- update states
@@ -163,17 +163,17 @@ retypeSession1 s qtNow =
     vNewEmit <- vMeta `gensym` tNewEmit
     return (vOldEmit, tOldEmit, vNewEmit, tOldEmit)
 
--- | Merge two sessions and update the typing state
-mergeSessionType :: Session -> Session -> Transform ()
-mergeSessionType sMain@(Session rsMain) sAux@(Session rsAux) =
+-- | Merge two partitions and update the typing state
+mergePartitionType :: Partition -> Partition -> Transform ()
+mergePartitionType sMain@(Partition rsMain) sAux@(Partition rsAux) =
   do
-    qtMain <- handleWith (unknownSessionError sMain) $ use (sSt . at sMain)
-    qtAux <- handleWith (unknownSessionError sAux) $ use (sSt . at sAux)
+    qtMain <- handleWith (unknownPartitionError sMain) $ use (sSt . at sMain)
+    qtAux <- handleWith (unknownPartitionError sAux) $ use (sSt . at sAux)
     unless (qtMain == qtAux && qtAux == TCH) $
       throwError $
-        "Session `"
+        "Partition `"
           ++ show sMain
-          ++ "` and session `"
+          ++ "` and partition `"
           ++ show sAux
           ++ "` are of type `"
           ++ show qtMain
@@ -181,24 +181,24 @@ mergeSessionType sMain@(Session rsMain) sAux@(Session rsAux) =
           ++ show qtAux
           ++ "`, which are not CH."
     -- start merge
-    let newSession = Session $ rsMain ++ rsAux
-    let vMetasMain = varFromSession sMain 
-    let vMetasAux =  varFromSession sAux
-    let refNewMain = Map.fromList $ (, newSession) <$> vMetasMain 
-    let refNewAux  = Map.fromList $ (, newSession) <$> vMetasAux 
+    let newPartition = Partition $ rsMain ++ rsAux
+    let vMetasMain = varFromPartition sMain 
+    let vMetasAux =  varFromPartition sAux
+    let refNewMain = Map.fromList $ (, newPartition) <$> vMetasMain 
+    let refNewAux  = Map.fromList $ (, newPartition) <$> vMetasAux 
     -- update range reference 
     xSt %= ((refNewMain `Map.union` refNewAux) `Map.union`)
-    -- update session type state
+    -- update partition type state
     sSt %= (`Map.withoutKeys` Set.fromList [sMain, sAux])
-    sSt %= (at newSession ?~ TCH)
+    sSt %= (at newPartition ?~ TCH)
     -- surprisingly, I don't need to change the rest
     -- TODO: what should I return to avoid computation?
     return ()
 
 
--- | Resolve session: compute the super session of one session
-resolveSession :: Session -> Transform Session
-resolveSession se@(Session rs) =
+-- | Resolve partition: compute the super partition of one partition
+resolvePartition :: Partition -> Transform Partition
+resolvePartition se@(Partition rs) =
     do
       sesRange <-
         (`mapM` rs)
@@ -206,47 +206,47 @@ resolveSession se@(Session rs) =
               handleWith (unknownRangeError r) $ use (xSt . at name)
           )
       case List.nub sesRange of
-        [] -> throwError "Internal Error? An empty session has no type!"
+        [] -> throwError "Internal Error? An empty partition has no type!"
         [x] -> return x
         ss ->
           throwError $
             "`"
               ++ show se
-              ++ "` is not a sub-session, counterexample: "
+              ++ "` is not a sub-partition, counterexample: "
               ++ show ss
 
--- | Resolve session: compute the super session of several sessions
-resolveSessions :: [Session] -> Transform Session
-resolveSessions =
-  resolveSession . Session . concatMap (\(Session rs) -> rs)
+-- | Resolve partition: compute the super partition of several partitions
+resolvePartitions :: [Partition] -> Transform Partition
+resolvePartitions =
+  resolvePartition . Partition . concatMap (\(Partition rs) -> rs)
 
--- | Compute the quantum type of a session
-getSessionType :: Session -> Transform QTy
-getSessionType s =
+-- | Compute the quantum type of a partition
+getPartitionType :: Partition -> Transform QTy
+getPartitionType s =
   handleWith
     ( throwError $
-        "Internal Error? Session`"
+        "Internal Error? Partition`"
           ++ show s
           ++ "` is not in the type state"
     )
     $ use (sSt . at s)
 
--- | Assemble the session from a session from the guard and the upper and the
+-- | Assemble the partition from a partition from the guard and the upper and the
 -- lower bound of the loop and emit a check
 -- Precondition: Split has been performed at the subtyping stage so that it's
--- guaranteed that only one range can be in the session
+-- guaranteed that only one range can be in the partition
 -- Reason: (was from `augByGuardType`)
 --   `sGuard` is likely to be in `x [i .. i + 1]` form,
---   there should be a around of resolution that resolves to the session
+--   there should be a around of resolution that resolves to the partition
 --   `x[l .. h]` and do the emission at that place 
-loopSession :: Session -> Exp -> Exp -> Transform (Session, Exp)
-loopSession (Session [Range r sl sh]) l h =
+loopPartition :: Partition -> Exp -> Exp -> Transform (Partition, Exp)
+loopPartition (Partition [Range r sl sh]) l h =
   return
-    ( Session [Range r l h]
+    ( Partition [Range r l h]
     , EEmit (EOpChained l [(OLe, sl), (OLt, sh), (OLe, h)])
     )
-loopSession s _ _ =
+loopPartition s _ _ =
   throwError $
-    "Session `"
+    "Partition `"
       ++ show s
       ++ "` contains more than 1 range, this should be resolved at the typing stage"

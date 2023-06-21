@@ -22,15 +22,15 @@ inferStmt (SIf e seps b) =
 inferStmt _ = undefined
 
 inferGuardExp :: Exp -> Transform ()
-inferGuardExp (ESession s) =
-  inferSession s TCH
+inferGuardExp (EPartition s) =
+  inferPartition s TCH
 inferGuardExp _ = undefined
 
-inferSession :: Session -> QTy -> Transform ()
-inferSession s@(Session rs) qt = 
+inferPartition :: Partition -> QTy -> Transform ()
+inferPartition s@(Partition rs) qt = 
   do
-    sCtx <- resolveSession s
-    qtCtx <- getSessionType sCtx
+    sCtx <- resolvePartition s
+    qtCtx <- getPartitionType sCtx
     inferSub s qt sCtx qtCtx 
     return ()
 
@@ -41,8 +41,8 @@ inferSession s@(Session rs) qt =
 -- 2. QTy Subtying
 -- Subrange should be resolved first, followed by QTy, because splitting enables
 -- potential QTy casts
-inferSub :: Session -> QTy -> Session -> QTy -> Transform ()
-inferSub (Session [r@(Range x l h)]) qt sCtx@(Session rsCtx) qtCtx =
+inferSub :: Partition -> QTy -> Partition -> QTy -> Transform ()
+inferSub (Partition [r@(Range x l h)]) qt sCtx@(Partition rsCtx) qtCtx =
   return ()
   where
     rsRelavent = [r'' | r' <- rsCtx

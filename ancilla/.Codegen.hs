@@ -96,7 +96,7 @@ instance Codegen Stmt where
       opCastHad :: QTy -> Transform String
       opCastHad TNor = return "CastNorHad"
       opCastHad t = throwError $ "type `" ++ show t ++ "` cannot be casted to Had type"
-  aug (SApply s@(Session ranges) e@(EEmit (ELambda {}))) = do
+  aug (SApply s@(Partition ranges) e@(EEmit (ELambda {}))) = do
     qt <- typing s
     checkSubtypeQ TCH qt
     emitVs <- mapM (`findSymByRangeQTy` qt) ranges
@@ -110,40 +110,40 @@ instance Codegen Stmt where
     where
       withGuardType _ TNor = throwError "Nor type for gurad?"
       withGuardType sGuard THad = do
-        -- Requirement: all sessions in the body should be in the same session
-        freeSession <- resolveSessions . leftSessions . inBlock $ b
-        prelude <- preludeIf freeSession
+        -- Requirement: all partitions in the body should be in the same partition
+        freePartition <- resolvePartitions . leftPartitions . inBlock $ b
+        prelude <- preludeIf freePartition
         stmtsBody <- aug b
         vCard <- getStashedEmitVar prelude
-        mergeGuardStmt <- mergeGuard vCard freeSession sGuard
+        mergeGuardStmt <- mergeGuard vCard freePartition sGuard
         mergeBody <- mergeIf prelude <&> concat
         let dupStmts = (^. _3) prelude
         return $ dupStmts ++ concatMap inBlock stmtsBody ++ mergeBody ++ mergeGuardStmt
       withGuardType _ TCH =
         throwError "Do the split mechanism here, map will not be generic enough"
-      -- Convert those session to CH type if not and generate split statement
-      -- for every session
-      preludeIf :: Session -> Transform (Ty, Session, [Stmt], BiRangeZipper a)
+      -- Convert those partition to CH type if not and generate split statement
+      -- for every partition
+      preludeIf :: Partition -> Transform (Ty, Partition, [Stmt], BiRangeZipper a)
       preludeIf s = do
-        (castStmts, tyEmit) <- coercionSessionCH s
-        (stashed, dupStmts, zipper) <- dupSession tyEmit s
+        (castStmts, tyEmit) <- coercionPartitionCH s
+        (stashed, dupStmts, zipper) <- dupPartition tyEmit s
         return (tyEmit, stashed, castStmts ++ dupStmts, zipper)
-      -- Generate merge statement for every session
-      mergeIf :: (Ty, Session, [Stmt], BiRangeZipper [Stmt]) -> Transform [[Stmt]]
+      -- Generate merge statement for every partition
+      mergeIf :: (Ty, Partition, [Stmt], BiRangeZipper [Stmt]) -> Transform [[Stmt]]
       mergeIf (tyEmit, _, _, zipper) = zipper $ mergeRange2 tyEmit
-      -- Merge the guard into the session
+      -- Merge the guard into the partition
       -- Question: should the guard be visible to the body? I don't think so.
       -- If that should be visible, then the cast should happen beforehand.
-      -- The semantics of multiple sessions in one body is unclear so far
-      mergeGuard :: Var -> Session -> Session -> Transform [Stmt]
-      mergeGuard vCard bodySession s = do
-        -- grab an arbitrary range from the session
+      -- The semantics of multiple partitions in one body is unclear so far
+      mergeGuard :: Var -> Partition -> Partition -> Transform [Stmt]
+      mergeGuard vCard bodyPartition s = do
+        -- grab an arbitrary range from the partition
         let stateCard = EEmit . ECard . EVar $ vCard
-        -- in Had type, `retypeSession1` should not fail, unless there's some
+        -- in Had type, `retypePartition1` should not fail, unless there's some
         -- other design choices: the more you want, the more messy the entire
         -- system will be
-        (vOldEmit, _, vNewEmit, tNewEmit) <- retypeSession1 s TCH
-        mergeSessionType bodySession s
+        (vOldEmit, _, vNewEmit, tNewEmit) <- retypePartition1 s TCH
+        mergePartitionType bodyPartition s
         -- TODO: in phase calculus, the sign of phases will depend on
         -- `vNewEmit
         tNew <-
@@ -154,17 +154,17 @@ instance Codegen Stmt where
                 _ -> Nothing
             )
         return
-          [ SDafny "// Body Session + Guard Session"
+          [ SDafny "// Body Partition + Guard Partition"
           , vNewEmit
               `SAssign` EOp2
                 OAdd
                 (EEmit $ EMakeSeq tNew stateCard $ constExp (ENum 0))
                 (EEmit $ EMakeSeq tNew stateCard $ constExp (ENum 1))
           ]
-      getStashedEmitVar :: (Ty, Session, [Stmt], BiRangeZipper a) -> Transform Var
-      getStashedEmitVar (_, s@(Session rs), _, _) =
+      getStashedEmitVar :: (Ty, Partition, [Stmt], BiRangeZipper a) -> Transform Var
+      getStashedEmitVar (_, s@(Partition rs), _, _) =
         case listToMaybe rs of
-          Nothing -> throwError "Empty Session?"
+          Nothing -> throwError "Empty Partition?"
           Just r -> findSymByRangeQTy r TCH
   aug (SFor idx boundl boundr eguard invs seps body) = do
     (s, t) <- typingGuard eguard
@@ -174,23 +174,23 @@ instance Codegen Stmt where
       augByGuardType TNor _ =
         throwError "This is an easy case: apply on states with 1"
       augByGuardType THad sGrd = do
-        (sGrdTtl, eGrdRng) <- loopSession sGrd boundl boundr
-        -- collect the sessions in the body and cast them to CH first
-        freeSession <- resolveSessions . leftSessions . inBlock $ body
-        (castStmts, tyEmit) <- coercionSessionCH freeSession
-        -- create a fresh CH metavariable for the guard session1
+        (sGrdTtl, eGrdRng) <- loopPartition sGrd boundl boundr
+        -- collect the partitions in the body and cast them to CH first
+        freePartition <- resolvePartitions . leftPartitions . inBlock $ body
+        (castStmts, tyEmit) <- coercionPartitionCH freePartition
+        -- create a fresh CH metavariable for the guard partition1
         -- interestingly, the dup semantics works here!
         tyGuardEmit <- only1 $ typing THad
-        (sGrdFrsh, sGrdDupStmts, zGrd) <- dupSession tyGuardEmit sGrdTtl
+        (sGrdFrsh, sGrdDupStmts, zGrd) <- dupPartition tyGuardEmit sGrdTtl
         -- cast `sGrd` to CH type at meta-level
-        (_, _, vGrdNowEmits, tGrdNowEmits) <- retypeSession sGrd TCH
+        (_, _, vGrdNowEmits, tGrdNowEmits) <- retypePartition sGrd TCH
         vGrdNowEmit <- only1 $ return vGrdNowEmits
         let sGrdResetStmt = SAssign vGrdNowEmit (EEmit EMtSeq)
-        -- now, both `freeSession` and the new guard sessions has been
+        -- now, both `freePartition` and the new guard partitions has been
         -- prepared
         -- Start building the new body:
-        -- 1. split semantics again over freeSessions
-        (sStashedBdy, dupSBdy, zipperBody) <- dupSession tyEmit freeSession
+        -- 1. split semantics again over freePartitions
+        (sStashedBdy, dupSBdy, zipperBody) <- dupPartition tyEmit freePartition
         -- 2. compile the body
         loopBody <- aug body
         -- 3. compile the merge of both body and the guard
@@ -214,17 +214,17 @@ instance Codegen Stmt where
 
 type BiRangeZipper a = Zipper Range a
 
-{- | Duplicate session, generate duplication statements and a zipper
+{- | Duplicate partition, generate duplication statements and a zipper
  the zipper returned zips over the newly generated ranges and the old ones
 
  FIXME: do I really need to emit new symbols?
  return: (stashed, dupStmts, zipper)
 -}
-dupSession :: Ty -> Session -> Transform (Session, [Stmt], BiRangeZipper a)
-dupSession tEmit s =
+dupPartition :: Ty -> Partition -> Transform (Partition, [Stmt], BiRangeZipper a)
+dupPartition tEmit s =
   do
-    stashed@(Session newRs) <- gensymSessionMeta s
-    let Session oldRs = s
+    stashed@(Partition newRs) <- gensymPartitionMeta s
+    let Partition oldRs = s
     stmts <- zipWithM mkDecls newRs oldRs
     return (stashed, stmts, \f -> zipWithM f oldRs newRs)
   where
@@ -253,14 +253,14 @@ instance Codegen (Var, Exp, Ty) where
     vs <- gensymTys ts v
     -- update state mappings
     let vRange = Range v (ENum 0) e1
-        vSession = session1 vRange
-    xSt %= (at v ?~ vSession)
-    sSt %= (at vSession ?~ TNor)
+        vPartition = partition1 vRange
+    xSt %= (at v ?~ vPartition)
+    sSt %= (at vPartition ?~ TNor)
     kSt %= (at v ?~ TQ TNor)
     -- done
     return $ zip3 vs es ts
   aug (v, e@(EOp2 ONor e1 e2), _) =
-    throwError "Internal: Attempt to create a Nor session that's not of nor type"
+    throwError "Internal: Attempt to create a Nor partition that's not of nor type"
   aug ve = return [ve]
 
 instance Codegen Exp where
@@ -277,7 +277,7 @@ instance Codegen Ty where
 -- | Helpers 
 --------------------------------------------------------------------------------
 
--- | Given a well-typed full session (s :: τ1), emit the statement and cast it
+-- | Given a well-typed full partition (s :: τ1), emit the statement and cast it
 -- to CH type
 -- 
 -- FIXME: Emitted variable declaration should appear outside the block,
@@ -285,32 +285,32 @@ instance Codegen Ty where
 -- Solution: write used emission variables in the writer and forward the
 -- declaration
 
-coercionCH :: QTy -> Session -> Transform [Stmt]
+coercionCH :: QTy -> Partition -> Transform [Stmt]
 coercionCH TCH = const $ return []
 coercionCH TNor = coercionWithOp "CastNorCH10" TNor TCH
 coercionCH THad = coercionWithOp "CastHadCH10" TNor TCH
 
 
-coercionSessionCH :: Session -> Transform ([Stmt], Ty)
-coercionSessionCH s =
+coercionPartitionCH :: Partition -> Transform ([Stmt], Ty)
+coercionPartitionCH s =
   do
-    ty <- getSessionType s
+    ty <- getPartitionType s
     coerStmts <- coercionCH ty s
     tyEmit <- only1 $ typingEmit s
     return (coerStmts, tyEmit)
 
 
--- | For a given well-typed session, cast its type with the given op and return
+-- | For a given well-typed partition, cast its type with the given op and return
 -- the statements for the cast
 -- TODO: with phase calculus [coercionWithOp] will need to take a list of `Op`s
-coercionWithOp :: String -> QTy -> QTy -> Session -> Transform [Stmt]
-coercionWithOp castOp sessionTy newTy s =
+coercionWithOp :: String -> QTy -> QTy -> Partition -> Transform [Stmt]
+coercionWithOp castOp partitionTy newTy s =
   do
-    (vOldEmits, tOldEmit, vNewEmits, tNewEmit) <- retypeSession s newTy
+    (vOldEmits, tOldEmit, vNewEmits, tNewEmit) <- retypePartition s newTy
     -- assemble the emitted terms
     return $
       concat
-        [ [ SDafny $ "// Cast " ++ show sessionTy ++ " ==> " ++ show newTy
+        [ [ SDafny $ "// Cast " ++ show partitionTy ++ " ==> " ++ show newTy
           , SAssign vNew $ EEmit (castOp `ECall` [EEmit $ EDafnyVar vOld])
           ]
         | (vOld, vNew) <- zip vOldEmits vNewEmits

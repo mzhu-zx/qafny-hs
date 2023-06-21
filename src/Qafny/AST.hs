@@ -66,8 +66,8 @@ data Exp
   | EForall Binding (Maybe Exp) Exp
   | EDafny String
   | EEmit EmitExp
-  | ESession Session
-  | ESpec Session QTy Exp
+  | EPartition Partition
+  | ESpec Partition QTy Exp
   | EQSpec Var Intv [Exp]
   -- ?
   | RInd Var Exp -- boolean at var[exp], var must be Q type
@@ -93,13 +93,13 @@ data Conds
   = Requires Exp
   | Ensures Exp
   | Invariants Exp
-  | Separates Session
+  | Separates Partition
   deriving Show
 
 type Requires = [Exp]
 type Ensures = [Exp]
 type Invariants = [Exp]
-type Separates = Session
+type Separates = Partition
 
 newtype Block = Block { inBlock :: [Stmt] }
   deriving (Show, Eq)
@@ -124,22 +124,22 @@ newtype Loc = Loc { deref :: Var }
 instance Show Loc where
   show = deref
 
-newtype Session = Session { unpackSession :: [Range] }
+newtype Partition = Partition { unpackPartition :: [Range] }
   deriving (Eq, Ord)
 
-instance Show Session where
-  show = show . unpackSession
+instance Show Partition where
+  show = show . unpackPartition
 
 data Stmt
   = SAssert Exp
   | SCall Exp [Exp]
   | SVar Binding (Maybe Exp)
   | SAssign Var Exp
-  | SApply Session Exp
+  | SApply Partition Exp
   | SDafny String
   | SIf Exp Separates Block
   --     id left right guard invarants separates Body
-  | SFor Var Exp Exp   Exp   [Exp]     Session   Block
+  | SFor Var Exp Exp   Exp   [Exp]     Partition   Block
   | SEmit EmitStmt
   deriving (Show, Eq)
 
@@ -172,22 +172,22 @@ qComment :: String -> Stmt
 qComment = SDafny . ("// " ++)
 
 --------------------------------------------------------------------------------
--- | Session Utils
+-- | Partition Utils
 --------------------------------------------------------------------------------
 
 range1 :: Var -> Range
 range1 v = Range v (ENum 0) (ENum 1)
 
-session1 :: Range -> Session
-session1 =  Session . (: [])
+partition1 :: Range -> Partition
+partition1 =  Partition . (: [])
 
--- | Extract all variables for each range in a session
-varFromSession :: Session -> [Var]
-varFromSession (Session s) = [ x | (Range x _ _) <- s ]
+-- | Extract all variables for each range in a partition
+varFromPartition :: Partition -> [Var]
+varFromPartition (Partition s) = [ x | (Range x _ _) <- s ]
 
--- | Compute all free sessions/ranges mentioned in the LHS of application
-leftSessions :: [Stmt] -> [Session]
-leftSessions =
+-- | Compute all free partitions/ranges mentioned in the LHS of application
+leftPartitions :: [Stmt] -> [Partition]
+leftPartitions =
   concatMap perStmt
   where
     perStmt (SApply s _) = [s]
