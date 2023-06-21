@@ -95,8 +95,8 @@ requireEnsures
 invs
   : conds                             { reverse [e | (Invariants e) <- $1]   }
 
-separates :: { Session }
-  : "separates" session               { $2                                   }
+separates :: { Partition }
+  : "separates" partition               { $2                                   }
 
 conds
   : {- empty -}                       { []                                   }
@@ -159,24 +159,24 @@ stmt
   | "var" binding ';'                 { SVar $2 Nothing                      }
   | "var" binding ":=" expr ';'       { SVar $2 (Just $4)                    }
   | id ":=" expr ';'                  { SAssign $1 $3                        }
-  | session "*=" expr ';'             { SApply $1 $3                         }
+  | partition "*=" expr ';'             { SApply $1 $3                         }
   | "if" '(' expr ')' separates block
                                       { SIf $3 $5 $6                         }
   | "for" id "in" '[' expr ".." expr ']' "with" expr invs separates block
                                       { SFor $2 $5 $7 $10 $11 $12 $13        }
                                                                           
-session :: { Session }                                                               
-  : session_                          { Session $ reverse $1                 }
+partition :: { Partition }                                                               
+  : partition_                          { Partition $ reverse $1                 }
                                                                           
-session_                                                                  
+partition_                                                                  
   : range                             { [$1]                                 }
-  | session_ range                    { $2 : $1                              }
+  | partition_ range                    { $2 : $1                              }
                                                                           
 range                                                                     
   : id '[' expr ".." expr ']'         { Range $1 $3 $5                       }
                                                                 
 spec ::   { Exp }
-  : '{' session ':'  qty "↦" qspec '}' { ESpec $2 $4 $6                      }
+  : '{' partition ':'  qty "↦" qspec '}' { ESpec $2 $4 $6                      }
 
 qspec ::  { Exp }
   : "Σ" id "∈" '[' expr ".." expr ']' '.' tuple(expr)
@@ -188,7 +188,7 @@ tuple(p)
 expr                                                                      
   : atomic                            { $1                     }
   | spec                              { $1                     }
-  | session                           { ESession $1            }
+  | partition                           { EPartition $1            }
   | "H"                               { EHad                   }
   | "QFT"                             { EQFT                   }
   | "RQFT"                            { ERQFT                  }
