@@ -18,6 +18,7 @@ data Token
   | TWith
   | TMea
   | TUnicodeMap
+  | TUnicodeTensor
 
   -- Delimiters
   | TLPar | TRPar
@@ -36,10 +37,11 @@ data Token
   -- Types
   | TArrow
   | TNat | TInt | TBool
-  | TSeq | TNor | THad | TCH
+  | TSeq | TNor | THad | TCH | TCH01
 
   -- Identifiers
   | TId String
+  | TWildcard
 
   -- Comparison
   | TEq | TLe | TGe

@@ -8,7 +8,7 @@ import           Text.Printf    (printf)
 type NInt = Interval Nat
 
 expToNat :: Exp -> Nat
-expToNat (ENum a) = if a >= 0 then Nat a else Undef
+expToNat (ENum a) = if a >= 0 then Nat a else Mt
 expToNat (EVar _) = Inf       -- overapproximate variables to infinity
 expToNat _        = Inf       -- there could be some Op2 here, overapprox!
 

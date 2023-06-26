@@ -22,6 +22,7 @@ data QTy
   = TNor
   | THad
   | TCH
+  | TCH01
   deriving (Show, Eq, Ord)
 
 type Var = String
@@ -55,6 +56,7 @@ data Op1
 data Exp
   = ENum Int
   | EVar Var
+  | EWildcard
   | EHad
   | EQFT
   | ERQFT
@@ -69,6 +71,7 @@ data Exp
   | EPartition Partition
   | ESpec Partition QTy Exp
   | EQSpec Var Intv [Exp]
+  | EQSpec01 Var Intv Var Intv [Exp] 
   -- ?
   | RInd Var Exp -- boolean at var[exp], var must be Q type
   | REq Exp Exp Var Exp -- compare exp == exp and store the value in var[exp], var must be Q type

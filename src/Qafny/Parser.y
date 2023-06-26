@@ -35,12 +35,14 @@ dafny                 { ( _, L.TDafny $$  ) }
 "RQFT"                { ( _, L.TRQFT      ) }
 "meas"                { ( _, L.TMea       ) }
 "ch"                  { ( _, L.TCH        ) }
+"ch01"                { ( _, L.TCH01      ) }
 "var"                 { ( _, L.TVar       ) }
 "if"                  { ( _, L.TIf        ) }
 "λ"                   { ( _, L.TCl        ) }
-"Σ"                   { ( _, L.TUnicodeSum        ) }
-"∈"                   { ( _, L.TUnicodeIn        ) }
-"↦"                   { ( _, L.TUnicodeMap        ) }
+"Σ"                   { ( _, L.TUnicodeSum    ) }
+"⊗"                   { ( _, L.TUnicodeTensor ) }
+"∈"                   { ( _, L.TUnicodeIn     ) }
+"↦"                   { ( _, L.TUnicodeMap    ) }
 "assert"              { ( _, L.TAssert    ) }
 "||"                  { ( _, L.TOr        ) }
 "&&"                  { ( _, L.TAnd       ) }
@@ -58,6 +60,7 @@ dafny                 { ( _, L.TDafny $$  ) }
 '{'                   { ( _, L.TLBrace    ) }
 '}'                   { ( _, L.TRBrace    ) }
 id                    { ( _, L.TId $$     ) }
+'_'                   { ( _, L.TWildcard  ) }
 ','                   { ( _, L.TComma     ) }
 ':'                   { ( _, L.TColon     ) }
 '.'                   { ( _, L.TDot       ) }
@@ -132,6 +135,7 @@ qty :: { QTy }
   : "nor"                             { TNor                            }
   | "had"                             { THad                            }
   | "ch"                              { TCH                             }
+  | "ch01"                            { TCH01                           }
                                                                 
 
 blockOpt                                                                     
@@ -159,36 +163,43 @@ stmt
   | "var" binding ';'                 { SVar $2 Nothing                      }
   | "var" binding ":=" expr ';'       { SVar $2 (Just $4)                    }
   | id ":=" expr ';'                  { SAssign $1 $3                        }
-  | partition "*=" expr ';'             { SApply $1 $3                         }
+  | partition "*=" expr ';'           { SApply $1 $3                         }
   | "if" '(' expr ')' separates block
                                       { SIf $3 $5 $6                         }
   | "for" id "in" '[' expr ".." expr ']' "with" expr invs separates block
                                       { SFor $2 $5 $7 $10 $11 $12 $13        }
                                                                           
 partition :: { Partition }                                                               
-  : partition_                          { Partition $ reverse $1                 }
+  : partition_                        { Partition $ reverse $1               }
                                                                           
 partition_                                                                  
   : range                             { [$1]                                 }
-  | partition_ range                    { $2 : $1                              }
+  | partition_ range                  { $2 : $1                              }
                                                                           
 range                                                                     
   : id '[' expr ".." expr ']'         { Range $1 $3 $5                       }
                                                                 
 spec ::   { Exp }
-  : '{' partition ':'  qty "↦" qspec '}' { ESpec $2 $4 $6                      }
+  : '{' partition ':'  qty "↦" qspec '}'
+                                      { ESpec $2 $4 $6                       }
 
 qspec ::  { Exp }
   : "Σ" id "∈" '[' expr ".." expr ']' '.' tuple(expr)
-                                      { EQSpec $2 (Intv $5 $7) $10    }
+                                      { EQSpec $2 (Intv $5 $7) $10           }
+  | "Σ" id "∈" '[' expr ".." expr ']' '.'             {- 9  -}
+    "⊗" id "∈" '[' expr ".." expr ']' '.'             {- 18 -}
+    tuple(expr)
+                                      { EQSpec01 $2 (Intv $5 $7) $11 (Intv $14 $16) $19           }
+  | {- empty -}                       { EWildcard }
 
 tuple(p)
   : '(' manyComma(p) ')'              { $2 }
 
 expr                                                                      
   : atomic                            { $1                     }
+  | '_'                               { EWildcard              }
   | spec                              { $1                     }
-  | partition                           { EPartition $1            }
+  | partition                         { EPartition $1          }
   | "H"                               { EHad                   }
   | "QFT"                             { EQFT                   }
   | "RQFT"                            { ERQFT                  }

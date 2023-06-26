@@ -45,6 +45,7 @@ token :-
   not              { emit $  TNot                }
   had              { emit $  THad                }
   ch               { emit $  TCH                 }
+  ch01             { emit $  TCH01               }
   var              { emit $  TVar                }
   if               { emit $  TIf                 }
   cl               { emit $  TCl                 }
@@ -53,6 +54,7 @@ token :-
   in               { emit $  TIn                 }
   "∈"              { emit $  TUnicodeIn          }
   "Σ"              { emit $  TUnicodeSum         }
+  "⊗"              { emit $  TUnicodeTensor      }
   "↦"              { emit $  TUnicodeMap         }
   with             { emit $  TWith               }
   invariant        { emit $  TInv                }
@@ -60,6 +62,7 @@ token :-
   QFT              { emit $  TQFT                }
   RQFT             { emit $  TRQFT               }
   meas             { emit $  TMea                }
+  '_'              { emit $  TWildcard       }
   @id              { pushToken $ TId             }
   @digits          { pushToken $ TLitInt . read  }
   @assign          { emit $  TAssign             }

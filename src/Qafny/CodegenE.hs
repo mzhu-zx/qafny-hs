@@ -163,7 +163,7 @@ codegenSpec vsEmit bind (Intv l r) eValues = do
   let eBound = Just (EEmit (EOpChained l [(OLe, EVar bind), (OLt, r)]))
   let eSelect x = EEmit (ESelect (EVar x) (EVar bind))
   let es = [ EForall (Binding bind TNat) eBound (EOp2 OEq (eSelect vE) eV)
-           | (vE, eV) <- zip vsEmit eValues]
+           | (vE, eV) <- zip vsEmit eValues, eV /= EWildcard ]
   return $ case es of
     [] -> EBool True
     x : xs -> EEmit (EOpChained x [ (OAnd, x') | x' <- xs ])

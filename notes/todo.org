@@ -1,0 +1,6 @@
+#+TITLE: TODOs
+* Parsing
+
+** =separates= and =invariants=
+Hack the parser to support =separates= and =invariant=s directives supplied in
+any order.
