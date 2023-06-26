@@ -8,7 +8,7 @@ data Ty
   | TInt
   | TBool
   | TSeq Ty
-  | TQ QTy
+  | TQReg Int
   | TMethod [Ty] [Ty] -- parameter and return types
   | TEmit EmitTy
   deriving (Show, Eq, Ord)
@@ -181,12 +181,15 @@ qComment = SDafny . ("// " ++)
 range1 :: Var -> Range
 range1 v = Range v (ENum 0) (ENum 1)
 
+
 partition1 :: Range -> Partition
 partition1 =  Partition . (: [])
+
 
 -- | Extract all variables for each range in a partition
 varFromPartition :: Partition -> [Var]
 varFromPartition (Partition s) = [ x | (Range x _ _) <- s ]
+
 
 -- | Compute all free partitions/ranges mentioned in the LHS of application
 leftPartitions :: [Stmt] -> [Partition]
@@ -197,38 +200,6 @@ leftPartitions =
     -- TODO: query If and For recursively
     perStmt _            = []
 
-
--- | Output a splitted range if [r1] is the sub-range of [r2]
-
-
-subRange :: Range -> Range -> Maybe (Range, Range)
-subRange (Range r1 l1 h1) (Range r2 l2 h2) =
-  do
-    guard $ r1 == r2
-    bl <- abstractLeq l1 l2
-    br <- abstractLeq h1 h2
-    -- FIXME : Signature not correct
-    Nothing
-
-abstractLeq :: Exp -> Exp -> Maybe Bool
-abstractLeq x y =
-  do
-    vx <- reduceExp x
-    vy <- reduceExp y
-    return $ vx <= vy
-
-reduceExp :: Exp -> Maybe Int
-reduceExp (ENum x) = Just x
-reduceExp (EOp2 op e1 e2) =
-  do
-    v1 <- reduceExp e1
-    v2 <- reduceExp e2
-    reflectOp op v1 v2
-  where
-    reflectOp OAdd = Just .: (+)
-    reflectOp OMul = Just .: (*)
-    reflectOp _    = const $ const Nothing
-reduceExp _ = Nothing
 
 (.:) :: (c -> d) -> (a -> b -> c) -> a -> b -> d
 (.:) g f2 x y = g (f2 x y)

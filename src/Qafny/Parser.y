@@ -35,6 +35,7 @@ dafny                 { ( _, L.TDafny $$  ) }
 "RQFT"                { ( _, L.TRQFT      ) }
 "meas"                { ( _, L.TMea       ) }
 "ch"                  { ( _, L.TCH        ) }
+"qreg"                { ( _, L.TQReg      ) }
 "ch01"                { ( _, L.TCH01      ) }
 "var"                 { ( _, L.TVar       ) }
 "if"                  { ( _, L.TIf        ) }
@@ -129,7 +130,7 @@ ty
   | "int"                             { TInt                                 }
   | "bool"                            { TBool                                }
   | "seq" '<' ty '>'                  { TSeq $3                              }
-  | qty                               { TQ $ $1 }
+  | "qreg" '[' digits ']'             { TQReg $3                             }
           
 qty :: { QTy }
   : "nor"                             { TNor                            }
@@ -170,11 +171,7 @@ stmt
                                       { SFor $2 $5 $7 $10 $11 $12 $13        }
                                                                           
 partition :: { Partition }                                                               
-  : partition_                        { Partition $ reverse $1               }
-                                                                          
-partition_                                                                  
-  : range                             { [$1]                                 }
-  | partition_ range                  { $2 : $1                              }
+  : manyComma(range)                  { Partition $ reverse $1               }
                                                                           
 range                                                                     
   : id '[' expr ".." expr ']'         { Range $1 $3 $5                       }

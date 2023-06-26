@@ -20,7 +20,7 @@ import           Control.Effect.State           (State)
 import           Effect.Gensym                  (Gensym, gensym)
 
 -- Handlers
-import           Qafny.Gensym                   (runGensym)
+import           Qafny.Gensym                   (resumeGensym)
 
 -- Utils
 import           Control.Lens                   (at, non, (%~), (?~), (^.))
@@ -63,6 +63,7 @@ import           Qafny.Utils
     , throwError'
     )
 import           Text.Printf                    (printf)
+import Carrier.Gensym.Emit (runGensymEmit)
 
 --------------------------------------------------------------------------------
 -- | Codegen
@@ -108,20 +109,31 @@ codegenToplevel
   => Toplevel
   -> m Toplevel
 codegenToplevel q@(QMethod v bds rts rqs ens (Just block)) = do
-  (i, emitBdsNames, (j, (rqs', block'))) <-
-    runGensym $ local (appkEnvWithBds bds) $
-      (,) <$> codegenRequires rqs <*> codegenBlock block
+  (countMeta, (countEmit, (vsEmitR', vsEmitB), (rqsCG, blockCG))) <-
+    local (appkEnvWithBds bds) $
+    codegenRequires rqs `resumeGensym` codegenBlock block
+
+  -- Gensym symbols are in the reverse order!
+  let vsEmitR = reverse vsEmitR'
+
   -- todo: report on the gensym state with a report effect!
   let stmtsDeclare = [ SVar (Binding vEmit tEmit) Nothing
-                     | (Binding _ tEmit, vEmit) <- emitBdsNames ]
+                     | (Binding _ tEmit, vEmit) <- vsEmitB ]
+  let bdsCG = do
+        bd@(Binding x ty) <- bds
+        case ty of
+          TQReg _ -> [ Binding vEmit tEmit
+                     | (Binding y tEmit, vEmit) <- vsEmitR, x == y ]
+          _    -> return bd
+
   let blockStmts =
         [ qComment "Forward Declaration" ]
         ++ stmtsDeclare
         ++ [ SDafny ""
            , qComment "Method Definition"
            ]
-        ++ inBlock block'
-  return $ QMethod v bds rts rqs' ens (Just . Block $ blockStmts)
+        ++ inBlock blockCG
+  return $ QMethod v bdsCG rts rqsCG ens (Just . Block $ blockStmts)
 codegenToplevel q = return q
 
 
@@ -413,7 +425,7 @@ codegenAlloc
      , Has (Error String) sig m
      )
   => Var -> Exp -> Ty -> m Stmt
-codegenAlloc v e@(EOp2 ONor e1 e2) t@(TQ TNor) = do
+codegenAlloc v e@(EOp2 ONor e1 e2) t@(TQReg _) = do
   let tEmit = typingQEmit TNor
   let eEmit = EEmit $ EMakeSeq TNat e1 $ constExp e2
   vEmit <- gensymEmit (Binding v tEmit)

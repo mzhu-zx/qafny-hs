@@ -1,6 +1,38 @@
 #+TITLE: TODOs
+
 * Parsing
 
 ** =separates= and =invariants=
 Hack the parser to support =separates= and =invariant=s directives supplied in
-any order.
+any order 
+
+
+
+* Codegen
+
+** DONE Pass registers as emited symbols
+Separate the =Emit= effect/carriers for method body from that for method
+parameters:
+
+*** Solution
+=resumeGensym=: run 2 computations in sequence but output emit symbol list for
+the =requires= and the body parts separately.
+
+#+begin_src haskell
+  -- | Execute 2 nested 'Gensym' computation in sequence and outputs the generated
+  -- emit symbols from both computation separately.
+  -- The emit symbol list in the latter execution is emptied but the counter is
+  -- carried over to it.
+  resumeGensym
+    :: Monad m
+    => GEmit.GensymC Binding (GMeta.GensymC String m) a
+    -> GEmit.GensymC Binding (GMeta.GensymC String m) b
+    -> m (Int, (Int, ([(Binding, String)], [(Binding, String)]), (a, b)))
+#+end_src
+
+** Calling Conventions for Register Passing
+Design a calling convention that transforms a quantum register into several
+sequences by inferring from =requires= directives as well as their types.
+
+- (=CH=) This is simple: one sequence per range
+  

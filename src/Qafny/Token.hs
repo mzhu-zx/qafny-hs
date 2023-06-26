@@ -38,6 +38,7 @@ data Token
   | TArrow
   | TNat | TInt | TBool
   | TSeq | TNor | THad | TCH | TCH01
+  | TQReg
 
   -- Identifiers
   | TId String

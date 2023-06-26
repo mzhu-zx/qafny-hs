@@ -46,6 +46,7 @@ token :-
   had              { emit $  THad                }
   ch               { emit $  TCH                 }
   ch01             { emit $  TCH01               }
+  qreg             { emit $  TQReg               }
   var              { emit $  TVar                }
   if               { emit $  TIf                 }
   cl               { emit $  TCl                 }

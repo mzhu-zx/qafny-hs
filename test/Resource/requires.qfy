@@ -1,0 +1,6 @@
+method CH(q : qreg[10], n : nat, m : nat)
+  requires n < m < 10
+  requires { q[0 .. n], q[m .. 10] : ch ↦ Σ i ∈ [0 .. 10] . ( 0, 1 ) }
+{
+
+}

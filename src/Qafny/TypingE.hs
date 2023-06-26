@@ -111,9 +111,9 @@ typingOp2 OOr  = (TBool, TBool, TBool)
 typingOp2 OAdd = (TNat, TNat, TNat)
 typingOp2 OMod = (TNat, TNat, TNat)
 typingOp2 OMul = (TNat, TNat, TNat)
-typingOp2 ONor = (TNat, TNat, TQ TNor)
 typingOp2 OLt  = (TNat, TNat, TBool)
 typingOp2 OLe  = (TNat, TNat, TBool)
+typingOp2 _    = undefined
 
 typingGuard
   :: ( Has (State TState) sig m

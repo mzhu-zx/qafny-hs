@@ -26,3 +26,14 @@ runGensymEmit :: Functor m => GensymC s m a -> m (Int, [(s, String)], a)
 runGensymEmit c = do
   let ans = runState (0, []) $ runGensymC c
   ans <&> \((i, w), r) -> (i, w, r)
+
+
+-- | Execute a 'Gensym' effect with the counter initialized to 'i'.
+startGensymEmitWith
+  :: Functor m
+  => Int
+  -> GensymC s m a
+  -> m (Int, [(s, String)], a)
+startGensymEmitWith i c = do
+  let ans = runState (i, []) $ runGensymC c
+  ans <&> \((i, w), r) -> (i, w, r)

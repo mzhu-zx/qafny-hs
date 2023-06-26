@@ -8,6 +8,8 @@ import           Control.Monad.Reader
 import           Data.Maybe             (maybeToList)
 import           Data.Text.Lazy         (Text)
 import qualified Data.Text.Lazy.Builder as TB
+import qualified GHC.Num as TB
+import qualified GHC.Enum as TB
 
 -------------------- Builder --------------------
 
@@ -78,6 +80,9 @@ instance DafnyPrinter Builder where
   build = id
   {-# INLINE build #-}
 
+instance DafnyPrinter Int where
+  build = return . TB.fromString . show
+
 instance DafnyPrinter Char where
   build = return . TB.singleton
 
@@ -91,14 +96,15 @@ instance DafnyPrinter Ty where
   build TNat     = build "nat"
   build TInt     = build "int"
   build TBool    = build "bool"
-  build (TQ q)   = build q
-  build (TSeq t) = "seq<" <!> t <!> ">"
+  build (TQReg n) = "qreg" <!> " " <!> n
+  build (TSeq t)  = "seq<" <!> t <!> ">"
   build _        = undefined
 
 instance DafnyPrinter QTy where
   build TNor = build "nor"
   build THad = build "had"
   build TCH  = build "ch"
+  build TCH01  = build "ch01"
 
 instance DafnyPrinter Binding where
   build (Binding x t) = x <!>  " : " <!> t

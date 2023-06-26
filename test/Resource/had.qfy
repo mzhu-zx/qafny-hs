@@ -1,0 +1,5 @@
+method Test(q : qreg[10])
+  requires { q[0 .. 10] : nor ↦ Σ i ∈ [0 .. 10] . ( 0 ) }
+{
+  q[0..1] *= H;
+}
