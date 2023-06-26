@@ -17,7 +17,7 @@ import           Effect.Gensym                  (Gensym)
 
 -- Qafny
 import           Qafny.AST
-import           Qafny.Transform
+import           Qafny.Env
 
 -- Utils
 import           Control.Lens                   (at, (%~), (?~), (^.))
@@ -100,6 +100,7 @@ typingQEmit :: QTy -> Ty
 typingQEmit TNor = TSeq TNat
 typingQEmit THad = TSeq TNat
 typingQEmit TCH  = TSeq TNat
+typingQEmit TCH01  = TSeq (TSeq TNat)
 {-# INLINE typingQEmit #-}
 
 -- | Types of binary operators
@@ -153,6 +154,8 @@ sub = (==)
 subQ :: QTy -> QTy -> Bool
 subQ _    TCH  = True
 subQ THad THad = True
+subQ THad TCH01 = True
+subQ TNor TCH01 = True
 subQ TNor TNor = True
 subQ _     _   = False
 

@@ -9,7 +9,7 @@ import           Control.Carrier.State.Strict (runState)
 import           Qafny.AST                    (AST, Ty)
 import           Qafny.CodegenE               (codegenAST)
 import           Qafny.Config                 (Configs)
-import           Qafny.Transform
+import           Qafny.Env
 
 --------------------------------------------------------------------------------
 -- Wrapper

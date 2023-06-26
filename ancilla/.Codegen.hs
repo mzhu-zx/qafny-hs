@@ -7,7 +7,7 @@
 module Qafny.Codegen where
 
 import           Qafny.AST
-import           Qafny.Transform
+import           Qafny.Env
 import           Qafny.Typing
 
 import           Control.Monad.RWS
@@ -23,7 +23,7 @@ import           Data.Maybe (listToMaybe)
 --------------------------------------------------------------------------------
 class Codegen a where
   -- | Augmentation: perform typecheck over `a` and rewrite `a` into `[a]`
-  aug :: a -> Transform [a]
+  aug :: a -> Env [a]
 
 instance Codegen AST where
   -- TODO: make `../../external` configable
@@ -77,7 +77,7 @@ instance Codegen Stmt where
     kSt %= (at v ?~ t)
     doE eM
     where
-      doE :: Maybe Exp -> Transform [Stmt]
+      doE :: Maybe Exp -> Env [Stmt]
       doE Nothing = return [s]
       doE (Just e) =
         do
@@ -93,7 +93,7 @@ instance Codegen Stmt where
     opCast <- opCastHad qt
     coercionWithOp opCast qt THad s
     where
-      opCastHad :: QTy -> Transform String
+      opCastHad :: QTy -> Env String
       opCastHad TNor = return "CastNorHad"
       opCastHad t = throwError $ "type `" ++ show t ++ "` cannot be casted to Had type"
   aug (SApply s@(Partition ranges) e@(EEmit (ELambda {}))) = do
@@ -123,19 +123,19 @@ instance Codegen Stmt where
         throwError "Do the split mechanism here, map will not be generic enough"
       -- Convert those partition to CH type if not and generate split statement
       -- for every partition
-      preludeIf :: Partition -> Transform (Ty, Partition, [Stmt], BiRangeZipper a)
+      preludeIf :: Partition -> Env (Ty, Partition, [Stmt], BiRangeZipper a)
       preludeIf s = do
         (castStmts, tyEmit) <- coercionPartitionCH s
         (stashed, dupStmts, zipper) <- dupPartition tyEmit s
         return (tyEmit, stashed, castStmts ++ dupStmts, zipper)
       -- Generate merge statement for every partition
-      mergeIf :: (Ty, Partition, [Stmt], BiRangeZipper [Stmt]) -> Transform [[Stmt]]
+      mergeIf :: (Ty, Partition, [Stmt], BiRangeZipper [Stmt]) -> Env [[Stmt]]
       mergeIf (tyEmit, _, _, zipper) = zipper $ mergeRange2 tyEmit
       -- Merge the guard into the partition
       -- Question: should the guard be visible to the body? I don't think so.
       -- If that should be visible, then the cast should happen beforehand.
       -- The semantics of multiple partitions in one body is unclear so far
-      mergeGuard :: Var -> Partition -> Partition -> Transform [Stmt]
+      mergeGuard :: Var -> Partition -> Partition -> Env [Stmt]
       mergeGuard vCard bodyPartition s = do
         -- grab an arbitrary range from the partition
         let stateCard = EEmit . ECard . EVar $ vCard
@@ -161,7 +161,7 @@ instance Codegen Stmt where
                 (EEmit $ EMakeSeq tNew stateCard $ constExp (ENum 0))
                 (EEmit $ EMakeSeq tNew stateCard $ constExp (ENum 1))
           ]
-      getStashedEmitVar :: (Ty, Partition, [Stmt], BiRangeZipper a) -> Transform Var
+      getStashedEmitVar :: (Ty, Partition, [Stmt], BiRangeZipper a) -> Env Var
       getStashedEmitVar (_, s@(Partition rs), _, _) =
         case listToMaybe rs of
           Nothing -> throwError "Empty Partition?"
@@ -220,7 +220,7 @@ type BiRangeZipper a = Zipper Range a
  FIXME: do I really need to emit new symbols?
  return: (stashed, dupStmts, zipper)
 -}
-dupPartition :: Ty -> Partition -> Transform (Partition, [Stmt], BiRangeZipper a)
+dupPartition :: Ty -> Partition -> Env (Partition, [Stmt], BiRangeZipper a)
 dupPartition tEmit s =
   do
     stashed@(Partition newRs) <- gensymPartitionMeta s
@@ -285,13 +285,13 @@ instance Codegen Ty where
 -- Solution: write used emission variables in the writer and forward the
 -- declaration
 
-coercionCH :: QTy -> Partition -> Transform [Stmt]
+coercionCH :: QTy -> Partition -> Env [Stmt]
 coercionCH TCH = const $ return []
 coercionCH TNor = coercionWithOp "CastNorCH10" TNor TCH
 coercionCH THad = coercionWithOp "CastHadCH10" TNor TCH
 
 
-coercionPartitionCH :: Partition -> Transform ([Stmt], Ty)
+coercionPartitionCH :: Partition -> Env ([Stmt], Ty)
 coercionPartitionCH s =
   do
     ty <- getPartitionType s
@@ -303,7 +303,7 @@ coercionPartitionCH s =
 -- | For a given well-typed partition, cast its type with the given op and return
 -- the statements for the cast
 -- TODO: with phase calculus [coercionWithOp] will need to take a list of `Op`s
-coercionWithOp :: String -> QTy -> QTy -> Partition -> Transform [Stmt]
+coercionWithOp :: String -> QTy -> QTy -> Partition -> Env [Stmt]
 coercionWithOp castOp partitionTy newTy s =
   do
     (vOldEmits, tOldEmit, vNewEmits, tNewEmit) <- retypePartition s newTy
@@ -317,7 +317,7 @@ coercionWithOp castOp partitionTy newTy s =
         ]
 
 -- | Generate the merge statement of one paired range
-mergeRange2 :: Ty -> Range -> Range -> Transform [Stmt]
+mergeRange2 :: Ty -> Range -> Range -> Env [Stmt]
 mergeRange2 tyEmit rMain@(Range vMain _ _) rStash@(Range vStash _ _) =
   do
     stmts <-
@@ -349,4 +349,4 @@ addCHHad1 vEmit idx =
 -- | Wrapper 
 --------------------------------------------------------------------------------
 codegen :: AST -> Production AST
-codegen = (_1 %~ fmap concat) . runTransform . aug
+codegen = (_1 %~ fmap concat) . runEnv . aug

@@ -14,7 +14,7 @@ import           Effect.Gensym                (Gensym, gensym)
 import qualified Data.Map.Strict              as Map
 import qualified Data.Set                     as Set
 import           Qafny.AST                    (Binding, Loc (..))
-import           Qafny.Transform              (TState, emitSt)
+import           Qafny.Env              (TState, emitSt)
 import           Qafny.Variable               (Variable (variable))
 import           Text.Printf                  (printf)
 import GHC.Stack (HasCallStack, CallStack)

@@ -5,7 +5,7 @@
 module Qafny.Typing where
 
 import           Qafny.AST
-import           Qafny.Transform
+import           Qafny.Env
 import           Control.Lens
 import           Control.Monad.RWS
 import           Control.Monad.Except
@@ -34,7 +34,7 @@ bdTypes b = [t | Binding _ t <- b]
 sub :: Ty -> Ty -> Bool
 sub = (==)
 
-checkSubtype :: Ty -> Ty -> Transform ()
+checkSubtype :: Ty -> Ty -> Env ()
 checkSubtype t1 t2 =
   unless (sub t1 t2) $
   throwError $
@@ -47,13 +47,13 @@ subQ THad THad = True
 subQ TNor TNor = True
 subQ _     _   = False
   
-checkSubtype2 :: (Ty, Ty, Ty) -> Ty -> Ty -> Transform Ty
+checkSubtype2 :: (Ty, Ty, Ty) -> Ty -> Ty -> Env Ty
 checkSubtype2 (top1, top2, tret) t1 t2 =
   do checkSubtype top1 t1
      checkSubtype top2 t2
      return tret
 
-checkSubtypeQ :: QTy -> QTy -> Transform ()
+checkSubtypeQ :: QTy -> QTy -> Env ()
 checkSubtypeQ t1 t2 =
   unless (subQ t1 t2) $
   throwError $
@@ -63,7 +63,7 @@ checkSubtypeQ t1 t2 =
 -- | Typing 
 --------------------------------------------------------------------------------
 class Typing a t where
-  typing :: a -> Transform t
+  typing :: a -> Env t
 
 -- | resolve the typing of a coarse partition
 instance Typing Partition QTy where
@@ -99,7 +99,7 @@ instance Typing QTy [Ty] where
 
 
 -- | Gather partitions used in the guard
-typingGuard :: Exp -> Transform (Partition, QTy)
+typingGuard :: Exp -> Env (Partition, QTy)
 typingGuard (EPartition s') = 
   do 
     s <- resolvePartition s'
@@ -107,23 +107,23 @@ typingGuard (EPartition s') =
 typingGuard e = throwError $ "Unsupported guard: " ++ show e
 
 -- | Find the type of the emitted term
-typingEmit :: Partition -> Transform [Ty]
-typingEmit s = (typing s :: Transform QTy) >>= typing
+typingEmit :: Partition -> Env [Ty]
+typingEmit s = (typing s :: Env QTy) >>= typing
 
 -- | Find the emitted symbol by the range name and quantum type
 -- TODO: this should probably be refactored to return a list of symbols
-findSymByRangeQTy :: Range -> QTy -> Transform Var
+findSymByRangeQTy :: Range -> QTy -> Env Var
 findSymByRangeQTy (Range v _ _) qt = only1 (typing qt) >>= findSym v
 
 -- | Dealloc an orphan variable
-deallocOrphan :: Var -> Ty -> Transform ()
+deallocOrphan :: Var -> Ty -> Env ()
 deallocOrphan vMeta tyEmit =
   rbSt %= (`Map.withoutKeys` Set.singleton (vMeta, tyEmit))
     
 
 -- | Change the type of a partition and returns something
 -- retyping doesn't emit a new partition symbol 
-retypePartition :: Partition -> QTy -> Transform ([Var], Ty, [Var], Ty)
+retypePartition :: Partition -> QTy -> Env ([Var], Ty, [Var], Ty)
 retypePartition s qtNow =
   do
     qtPrev <- typing s
@@ -143,7 +143,7 @@ retypePartition s qtNow =
     vNewEmits <- mapM (`gensym` tNewEmit) vMetas
     return (vOldEmits, tOldEmit, vNewEmits, tOldEmit)
 
-retypePartition1 :: Partition -> QTy -> Transform (Var, Ty, Var, Ty)
+retypePartition1 :: Partition -> QTy -> Env (Var, Ty, Var, Ty)
 retypePartition1 s qtNow =
   do
     qtPrev <- typing s
@@ -164,7 +164,7 @@ retypePartition1 s qtNow =
     return (vOldEmit, tOldEmit, vNewEmit, tOldEmit)
 
 -- | Merge two partitions and update the typing state
-mergePartitionType :: Partition -> Partition -> Transform ()
+mergePartitionType :: Partition -> Partition -> Env ()
 mergePartitionType sMain@(Partition rsMain) sAux@(Partition rsAux) =
   do
     qtMain <- handleWith (unknownPartitionError sMain) $ use (sSt . at sMain)
@@ -197,7 +197,7 @@ mergePartitionType sMain@(Partition rsMain) sAux@(Partition rsAux) =
 
 
 -- | Resolve partition: compute the super partition of one partition
-resolvePartition :: Partition -> Transform Partition
+resolvePartition :: Partition -> Env Partition
 resolvePartition se@(Partition rs) =
     do
       sesRange <-
@@ -216,12 +216,12 @@ resolvePartition se@(Partition rs) =
               ++ show ss
 
 -- | Resolve partition: compute the super partition of several partitions
-resolvePartitions :: [Partition] -> Transform Partition
+resolvePartitions :: [Partition] -> Env Partition
 resolvePartitions =
   resolvePartition . Partition . concatMap (\(Partition rs) -> rs)
 
 -- | Compute the quantum type of a partition
-getPartitionType :: Partition -> Transform QTy
+getPartitionType :: Partition -> Env QTy
 getPartitionType s =
   handleWith
     ( throwError $
@@ -239,7 +239,7 @@ getPartitionType s =
 --   `sGuard` is likely to be in `x [i .. i + 1]` form,
 --   there should be a around of resolution that resolves to the partition
 --   `x[l .. h]` and do the emission at that place 
-loopPartition :: Partition -> Exp -> Exp -> Transform (Partition, Exp)
+loopPartition :: Partition -> Exp -> Exp -> Env (Partition, Exp)
 loopPartition (Partition [Range r sl sh]) l h =
   return
     ( Partition [Range r l h]

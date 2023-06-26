@@ -34,7 +34,7 @@ import           Control.Monad                  (forM, forM_, unless)
 import           GHC.Stack                      (HasCallStack)
 import           Qafny.AST
 import           Qafny.Config
-import           Qafny.Transform
+import           Qafny.Env
     ( STuple (..)
     , TEnv (..)
     , TState

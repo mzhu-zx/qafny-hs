@@ -3,7 +3,7 @@ module Main (main) where
 import           Qafny.AST          (Ty)
 import           Qafny.Emit         (texify)
 import           Qafny.Parser       (scanAndParse)
-import           Qafny.Transform    (TState)
+import           Qafny.Env    (TState)
 import           Qafny.Runner       (produceCodegen)
 import           Qafny.Config
 

@@ -1,5 +1,5 @@
 {-# LANGUAGE LambdaCase, TemplateHaskell #-}
-module Qafny.Transform where
+module Qafny.Env where
 
 import           Control.Lens
 import           Control.Lens.TH

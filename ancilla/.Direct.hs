@@ -9,24 +9,24 @@ module Qafny.Direct where
 
 import           Qafny.AST
 import           Qafny.Typing
-import           Qafny.Transform
+import           Qafny.Env
 import           Data.Maybe (maybeToList)
 
 data Derivation f
   = DIf f f f
   -- deriving Functor
 
-inferStmt :: Stmt -> Transform ()
+inferStmt :: Stmt -> Env ()
 inferStmt (SIf e seps b) =
   inferGuardExp e 
 inferStmt _ = undefined
 
-inferGuardExp :: Exp -> Transform ()
+inferGuardExp :: Exp -> Env ()
 inferGuardExp (EPartition s) =
   inferPartition s TCH
 inferGuardExp _ = undefined
 
-inferPartition :: Partition -> QTy -> Transform ()
+inferPartition :: Partition -> QTy -> Env ()
 inferPartition s@(Partition rs) qt = 
   do
     sCtx <- resolvePartition s
@@ -41,7 +41,7 @@ inferPartition s@(Partition rs) qt =
 -- 2. QTy Subtying
 -- Subrange should be resolved first, followed by QTy, because splitting enables
 -- potential QTy casts
-inferSub :: Partition -> QTy -> Partition -> QTy -> Transform ()
+inferSub :: Partition -> QTy -> Partition -> QTy -> Env ()
 inferSub (Partition [r@(Range x l h)]) qt sCtx@(Partition rsCtx) qtCtx =
   return ()
   where
