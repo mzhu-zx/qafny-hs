@@ -4,6 +4,7 @@ module Qafny.Lexer(
   module Qafny.Token
 ) where
 
+import Qafny.SrcLoc
 import Qafny.Token
 }
 

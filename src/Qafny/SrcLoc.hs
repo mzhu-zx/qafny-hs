@@ -8,4 +8,9 @@ data SrcLoc = SrcLoc
 
 -- | Attach 'SrcLoc' information to a functor and tie the knot to form a
 -- recursive datatype
-data HasSrcLoc m = HasSrcLoc SrcLoc (m (HasSrcLoc m))
+data HasSrcLoc f = HasSrcLoc SrcLoc f
+
+type HasSrcLocFix f = HasSrcLoc (f HasSrcLoc)
+
+unstrip :: HasSrcLoc f -> f
+unstrip (HasSrcLoc _ f) = f
