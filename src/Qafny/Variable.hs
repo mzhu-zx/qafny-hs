@@ -2,7 +2,7 @@
 
 module Qafny.Variable where
 
-import           Qafny.AST (Binding (..), Ty (..), typeTag, Loc (..))
+import           Qafny.AST
 
 class Variable s where
   variable :: s -> String

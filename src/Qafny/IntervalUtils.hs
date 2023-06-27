@@ -1,7 +1,7 @@
 module Qafny.IntervalUtils where
 
 import           Debug.Trace    (trace)
-import           Qafny.AST      (Exp (..), Range (..))
+import           Qafny.AST      (ExpK (..), Exp (..), Range (..))
 import           Qafny.Interval
 import           Text.Printf    (printf)
 

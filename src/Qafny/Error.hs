@@ -2,7 +2,7 @@ module Qafny.Error where
 
 import qualified Data.Map.Strict as Map
 
-import           Qafny.AST       (Loc, Range, Partition, Ty, Var)
+import           Qafny.AST
 import           Text.Printf     (printf)
 
 data QError = UnknownVariableError Var (Map.Map Var Ty)

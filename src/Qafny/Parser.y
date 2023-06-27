@@ -75,14 +75,14 @@ id                    { ( _, L.TId $$     ) }
 ".."                  { ( _, L.TDots      ) }
 
 %%
-AST
+AST :: { AST }
   : toplevels                         { reverse $1                           }
                                                                           
-toplevels                                                                 
+toplevels :: { [ Toplevel ] }
   : toplevel                          { [$1]                                 }
   | toplevels toplevel                { $2 : $1                              }
                                                                           
-toplevel                                                                  
+toplevel :: { Toplevel }
   :  dafny                            { QDafny $1                            }
   | "method" id '(' bindings ')'                                          
     requireEnsures blockOpt                                                  
@@ -102,16 +102,16 @@ invs
 separates :: { Partition }
   : "separates" partition               { $2                                   }
 
-conds
+conds :: { [Conds] }
   : {- empty -}                       { []                                   }
   | conds cond                        { $2 : $1                              }
                                                                           
-cond                                                                      
+cond :: { Conds }
   : "requires" expr                   { Requires $2                          }
   | "ensures" expr                    { Ensures $2                           }
   | "invariant" expr                  { Invariants $2                        }
                                                                           
-bindings
+bindings :: { Bindings }
   : manyComma(binding)                     { $1 }
 
 manyComma(p)                                                                  
@@ -122,10 +122,10 @@ manyComma_(p)
   | p                                 { [$1]                                 }
   | manyComma_(p) ',' p               { $3 : $1                              }
                                                                           
-binding                                                                   
+binding :: { Binding }
   : id ':' ty                         { Binding $1 $3                        }
                                                                           
-ty                                                                        
+ty :: { Ty }
   : "nat"                             { TNat                                 }
   | "int"                             { TInt                                 }
   | "bool"                            { TBool                                }
@@ -139,11 +139,11 @@ qty :: { QTy }
   | "ch01"                            { TCH01                           }
                                                                 
 
-blockOpt                                                                     
+blockOpt :: { Maybe Block }
   : {- empty -}                       { Nothing                              }
   | block                             { Just $1                              }
 
-block                                                                     
+block :: { Block }
   : '{' stmts '}'                     { Block $2                             }
                                                                           
 
@@ -155,11 +155,11 @@ many_(p)
   | many_(p) p                        { $2 : $1                              }
 
 
-stmts                                                                     
+stmts :: { [ Stmt ] }
   : many(stmt)                        { reverse $1                           }
                                                                           
                                                                           
-stmt                                                                      
+stmt :: { Stmt }
   : "assert" expr ';'                 { SAssert $2                           }
   | "var" binding ';'                 { SVar $2 Nothing                      }
   | "var" binding ":=" expr ';'       { SVar $2 (Just $4)                    }
@@ -173,7 +173,7 @@ stmt
 partition :: { Partition }                                                               
   : manyComma(range)                  { Partition $ reverse $1               }
                                                                           
-range                                                                     
+range :: { Range }
   : id '[' expr ".." expr ']'         { Range $1 $3 $5                       }
                                                                 
 spec ::   { Exp }
@@ -192,7 +192,7 @@ qspec ::  { Exp }
 tuple(p)
   : '(' manyComma(p) ')'              { $2 }
 
-expr                                                                      
+expr :: { Exp }
   : atomic                            { $1                     }
   | '_'                               { EWildcard              }
   | spec                              { $1                     }
