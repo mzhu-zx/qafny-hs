@@ -138,7 +138,7 @@ deriving instance Eq Block
 
 data ToplevelK f
   = QMethod Var (BindingsK f) (Returns f) (RequiresK f) (EnsuresK f) (Maybe (BlockK f))
-  | QDafny String
+  | QDafny (HKD f String)
 
 type Toplevel = ToplevelK Identity
 

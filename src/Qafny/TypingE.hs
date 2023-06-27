@@ -38,6 +38,7 @@ import           Qafny.Utils
     , rethrowMaybe
     )
 import           Text.Printf                    (printf)
+import Qafny.SrcLoc (HasSrcLoc)
 
 
 
@@ -249,11 +250,11 @@ mergeSTuples
 -- | Helpers
 --------------------------------------------------------------------------------
 -- Compute types of methods from the toplevel
-collectMethodTypes :: AST -> [(Var, Ty)]
+collectMethodTypes :: ASTK HasSrcLoc -> [((HasSrcLoc Var), Ty)]
 collectMethodTypes a = [ (idt, TMethod (bdTypes ins) (bdTypes outs))
                        | QMethod idt ins outs _ _ _ <- a]
 
-collectMethodTypesM :: AST -> Map.Map Var Ty
+collectMethodTypesM :: ASTK HasSrcLoc -> Map.Map (HasSrcLoc Var) Ty
 collectMethodTypesM = Map.fromList . collectMethodTypes
 
 appkEnvWithBds :: Bindings -> TEnv -> TEnv

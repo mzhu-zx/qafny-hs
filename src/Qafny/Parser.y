@@ -77,13 +77,13 @@ idt                   { ( _, L.TId $$     ) }
 ".."                  { ( _, L.TDots      ) }
 
 %%
-AST :: { HasSrcLocFix ASTK }
+AST :: { ASTK HasSrcLoc }
   : toplevels                         { reverse $1                           }
                                                                           
 toplevels
   : many(toplevel)                    { $1 }
                                                                           
-toplevel :: { HasSrcLocFix ToplevelK }
+toplevel :: { ToplevelK HasSrcLoc }
   :  dafny                            { case $1 of (sl, s) -> 
                                           HasSrcLoc sl (QDafny s) 
                                       }

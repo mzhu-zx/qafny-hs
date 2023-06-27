@@ -10,6 +10,7 @@ import           Data.List            (intercalate)
 import qualified Data.Map.Strict      as Map
 import           GHC.Stack
 import           Qafny.AST
+import           Qafny.SrcLoc         (HasSrcLoc)
 import           Text.Printf          (printf)
 
 --------------------------------------------------------------------------------
@@ -29,7 +30,7 @@ data CtxMode
   | CtxQ
   deriving Show
 
-type KEnv = Map.Map Var Ty
+type KEnv = Map.Map (HasSrcLoc Var) Ty
 
 data TEnv = TEnv
   { _kEnv :: KEnv

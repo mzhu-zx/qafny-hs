@@ -1,7 +1,7 @@
 {-# LANGUAGE DataKinds, FlexibleContexts, FlexibleInstances,
              GeneralizedNewtypeDeriving, MultiParamTypeClasses, RankNTypes,
              ScopedTypeVariables, TupleSections, TypeApplications,
-             TypeOperators, UndecidableInstances #-}
+             TypeOperators, UndecidableInstances, TypeFamilies #-}
 
 module Qafny.CodegenE where
 
@@ -23,13 +23,21 @@ import           Effect.Gensym                  (Gensym, gensym)
 import           Qafny.Gensym                   (resumeGensym)
 
 -- Utils
-import           Control.Lens                   (at, non, (%~), (?~), (^.))
+import           Control.Lens
+    ( Identity
+    , at
+    , non
+    , (%~)
+    , (?~)
+    , (^.)
+    )
 import           Control.Lens.Tuple
 import           Data.Functor                   ((<&>))
 import qualified Data.Map.Strict                as Map
 
 
 -- Qafny
+import           Carrier.Gensym.Emit            (runGensymEmit)
 import           Control.Monad                  (forM, forM_, unless)
 import           GHC.Stack                      (HasCallStack)
 import           Qafny.AST
@@ -42,6 +50,8 @@ import           Qafny.Env
     , sSt
     , xSt
     )
+import           Qafny.HKD
+import           Qafny.SrcLoc                   (HasSrcLoc)
 import           Qafny.TypingE
     ( appkEnvWithBds
     , checkSubtype
@@ -63,7 +73,6 @@ import           Qafny.Utils
     , throwError'
     )
 import           Text.Printf                    (printf)
-import Carrier.Gensym.Emit (runGensymEmit)
 
 --------------------------------------------------------------------------------
 -- | Codegen
@@ -75,7 +84,7 @@ codegenAST
      , Has (State TState)  sig m
      , Has (Error String) sig m
      )
-  => AST
+  => ASTK HasSrcLoc
   -> m AST
 codegenAST ast = do
   path <- asks stdlibPath
@@ -85,7 +94,7 @@ codegenAST ast = do
         , "libraries/src/Collections/Sequences/Seq.dfy"
         , "libraries/src/NonlinearArithmetic/Power2.dfy"
         ]
-  let prelude =
+  let prelude :: AST =
         (mkRequires <$> requires)
           ++ [ QDafny ""
              , QDafny "// target Dafny version: 3.12.0"
@@ -144,9 +153,9 @@ codegenRequires
      , Has (Gensym Binding) sig m
      )
   => Requires -> m Requires
-codegenRequires rqs = forM rqs $ \rq -> 
+codegenRequires rqs = forM rqs $ \rq ->
   -- TODO: I need to check if partitions from different `requires` clauses are
-  -- indeed disjoint! 
+  -- indeed disjoint!
   case rq of
     ESpec s qt espec -> do
       sLoc <- gensymLoc "requires"
@@ -158,10 +167,10 @@ codegenRequires rqs = forM rqs $ \rq ->
       xSt %= Map.unionWith (++) (Map.fromListWith (++) xMap)
       case espec of
         EQSpec v intv body -> codegenSpec vsEmit v intv body
-        _ -> undefined
+        _                  -> undefined
     _ ->
       return rq
-  
+
 codegenSpec
   :: ( Has (Error String) sig m
      , Has (State TState) sig m
@@ -177,7 +186,7 @@ codegenSpec vsEmit bind (Intv l r) eValues = do
   let es = [ EForall (Binding bind TNat) eBound (EOp2 OEq (eSelect vE) eV)
            | (vE, eV) <- zip vsEmit eValues, eV /= EWildcard ]
   return $ case es of
-    [] -> EBool True
+    []     -> EBool True
     x : xs -> EEmit (EOpChained x [ (OAnd, x') | x' <- xs ])
 
 codegenBlock

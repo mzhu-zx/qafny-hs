@@ -4,12 +4,13 @@ module Qafny.Emit where
 
 import           Qafny.AST
 
+import           Control.Monad.Identity (Identity)
 import           Control.Monad.Reader
 import           Data.Maybe             (maybeToList)
 import           Data.Text.Lazy         (Text)
 import qualified Data.Text.Lazy.Builder as TB
-import qualified GHC.Num as TB
-import qualified GHC.Enum as TB
+import qualified GHC.Enum               as TB
+import qualified GHC.Num                as TB
 
 -------------------- Builder --------------------
 
@@ -93,22 +94,25 @@ instance DafnyPrinter AST where
   build = byLine
 
 instance DafnyPrinter Ty where
-  build TNat     = build "nat"
-  build TInt     = build "int"
-  build TBool    = build "bool"
+  build TNat      = build "nat"
+  build TInt      = build "int"
+  build TBool     = build "bool"
   build (TQReg n) = "qreg" <!> " " <!> n
   build (TSeq t)  = "seq<" <!> t <!> ">"
-  build _        = undefined
+  build _         = undefined
 
 instance DafnyPrinter QTy where
-  build TNor = build "nor"
-  build THad = build "had"
-  build TCH  = build "ch"
-  build TCH01  = build "ch01"
+  build TNor  = build "nor"
+  build THad  = build "had"
+  build TCH   = build "ch"
+  build TCH01 = build "ch01"
 
 instance DafnyPrinter Binding where
   build (Binding x t) = x <!>  " : " <!> t
 
+-- instance DafnyPrinter s => DafnyPrinter (Identity s) where
+--   build (Identity s) = build s
+ 
 instance DafnyPrinter Toplevel where
   build (QDafny s) = build s
   build (QMethod idt bds rets reqs ens blockHuh) =
