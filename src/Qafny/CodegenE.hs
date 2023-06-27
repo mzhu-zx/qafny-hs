@@ -522,9 +522,10 @@ makeLoopPartition s _ _ =
 --------------------------------------------------------------------------------
 -- | Split Semantics
 --------------------------------------------------------------------------------
--- | Given a Had Partition and a partition, if the partition contains more qubits
--- than the partition, then split the partition, return the STuple containing only
--- this partition and generates statements to perform the split in Dafny.n
+-- | Given a resolved Had partition and a target partition, if the resolved
+-- partition contains more qubits than the target partition, then split the
+-- partition, return the STuple containing only this partition and generates
+-- statements to perform the split in Dafny.n
 splitHadPartition
   :: ( Has (Error String) sig m
      )

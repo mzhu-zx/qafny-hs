@@ -5,6 +5,7 @@ module Qafny.Lexer(
 ) where
 
 import Qafny.Token
+import Qafny.SrcLoc
 }
 
 %wrapper "posn"

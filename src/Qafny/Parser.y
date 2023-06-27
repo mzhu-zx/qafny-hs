@@ -3,13 +3,14 @@ module Qafny.Parser(scanAndParse) where
 import qualified Qafny.Lexer as L
 import           Qafny.ParserUtils
 import           Qafny.AST
+import           Qafny.SrcLoc
 import           Control.Monad
 }
 
 %name runParser
 %tokentype { L.SToken }
 %error { parseError }
-%monad { Parser }{ >>= }{ return }
+%monad { Parser }{ >>= }{ (return $.) }
 
 %token
 digits                { ( _, L.TLitInt $$ ) }
@@ -192,7 +193,7 @@ qspec ::  { Exp }
 tuple(p)
   : '(' manyComma(p) ')'              { $2 }
 
-expr                                                                      
+expr :: { HasSrcLoc ExpF }
   : atomic                            { $1                     }
   | '_'                               { EWildcard              }
   | spec                              { $1                     }

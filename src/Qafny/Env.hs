@@ -60,7 +60,7 @@ instance Show TEnv where
             (intercalate "\n    " . map show . Map.toList) (st ^. kEnv)
 
 initTEnv :: TEnv
-initTEnv = TEnv { _kEnv = mempty, _ctx = CtxQ, _qnum = ENum 0 }
+initTEnv = TEnv { _kEnv = mempty, _ctx = CtxQ, _qnum = ENum $. 0 }
 
 initTState :: TState
 initTState = TState

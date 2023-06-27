@@ -1,17 +1,38 @@
+{-# LANGUAGE DeriveFunctor, RankNTypes, UndecidableInstances #-}
+
 module Qafny.AST where
 
-import           Control.Monad (guard)
-import           Text.Printf   (printf)
+import           Text.Printf              (printf)
 
-data Ty
+newtype Mu f = Mu { unroll :: f (Mu f) }
+
+(.$) :: (f (Mu f) -> c) -> Mu f -> c
+(.$) = (. unroll)
+
+($.) :: (a -> f (Mu f)) -> a -> Mu f
+($.) = (Mu .)
+
+
+instance Show (f (Mu f)) => Show (Mu f) where
+  show = show . unroll
+
+instance Ord (f (Mu f)) => Ord (Mu f) where
+  compare a b = compare (unroll a) (unroll b)
+
+instance Eq (f (Mu f)) =>  Eq (Mu f) where
+  a == b = unroll a == unroll b
+
+data TyF m
   = TNat
   | TInt
   | TBool
-  | TSeq Ty
+  | TSeq m
   | TQReg Int
-  | TMethod [Ty] [Ty] -- parameter and return types
+  | TMethod [m] [m] -- parameter and return types
   | TEmit EmitTy
-  deriving (Show, Eq, Ord)
+  deriving (Show, Eq, Ord, Functor)
+
+type Ty = Mu TyF
 
 -- | EmitExp : Unchecked Types for Codegen Only
 data EmitTy
@@ -27,11 +48,13 @@ data QTy
 
 type Var = String
 
-data Binding
-  = Binding Var Ty
-  deriving (Show, Eq, Ord)
+data BindingF m
+  = Binding Var (TyF m)
+  deriving (Show, Eq, Ord, Functor)
 
-type Bindings = [Binding]
+type Binding = Mu BindingF
+
+type BindingsF f = [BindingF f]
 
 data Op2
   = OAnd
@@ -53,7 +76,7 @@ data Op1
   deriving (Show, Eq, Ord)
 
 -- the exp is not reversible
-data Exp
+data ExpF m
   = ENum Int
   | EVar Var
   | EWildcard
@@ -62,21 +85,19 @@ data Exp
   | ERQFT
   | EMea Var
   | EBool Bool
-  | EApp Var Exp
-  | EOp1 Op1 Exp
-  | EOp2 Op2 Exp Exp
-  | EForall Binding (Maybe Exp) Exp
+  | EApp Var m
+  | EOp1 Op1 m
+  | EOp2 Op2 m m
+  | EForall Binding (Maybe m) m
   | EDafny String
   | EEmit EmitExp
   | EPartition Partition
-  | ESpec Partition QTy Exp
-  | EQSpec Var Intv [Exp]
-  | EQSpec01 Var Intv Var Intv [Exp] 
-  -- ?
-  | RInd Var Exp -- boolean at var[exp], var must be Q type
-  | REq Exp Exp Var Exp -- compare exp == exp and store the value in var[exp], var must be Q type
-  | RLt Exp Exp Var Exp -- compare exp < exp and store the value in var[exp], var must be Q type
-  deriving (Show, Eq, Ord)
+  | ESpec Partition QTy m
+  | EQSpec Var Intv [m]
+  | EQSpec01 Var Intv Var Intv [m]
+  deriving (Show, Eq, Ord, Functor)
+
+type Exp = Mu ExpF
 
 -- | EmitExp : Unsafe Expressions for Codegen Only
 data EmitExp
@@ -90,27 +111,29 @@ data EmitExp
   | EOpChained Exp [(Op2, Exp)]
   deriving  (Show, Eq, Ord)
 
-type Returns = [Binding]
+type ReturnsF m = [BindingF m]
 
-data Conds
-  = Requires Exp
-  | Ensures Exp
-  | Invariants Exp
+data CondsF m
+  = Requires (ExpF m)
+  | Ensures (ExpF m)
+  | Invariants (ExpF m)
   | Separates Partition
-  deriving Show
+  deriving (Eq, Ord, Show, Functor)
 
-type Requires = [Exp]
-type Ensures = [Exp]
-type Invariants = [Exp]
+type RequiresF m = [ExpF m]
+type EnsuresF m = [ExpF m]
+type InvariantsF m = [ExpF m]
 type Separates = Partition
 
-newtype Block = Block { inBlock :: [Stmt] }
-  deriving (Show, Eq)
+newtype BlockF m = BlockF { inBlock :: [StmtF m] }
+  deriving (Show, Eq, Functor)
 
-data Toplevel
-  = QMethod Var Bindings Returns Requires Ensures (Maybe Block)
+type Block = Mu BlockF
+
+data ToplevelF m
+  = QMethod Var (BindingsF m) (ReturnsF m) (RequiresF m) (EnsuresF m) (Maybe (BlockF m))
   | QDafny String
-  deriving (Show, Eq)
+  deriving (Show, Eq, Functor)
 
 data Intv = Intv Exp Exp
   deriving (Eq, Show, Ord)
@@ -133,18 +156,20 @@ newtype Partition = Partition { unpackPartition :: [Range] }
 instance Show Partition where
   show = show . unpackPartition
 
-data Stmt
-  = SAssert Exp
-  | SCall Exp [Exp]
-  | SVar Binding (Maybe Exp)
-  | SAssign Var Exp
-  | SApply Partition Exp
+data StmtF m
+  = SAssert (ExpF m)
+  | SCall (ExpF m) [ExpF m]
+  | SVar Binding (Maybe (ExpF m))
+  | SAssign Var (ExpF m)
+  | SApply Partition (ExpF m)
   | SDafny String
-  | SIf Exp Separates Block
-  --     id left right guard invarants separates Body
-  | SFor Var Exp Exp   Exp   [Exp]     Partition   Block
+  | SIf (ExpF m) Separates Block
+  --     id  left     right    guard    invarants separates Body
+  | SFor Var (ExpF m) (ExpF m) (ExpF m) [ExpF m]  Partition Block
   | SEmit EmitStmt
-  deriving (Show, Eq)
+  deriving (Show, Eq, Functor)
+
+type Stmt = Mu StmtF
 
 data EmitStmt
   = SIfDafny Exp Block
@@ -152,7 +177,18 @@ data EmitStmt
   | SForEmit Var Exp Exp [Exp] Block
   deriving (Show, Eq)
 
-type AST = [Toplevel]
+newtype ASTF m = ASTF [ToplevelF m]
+  deriving (Show, Eq, Functor)
+
+type AST = Mu ASTF
+
+--------------------------------------------------------------------------------
+-- | Recursion Schemes
+--------------------------------------------------------------------------------
+-- makeBaseFunctor ''Toplevel
+-- makeBaseFunctor ''Stmt
+-- makeBaseFunctor ''Exp
+-- makeBaseFunctor ''Ty
 
 --------------------------------------------------------------------------------
 -- | AST Constants
@@ -165,21 +201,23 @@ constExp = ELambda wild
 
 
 typeTag :: Ty -> String
-typeTag TNat     = "nat"
-typeTag TInt     = "int"
-typeTag TBool    = "bool"
-typeTag (TSeq t) = "seq__" ++ typeTag t ++ "__"
-typeTag _        = "unsupported"
+typeTag = typeTag' . unroll 
+  where
+    typeTag' TNat     = "nat"
+    typeTag' TInt     = "int"
+    typeTag' TBool    = "bool"
+    typeTag' (TSeq t) = "seq__" ++ typeTag t ++ "__"
+    typeTag' _        = "unsupported"
 
 qComment :: String -> Stmt
-qComment = SDafny . ("// " ++)
+qComment = Mu . SDafny . ("// " ++)
 
 --------------------------------------------------------------------------------
 -- | Partition Utils
 --------------------------------------------------------------------------------
 
 range1 :: Var -> Range
-range1 v = Range v (ENum 0) (ENum 1)
+range1 v = Range v (ENum $. 0) (ENum $. 1)
 
 
 partition1 :: Range -> Partition
@@ -194,7 +232,7 @@ varFromPartition (Partition s) = [ x | (Range x _ _) <- s ]
 -- | Compute all free partitions/ranges mentioned in the LHS of application
 leftPartitions :: [Stmt] -> [Partition]
 leftPartitions =
-  concatMap perStmt
+  concatMap (perStmt .$)
   where
     perStmt (SApply s _) = [s]
     -- TODO: query If and For recursively

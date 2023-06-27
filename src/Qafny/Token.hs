@@ -1,5 +1,7 @@
 module Qafny.Token where
 
+import           Qafny.SrcLoc (SrcLoc (..))
+
 data Token
   -- Dafny Fragments
   = TDafny String
@@ -60,11 +62,5 @@ data Token
   | TEOF
    deriving (Show, Eq)
 
-
-data SrcLoc = SrcLoc
-  { sLine :: !Int 
-  , sColumn :: !Int
-  }
-  
 type SToken = (SrcLoc, Token)
 

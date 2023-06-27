@@ -95,6 +95,26 @@ resolvePartitions
 resolvePartitions =
   resolvePartition . Partition . concatMap unpackPartition
 
+--------------------------------------------------------------------------------
+-- | Split Typing 
+--------------------------------------------------------------------------------
+-- | Given a fully resolved partition and a potentially sub-partition of it,
+-- return a partition scheme if it's indeed a sub-partition. 
+--  
+-- Otherwise (e.g. the partition is exact or there's no partition scheme
+-- available), return `Nothing` to hint the caller to use the full partition.
+splitScheme
+  :: ( Has (Error String) sig m
+     , Has (Error String) sig n
+     )
+  => STuple
+  -> Partition
+  -> m (Maybe (n STuple))
+splitScheme = undefined
+--------------------------------------------------------------------------------
+-- | Aux Typing 
+--------------------------------------------------------------------------------
+
 -- | Type of the emitted value corresponding to its original quantum type.
 typingQEmit :: QTy -> Ty
 typingQEmit TNor = TSeq TNat
@@ -262,4 +282,3 @@ appkEnvWithBds bds = kEnv %~ appBds
 
 bdTypes :: Bindings -> [Ty]
 bdTypes b = [t | Binding _ t <- b]
-

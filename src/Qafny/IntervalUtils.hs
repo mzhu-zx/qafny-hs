@@ -1,16 +1,18 @@
 module Qafny.IntervalUtils where
 
 import           Debug.Trace    (trace)
-import           Qafny.AST      (Exp (..), Range (..))
+import           Qafny.AST
 import           Qafny.Interval
 import           Text.Printf    (printf)
 
 type NInt = Interval Nat
 
 expToNat :: Exp -> Nat
-expToNat (ENum a) = if a >= 0 then Nat a else Mt
-expToNat (EVar _) = Inf       -- overapproximate variables to infinity
-expToNat _        = Inf       -- there could be some Op2 here, overapprox!
+expToNat = (expToNat' .$)
+  where
+    expToNat' (ENum a) = if a >= 0 then Nat a else Mt
+    expToNat' (EVar _) = Inf       -- overapproximate variables to infinity
+    expToNat' _        = Inf       -- there could be some Op2 here, overapprox!
 
 rangeToNInt :: Range -> NInt
 rangeToNInt r@(Range _ n m) =

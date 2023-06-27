@@ -27,6 +27,7 @@ dependencies:
 - text
 - containers
 - extra
+- recursion-schemes
 - fused-effects
 - fused-effects-lens
 # - fused-effects-readline

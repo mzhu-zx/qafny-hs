@@ -10,6 +10,7 @@ import           Data.Text.Lazy         (Text)
 import qualified Data.Text.Lazy.Builder as TB
 import qualified GHC.Num as TB
 import qualified GHC.Enum as TB
+import Qafny (AST)
 
 -------------------- Builder --------------------
 
