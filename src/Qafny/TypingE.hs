@@ -110,12 +110,16 @@ splitScheme
   => STuple
   -> Range
   -> m (Maybe (n STuple))
-splitScheme s@(STuple (loc, p, qt)) rx@(Range x _ _) = undefined
+splitScheme s@(STuple (loc, p, qt)) rx@(Range x _ _) = do
+  let intX = rangeToNInt rx
+  if isBot intX
+    then return Nothing
+    else undefined  
   where
-    matched = [ rangeToNInt rx ⊓ rangeToNInt ry
+    matched = [ intX ⊓ rangeToNInt ry
               | ry@(Range y _ _) <- unpackPartition p
               , x == y
-              , rangeToNInt rx ⊑ rangeToNInt ry ]
+              , intX ⊑ rangeToNInt ry ]
 --------------------------------------------------------------------------------
 -- | Aux Typing 
 --------------------------------------------------------------------------------

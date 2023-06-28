@@ -46,7 +46,7 @@ instance Num Nat where
   negate = undefined
   abs = undefined
   signum = undefined
-  fromInteger = undefined
+  fromInteger a = Nat (fromInteger a)
 
 
 --------------------------------------------------------------------------------
