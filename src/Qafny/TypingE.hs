@@ -29,7 +29,7 @@ import qualified Data.Set                       as Set
 import           Debug.Trace                    (traceM, traceStack)
 import           GHC.Stack                      (HasCallStack)
 import           Qafny.Error                    (QError (..))
-import           Qafny.Interval                 ((⊑))
+import           Qafny.Interval                 (Lattice (..))
 import           Qafny.IntervalUtils            (rangeToNInt)
 import           Qafny.Utils
     ( findEmitSym
@@ -94,6 +94,31 @@ resolvePartitions
   => [Partition] -> m STuple
 resolvePartitions =
   resolvePartition . Partition . concatMap unpackPartition
+
+--------------------------------------------------------------------------------
+-- | Split Typing 
+--------------------------------------------------------------------------------
+-- | Given a fully resolved partition and a potentially sub-range of it,
+-- return a partition scheme if it's indeed a sub-range. 
+--  
+-- Otherwise (e.g. the partition is exact or there's no partition scheme
+-- available), return `Nothing` to hint the caller to use the full partition.
+splitScheme
+  :: ( Has (Error String) sig m
+     , Has (Error String) sig n
+     )
+  => STuple
+  -> Range
+  -> m (Maybe (n STuple))
+splitScheme s@(STuple (loc, p, qt)) rx@(Range x _ _) = undefined
+  where
+    matched = [ rangeToNInt rx ⊓ rangeToNInt ry
+              | ry@(Range y _ _) <- unpackPartition p
+              , x == y
+              , rangeToNInt rx ⊑ rangeToNInt ry ]
+--------------------------------------------------------------------------------
+-- | Aux Typing 
+--------------------------------------------------------------------------------
 
 -- | Type of the emitted value corresponding to its original quantum type.
 typingQEmit :: QTy -> Ty
@@ -262,4 +287,3 @@ appkEnvWithBds bds = kEnv %~ appBds
 
 bdTypes :: Bindings -> [Ty]
 bdTypes b = [t | Binding _ t <- b]
-
