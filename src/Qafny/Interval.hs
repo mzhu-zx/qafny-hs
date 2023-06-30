@@ -93,6 +93,8 @@ instance Lattice Nat where
   (⊓) a b = if a ≤ b then a else b
 
 -- Lattice Interpretation of Concrete Nat Domain
+type NatInterval = Interval Nat
+
 instance Lattice (Interval Nat) where
   isTop (Interval (Nat 0) Inf) = True
   isTop (Interval a b)         = False

@@ -1,0 +1,140 @@
+
+
+AST
+  : toplevels
+
+toplevels
+  : many(toplevel)
+
+toplevel
+  : dafny
+  | "method" id '(' bindings ')' requireEnsures opt(block)
+  | "method" id '(' bindings ')' "returns" '(' bindings ')' requireEnsures opt(block)
+
+requireEnsures
+  : conds
+
+invs
+  : conds
+
+separates
+  : "separates" partition
+
+conds
+  : many(cond)
+
+cond
+  : "requires" expr
+  | "ensures" expr
+  | "invariant" expr
+
+bindings
+  : manyComma(binding)
+
+binding
+  : id ':' ty
+
+ty
+  : "nat"
+  | "int"
+  | "bool"
+  | "seq" '<' ty '>'
+  | "qreg" '[' digits ']'
+
+qty
+  : "nor"
+  | "had"
+  | "ch"
+  | "ch01"
+
+block
+  : '{' stmts '}'
+
+stmts
+  : many(stmt)
+
+stmt
+  : "assert" expr ';'
+  | "var" binding ';'
+  | "var" binding ":=" expr ';'
+  | id ":=" expr ';'
+  | partition "*=" expr ';'
+  | "if" '(' expr ')' separates block
+  | "for" id "in" '[' expr ".." expr ']' "with" expr invs separates block
+
+partition
+  : manyComma(range)
+
+range
+  : id '[' expr ".." expr ']'
+
+spec
+  : '{' partition ':' qty "↦" qspec '}'
+
+qspec
+  : "Σ" id "∈" '[' expr ".." expr ']' '.' tuple(expr)
+  | "Σ" id "∈" '[' expr ".." expr ']' '.' "⊗" id "∈" '[' expr ".." expr ']' '.' tuple(expr)
+  | {- empty -}
+
+tuple
+  : '(' manyComma(p) ')'
+
+expr
+  : atomic
+  | '_'
+  | spec
+  | partition
+  | "H"
+  | "QFT"
+  | "RQFT"
+  | "meas" id
+  | "not" atomic
+  | "nor" '(' atomic ',' digits ')'
+  | "λ" '(' id "=>" expr ')'
+  | id '(' atomic ')'
+  | atomic "&&" atomic
+  | atomic "||" atomic
+  | cmpExpr
+  | arithExpr
+  | '(' expr ')'
+
+cmpExpr
+  : expr cmp expr
+
+cmp
+  : '>'
+  | '<'
+  | ">="
+  | "<="
+
+arithExpr
+  : expr arith expr
+
+arith
+  : '+'
+  | '-'
+  | '*'
+  | '\%'
+
+atomic
+  : digits
+  | id
+
+many
+  : many_(p)
+
+many_
+  : {- empty -}
+  | many_(p) p
+
+manyComma
+  : manyComma_(p)
+
+manyComma_
+  : {- empty -}
+  | p
+  | manyComma_(p) ',' p
+
+opt
+  : {- empty -}
+  | p

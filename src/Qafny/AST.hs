@@ -1,3 +1,5 @@
+{-# LANGUAGE DeriveFunctor #-}
+
 module Qafny.AST where
 
 import           Control.Monad (guard)

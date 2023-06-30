@@ -1,5 +1,5 @@
-{-# LANGUAGE FlexibleInstances, MultiParamTypeClasses, TupleSections,
-             TypeApplications #-}
+{-# LANGUAGE FlexibleInstances, MultiParamTypeClasses, ScopedTypeVariables,
+             TupleSections, TypeApplications #-}
 
 module Qafny.TypingE where
 
@@ -20,28 +20,31 @@ import           Qafny.AST
 import           Qafny.Env
 
 -- Utils
-import           Control.Lens                   (at, (%~), (?~), (^.))
+import           Control.Lens                   (at, non, (%~), (?~), (^.))
 import           Control.Monad                  (forM, unless, when)
 import           Data.Functor                   ((<&>))
+import           Data.IntMap                    (partition)
 import qualified Data.List                      as List
 import qualified Data.Map.Strict                as Map
+import           Data.Maybe                     (listToMaybe, maybeToList)
 import qualified Data.Set                       as Set
 import           Debug.Trace                    (traceM, traceStack)
 import           GHC.Stack                      (HasCallStack)
 import           Qafny.Error                    (QError (..))
-import           Qafny.Interval                 (Lattice (..))
-import           Qafny.IntervalUtils            (rangeToNInt)
+import           Qafny.Interval
+    ( Interval (Interval)
+    , Lattice (..)
+    , NatInterval
+    )
+import           Qafny.IntervalUtils            (rangeToNInt, γRange)
 import           Qafny.Utils
     ( findEmitSym
     , gensymEmit
+    , gensymLoc
     , removeEmitBindings
     , rethrowMaybe
     )
 import           Text.Printf                    (printf)
-
-
-
-
 
 -- | Compute the type of the given expression
 typingExp
@@ -96,40 +99,83 @@ resolvePartitions =
   resolvePartition . Partition . concatMap unpackPartition
 
 --------------------------------------------------------------------------------
--- | Split Typing 
+-- | Split Typing
 --------------------------------------------------------------------------------
--- | Given a fully resolved partition and a potentially sub-range of it,
--- return a partition scheme if it's indeed a sub-range. 
---  
--- Otherwise (e.g. the partition is exact or there's no partition scheme
--- available), return `Nothing` to hint the caller to use the full partition.
+data SplitScheme = SplitScheme
+  { rOrigin :: Range -- the original range
+  , rTo     :: Range -- the range splitted _to_
+  , rsRem   :: [Range] -- the remainder range
+  , sMain   :: STuple  -- the partition that was splitted _from_
+  , sAux    :: STuple  -- the partition that was splitted _to_
+  }
+
+-- | Given a partition and a range, compute a split scheme if the range is a
+-- part of the partition. Return 'Nothing' if no split needs to be performed,
+
 splitScheme
   :: ( Has (Error String) sig m
-     , Has (Error String) sig n
+     , Has (Gensym String) sig m
+     , Has (State TState) sig m
      )
   => STuple
   -> Range
-  -> m (Maybe (n STuple))
+  -> m (Maybe SplitScheme)
 splitScheme s@(STuple (loc, p, qt)) rx@(Range x _ _) = do
-  let intX = rangeToNInt rx
-  if isBot intX
-    then return Nothing
-    else undefined  
+  when (isBot intX) $ throwError errBotRx
+  case matched of
+    Nothing -> throwError errImproperRx
+    Just (intL, _, intY, ry)  ->
+      let rs = γ intL ++ γ intY -- the list of ranges to be broken
+          rsMain = (rs ++) . List.delete ry $ unpackPartition p
+          rsAux  = [rx]
+          pMain  = Partition rsMain
+          pAux   = Partition rsAux
+      in case rsMain of
+        [] -> return Nothing -- no split actually needs to be done
+        _  -> do             -- split actually happens here:
+          locAux <- gensymLoc x
+          let sMain' = (loc, pMain, qt)   -- the part that's splited _from_
+          let sAux'  = (locAux, pAux, qt) -- the part that's splited _to_
+          sSt %= (at loc ?~ (pMain, qt)) . (at locAux ?~ (pAux, qt))
+          xRangeLocs <- use (xSt . at x) `rethrowMaybe` errXST
+          let xrl =
+                [ (rAux, locAux) | rAux <- rsAux ] ++ -- "new range -> new loc" 
+                [ (rMainNew, loc) | rMainNew <- rs ] ++ -- "broken ranges -> old loc"
+                List.filter ((/= rx) . fst) xRangeLocs -- "the rest with the old range removed"
+          xSt %= (at x ?~ xrl)
+          return . Just $ SplitScheme
+            { rOrigin = ry
+            , rTo = rx
+            , rsRem = rs
+            , sMain = STuple sMain'
+            , sAux  = STuple sAux'
+            }
   where
-    matched = [ intX ⊓ rangeToNInt ry
-              | ry@(Range y _ _) <- unpackPartition p
-              , x == y
-              , intX ⊑ rangeToNInt ry ]
+    errXST = printf "No range beginning with %s cannot be found in `xSt`" x
+    errBotRx :: String = printf "The range %s contains no qubit!" $ show rx
+    errImproperRx :: String = printf
+      "The range %s is not a part of the partition %s!" (show rx) (show s)
+    intX@(Interval xl xr) = rangeToNInt rx
+    matched = listToMaybe -- logically, there should be at most one partition!
+      [ (Interval yl xl, intX, Interval xr yr, ry)
+      | ry@(Range y _ _) <- unpackPartition p
+      , x == y                -- must be in the same register file!
+      , intX ⊑ rangeToNInt ry -- must be a sub-interval
+      , let iy@(Interval yl yr) = rangeToNInt ry
+      ]
+    γ :: NatInterval -> [Range]  = (maybeToList .: γRange) x
+
+
 --------------------------------------------------------------------------------
--- | Aux Typing 
+-- | Aux Typing
 --------------------------------------------------------------------------------
 
 -- | Type of the emitted value corresponding to its original quantum type.
 typingQEmit :: QTy -> Ty
-typingQEmit TNor = TSeq TNat
-typingQEmit THad = TSeq TNat
-typingQEmit TCH  = TSeq TNat
-typingQEmit TCH01  = TSeq (TSeq TNat)
+typingQEmit TNor  = TSeq TNat
+typingQEmit THad  = TSeq TNat
+typingQEmit TCH   = TSeq TNat
+typingQEmit TCH01 = TSeq (TSeq TNat)
 {-# INLINE typingQEmit #-}
 
 -- | Types of binary operators
@@ -150,7 +196,7 @@ typingGuard
      )
   => Exp -> m STuple
 typingGuard (EPartition s') = resolvePartition s'
-typingGuard e             = throwError $ "Unsupported guard: " ++ show e
+typingGuard e               = throwError $ "Unsupported guard: " ++ show e
 
 
 --------------------------------------------------------------------------------
@@ -181,12 +227,12 @@ sub = (==)
 -- | QSubtyping
 --------------------------------------------------------------------------------
 subQ :: QTy -> QTy -> Bool
-subQ _    TCH  = True
-subQ THad THad = True
+subQ _    TCH   = True
+subQ THad THad  = True
 subQ THad TCH01 = True
 subQ TNor TCH01 = True
-subQ TNor TNor = True
-subQ _     _   = False
+subQ TNor TNor  = True
+subQ _     _    = False
 
 checkSubtypeQ
   :: Has (Error String) sig m

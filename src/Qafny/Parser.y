@@ -79,20 +79,18 @@ AST
   : toplevels                         { reverse $1                           }
                                                                           
 toplevels                                                                 
-  : toplevel                          { [$1]                                 }
-  | toplevels toplevel                { $2 : $1                              }
+  : many(toplevel)                    { $1                                   }
                                                                           
 toplevel                                                                  
   :  dafny                            { QDafny $1                            }
   | "method" id '(' bindings ')'                                          
-    requireEnsures blockOpt                                                  
+    requireEnsures opt(block)                                                  
                                       { let (rs, es) = $6 in                 
                                           QMethod $2 $4 [] rs es $7          }
   | "method" id '(' bindings ')' "returns" '(' bindings ')'               
-    requireEnsures blockOpt                                                  
+    requireEnsures opt(block)                                                  
                                       { let (rs, es) = $10 in                
                                           QMethod $2 $4 $8 rs es $11         }
-
 requireEnsures
   : conds                             { (reverse [e | (Requires e) <- $1], 
                                          reverse [e | (Ensures  e) <- $1])   }
@@ -100,11 +98,10 @@ invs
   : conds                             { reverse [e | (Invariants e) <- $1]   }
 
 separates :: { Partition }
-  : "separates" partition               { $2                                   }
+  : "separates" partition             { $2                                   }
 
 conds
-  : {- empty -}                       { []                                   }
-  | conds cond                        { $2 : $1                              }
+  : many(cond)                        { $1                                   }
                                                                           
 cond                                                                      
   : "requires" expr                   { Requires $2                          }
@@ -114,14 +111,6 @@ cond
 bindings
   : manyComma(binding)                     { $1 }
 
-manyComma(p)                                                                  
-  : manyComma_(p)                     { reverse $1                           }
-                                                                          
-manyComma_(p)
-  : {- empty -}                       { []                                   }
-  | p                                 { [$1]                                 }
-  | manyComma_(p) ',' p               { $3 : $1                              }
-                                                                          
 binding                                                                   
   : id ':' ty                         { Binding $1 $3                        }
                                                                           
@@ -138,22 +127,9 @@ qty :: { QTy }
   | "ch"                              { TCH                             }
   | "ch01"                            { TCH01                           }
                                                                 
-
-blockOpt                                                                     
-  : {- empty -}                       { Nothing                              }
-  | block                             { Just $1                              }
-
 block                                                                     
   : '{' stmts '}'                     { Block $2                             }
                                                                           
-
-many(p)                                                                  
-  : many_(p)                          { reverse $1                           }
-                                                                          
-many_(p)
-  : {- empty -}                       { []                                   }
-  | many_(p) p                        { $2 : $1                              }
-
 
 stmts                                                                     
   : many(stmt)                        { reverse $1                           }
@@ -229,10 +205,29 @@ arith :: { Op2 }
  | '*'                      { OMul }
  | '\%'                     { OMod }
 
-
 atomic                                                                      
   : digits                            { ENum $1                              }
   | id                                { EVar $1                              }
+
+-- | Combinators 
+many(p)                                                                  
+  : many_(p)                          { reverse $1 }
+                                                                          
+many_(p)
+  : {- empty -}                       { []      }
+  | many_(p) p                        { $2 : $1 }
+
+manyComma(p)                                                                  
+  : manyComma_(p)                     { reverse $1 }
+                                                                          
+manyComma_(p)
+  : {- empty -}                       { []      }
+  | p                                 { [$1]    }
+  | manyComma_(p) ',' p               { $3 : $1 }
+    
+opt(p)
+  : {- empty -}                       { Nothing }
+  | p                                 { Just $1 }
 
 {
 scanAndParse :: String -> Parser AST

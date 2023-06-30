@@ -36,3 +36,7 @@ sequences by inferring from =requires= directives as well as their types.
 
 - (=CH=) This is simple: one sequence per range
   
+* Engineering
+
+** =Mp.Eff=
+Try replace =fused-effects= with =Mp.Eff= (evidence passing).
