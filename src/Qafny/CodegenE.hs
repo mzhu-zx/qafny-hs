@@ -62,11 +62,9 @@ import           Qafny.TypingE
     )
 import           Qafny.TypeUtils
 import           Qafny.Utils
-    ( findEmitSym
-    , gensymEmit
-    , gensymLoc
+    ( gensymLoc
     , throwError'
-    , gensymRangeQTy
+    , gensymEmitRangeQTy, findEmitRangeQTy, gensymRangeQTy, bindingOfRangeQTy, gensymEmit
     )
 import           Qafny.Variable                 (Variable (variable))
 import           Text.Printf                    (printf)
@@ -158,7 +156,7 @@ codegenRequires rqs = forM rqs $ \rq ->
       sLoc <- gensymLoc "requires"
       sSt %= (at sLoc ?~ (s, qt))
       let xMap = [ (v, [(r, sLoc)]) | r@(Range v _ _) <- unpackPart s ]
-      vsEmit <- forM (unpackPart s) (`gensymRangeQTy` qt)
+      vsEmit <- forM (unpackPart s) (`gensymEmitRangeQTy` qt)
       xSt %= Map.unionWith (++) (Map.fromListWith (++) xMap)
       case espec of
         EQSpec v intv body -> codegenSpec vsEmit v intv body
@@ -240,11 +238,9 @@ codegenStmt (SApply s EHad) = do
 codegenStmt (SApply s@(Partition ranges) e@(EEmit (ELambda {}))) = do
   st@(STuple (_, _, qt)) <- resolvePartition s
   checkSubtypeQ TCH qt
-  let tyEmit = typingQEmit qt
-  -- it's important not to use a fully resolved `s` here, because you don't want
-  -- to apply the op to the entire partition but only a part of it.
-  let vsRange = varFromPartition s
-  vsEmit <- forM vsRange $ findEmitSym . (`Binding` tyEmit)
+  -- it's important not to use the fully resolved `s` here, because the OP should
+  -- only be applied to the sub-partition specified in the annotation. 
+  vsEmit <- unpackPart s `forM` (`findEmitRangeQTy` qt)
   return $ mkMapCall `map` vsEmit
   where
     mkMapCall v = v `SAssign` EEmit (ECall "Map" [e, EVar v])
@@ -433,7 +429,7 @@ codegenAlloc v e@(EOp2 ONor e1 e2) t@(TQReg _) = do
   let eEmit = EEmit $ EMakeSeq TNat e1 $ constExp e2
   let rV = Range v (ENum 0) e1
       sV = partition1 rV
-  vEmit <- gensymRangeQTy rV TNor
+  vEmit <- gensymEmitRangeQTy rV TNor
   loc <- gensymLoc v
   xSt %= (at v . non [] %~ ((rV, loc) :))
   sSt %= (at loc ?~ (sV, TNor))
@@ -493,11 +489,13 @@ dupState
   => Partition -> m ([Stmt], [(Binding, Var, Var)])
 dupState s' = do
   STuple (locS, s, qtS) <- resolvePartition s'
-  let tEmit = typingQEmit qtS
-  let bds = [ Binding x tEmit | x <- varFromPartition s]
+  -- let tEmit = typingQEmit qtS
+  -- let bds = [ Binding x tEmit | x <- varFromPartition s]
+  let rs = unpackPart s
+  let bds = [ bindingOfRangeQTy r qtS | r <- rs ]
   -- generate a set of fresh emit variables as the stashed partition
-  vsEmitFresh <- forM bds gensym -- do not manipulate the `emitSt` here
-  vsEmitPrev <- forM bds findEmitSym -- the only place where state is used!
+  vsEmitFresh <- bds `forM` gensym    -- do not manipulate the `emitSt` here
+  vsEmitPrev <- bds `forM` gensymEmit -- the only place where state is used!
   let stmts = [ SAssign vEmitFresh (EVar vEmitPrev)
               | (vEmitFresh, vEmitPrev) <- zip vsEmitFresh vsEmitPrev ]
   return (stmts, zip3 bds vsEmitPrev vsEmitFresh)

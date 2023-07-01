@@ -101,13 +101,23 @@ removeEmitBindings bs = do
 bindingOfRangeQTy :: Range -> QTy -> Binding
 bindingOfRangeQTy r qty = Binding (variable r) (typingQEmit qty)
 
-gensymRangeQTy
+-- | Generate a varaible from a 'Range' and its 'QTy' and add the corresponding
+-- 'Binding' into 'emitSt'   
+gensymEmitRangeQTy
   :: ( Has (Gensym Binding) sig m
      , Has (State TState) sig m
      )
   => Range -> QTy-> m String
-gensymRangeQTy r qty =
+gensymEmitRangeQTy r qty =
   gensymEmit $ bindingOfRangeQTy r qty
+
+-- | Similar to 'gensymEmitRangeQTy' but gensym without adding it the 'emitSt'
+gensymRangeQTy
+  :: ( Has (Gensym Binding) sig m
+     )
+  => Range -> QTy-> m String
+gensymRangeQTy r qty =
+  gensym $ bindingOfRangeQTy r qty
 
 findEmitRangeQTy
   :: ( Has (State TState) sig m

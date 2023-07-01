@@ -1,8 +1,8 @@
 method For0 (n : nat)
   requires n > 0
 {
-  var q : nor := nor(n, 0);
-  var p : nor := nor(n, 0);
+  var q : qreg[n] := nor(n, 0);
+  var p : qreg[n] := nor(n, 0);
   q[0 .. 1] *= H;
   for i in [0 .. n] with q[i .. (i + 1)]
     separates p[0 .. n]

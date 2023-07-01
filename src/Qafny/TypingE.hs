@@ -37,7 +37,7 @@ import           Qafny.Utils
     , gensymEmit
     , gensymLoc
     , removeEmitBindings
-    , rethrowMaybe, gensymRangeQTy, findEmitRangeQTy, removeEmitRangeQTys, exp2AExp
+    , rethrowMaybe, gensymEmitRangeQTy, findEmitRangeQTy, removeEmitRangeQTys, exp2AExp
     )
 
 -- Utils
@@ -277,7 +277,7 @@ retypePartition st qtNow = do
   removeEmitRangeQTys rqsOld
   let tNewEmit = typingQEmit qtNow
   sSt %= (at locS ?~ (sResolved, qtNow))
-  vsNewEmit <- unpackPart sResolved `forM` (`gensymRangeQTy` qtNow)
+  vsNewEmit <- unpackPart sResolved `forM` (`gensymEmitRangeQTy` qtNow)
   return (vsOldEmit, tOldEmit, vsNewEmit, tNewEmit)
 
 
