@@ -1,5 +1,11 @@
-{-# LANGUAGE FlexibleInstances, MultiParamTypeClasses, ScopedTypeVariables,
-             TupleSections, TypeApplications #-}
+{-# LANGUAGE
+    FlexibleInstances
+  , FlexibleContexts
+  , MultiParamTypeClasses
+  , ScopedTypeVariables
+  , TupleSections
+  , TypeApplications
+  #-}
 
 module Qafny.TypingE where
 
@@ -18,6 +24,21 @@ import           Effect.Gensym                  (Gensym)
 -- Qafny
 import           Qafny.AST
 import           Qafny.Env
+import           Qafny.Error                    (QError (..))
+import           Qafny.Interval
+    ( Interval (Interval)
+    , Lattice (..)
+    , NatInterval
+    )
+import           Qafny.IntervalUtils            (rangeToNInt, γRange)
+import           Qafny.TypeUtils
+import           Qafny.Utils
+    ( findEmitSym
+    , gensymEmit
+    , gensymLoc
+    , removeEmitBindings
+    , rethrowMaybe, gensymRangeQTy, findEmitRangeQTy, removeEmitRangeQTys, exp2AExp
+    )
 
 -- Utils
 import           Control.Lens                   (at, non, (%~), (?~), (^.))
@@ -30,20 +51,6 @@ import           Data.Maybe                     (listToMaybe, maybeToList)
 import qualified Data.Set                       as Set
 import           Debug.Trace                    (traceM, traceStack)
 import           GHC.Stack                      (HasCallStack)
-import           Qafny.Error                    (QError (..))
-import           Qafny.Interval
-    ( Interval (Interval)
-    , Lattice (..)
-    , NatInterval
-    )
-import           Qafny.IntervalUtils            (rangeToNInt, γRange)
-import           Qafny.Utils
-    ( findEmitSym
-    , gensymEmit
-    , gensymLoc
-    , removeEmitBindings
-    , rethrowMaybe
-    )
 import           Text.Printf                    (printf)
 
 -- | Compute the type of the given expression
@@ -59,10 +66,23 @@ typingExp (EVar x)  = do
   env <- view kEnv
   return (env ^. at x) `rethrowMaybe` (show $ UnknownVariableError x env)
 typingExp (EOp2 op2 e1 e2) =
-  do let top = typingOp2 op2
+  do top <- typingOp2 op2
      t1 <- typingExp e1
      t2 <- typingExp e2
      checkSubtype2 top t1 t2
+  where
+    -- typingOp2 :: Op2 -> m (Ty, Ty, Ty)
+    -- | Types of binary operators
+    typingOp2 OAnd = return (TBool, TBool, TBool)
+    typingOp2 OOr  = return (TBool, TBool, TBool)
+    -- We might need to solve the issue of nat vs int 0
+    typingOp2 OAdd = return (TNat, TNat, TNat)
+    typingOp2 OMod = return (TNat, TNat, TNat)
+    typingOp2 OMul = return (TNat, TNat, TNat)
+    typingOp2 OLt  = return (TNat, TNat, TBool)
+    typingOp2 OLe  = return (TNat, TNat, TBool)
+    typingOp2 ONor = exp2AExp e1 >>= \ae -> return (TNat, TNat, TQReg ae)
+    
 -- typing e = throwError $ "Typing for "  ++ show e ++ " is unimplemented!"
 
 
@@ -96,7 +116,7 @@ resolvePartitions
      )
   => [Partition] -> m STuple
 resolvePartitions =
-  resolvePartition . Partition . concatMap unpackPartition
+  resolvePartition . Partition . concatMap unpackPart
 
 --------------------------------------------------------------------------------
 -- | Split Typing
@@ -118,7 +138,7 @@ splitScheme s@(STuple (loc, p, qt)) rx@(Range x _ _) = do
     Nothing -> throwError errImproperRx
     Just (intL, _, intY, ry)  ->
       let rs = γ intL ++ γ intY -- the list of ranges to be broken
-          rsMain = (rs ++) . List.delete ry $ unpackPartition p
+          rsMain = (rs ++) . List.delete ry $ unpackPart p
           rsAux  = [rx]
           pMain  = Partition rsMain
           pAux   = Partition rsAux
@@ -131,7 +151,7 @@ splitScheme s@(STuple (loc, p, qt)) rx@(Range x _ _) = do
           sSt %= (at loc ?~ (pMain, qt)) . (at locAux ?~ (pAux, qt))
           xRangeLocs <- use (xSt . at x) `rethrowMaybe` errXST
           let xrl =
-                [ (rAux, locAux) | rAux <- rsAux ] ++ -- "new range -> new loc" 
+                [ (rAux, locAux) | rAux <- rsAux ] ++ -- "new range -> new loc"
                 [ (rMainNew, loc) | rMainNew <- rs ] ++ -- "broken ranges -> old loc"
                 List.filter ((/= rx) . fst) xRangeLocs -- "the rest with the old range removed"
           xSt %= (at x ?~ xrl)
@@ -151,7 +171,7 @@ splitScheme s@(STuple (loc, p, qt)) rx@(Range x _ _) = do
     intX@(Interval xl xr) = rangeToNInt rx
     matched = listToMaybe -- logically, there should be at most one partition!
       [ (Interval yl xl, intX, Interval xr yr, ry)
-      | ry@(Range y _ _) <- unpackPartition p
+      | ry@(Range y _ _) <- unpackPart p
       , x == y                -- must be in the same register file!
       , intX ⊑ rangeToNInt ry -- must be a sub-interval
       , let (Interval yl yr) = rangeToNInt ry
@@ -162,26 +182,6 @@ splitScheme s@(STuple (loc, p, qt)) rx@(Range x _ _) = do
 --------------------------------------------------------------------------------
 -- | Aux Typing
 --------------------------------------------------------------------------------
-
--- | Type of the emitted value corresponding to its original quantum type.
-typingQEmit :: QTy -> Ty
-typingQEmit TNor  = TSeq TNat
-typingQEmit THad  = TSeq TNat
-typingQEmit TCH   = TSeq TNat
-typingQEmit TCH01 = TSeq (TSeq TNat)
-{-# INLINE typingQEmit #-}
-
--- | Types of binary operators
-typingOp2 :: Op2 -> (Ty, Ty, Ty)
-typingOp2 OAnd = (TBool, TBool, TBool)
-typingOp2 OOr  = (TBool, TBool, TBool)
-  -- We might need to solve the issue of nat vs int 0
-typingOp2 OAdd = (TNat, TNat, TNat)
-typingOp2 OMod = (TNat, TNat, TNat)
-typingOp2 OMul = (TNat, TNat, TNat)
-typingOp2 OLt  = (TNat, TNat, TBool)
-typingOp2 OLe  = (TNat, TNat, TBool)
-typingOp2 _    = undefined
 
 typingGuard
   :: ( Has (State TState) sig m
@@ -239,8 +239,6 @@ checkSubtypeQ t1 t2 =
 --------------------------------------------------------------------------------
 -- | Type Manipulation
 --------------------------------------------------------------------------------
-
-
 retypePartition1
   :: ( Has (Error String) sig m
      , Has (State TState) sig m
@@ -273,14 +271,13 @@ retypePartition st qtNow = do
      "Partition `%s` is of type `%s`. No retyping need to be done."
      (show sResolved) (show qtNow)
   -- Get info based on its previous type!
-  let vsPartition = varFromPartition sResolved
   let tOldEmit = typingQEmit qtPrev
-  let bdsOld = [ Binding v tOldEmit | v <- vsPartition ]
-  vsOldEmit <- bdsOld `forM` findEmitSym
-  removeEmitBindings bdsOld
+  let rqsOld = (, qtPrev) <$> unpackPart sResolved
+  vsOldEmit <- rqsOld `forM` uncurry findEmitRangeQTy
+  removeEmitRangeQTys rqsOld
   let tNewEmit = typingQEmit qtNow
   sSt %= (at locS ?~ (sResolved, qtNow))
-  vsNewEmit <- vsPartition `forM` (gensymEmit . (`Binding` tOldEmit))
+  vsNewEmit <- unpackPart sResolved `forM` (`gensymRangeQTy` qtNow)
   return (vsOldEmit, tOldEmit, vsNewEmit, tNewEmit)
 
 

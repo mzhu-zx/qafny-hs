@@ -1,4 +1,6 @@
-{-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE
+    TypeApplications
+  #-}
 module Qafny.Utils where
 
 --
@@ -13,12 +15,13 @@ import           Effect.Gensym                (Gensym, gensym)
 --
 import qualified Data.Map.Strict              as Map
 import qualified Data.Set                     as Set
-import           Qafny.AST                    (Binding, Loc (..), Range, QTy)
-import           Qafny.Env              (TState, emitSt)
+import           Debug.Trace                  (trace, traceStack)
+import           GHC.Stack                    (CallStack, HasCallStack)
+import           Qafny.AST
+import           Qafny.Env                    (TState, emitSt)
+import           Qafny.TypeUtils              (typingQEmit)
 import           Qafny.Variable               (Variable (variable))
 import           Text.Printf                  (printf)
-import GHC.Stack (HasCallStack, CallStack)
-import Debug.Trace (traceStack, trace)
 
 
 -- catchMaybe
@@ -79,7 +82,6 @@ findEmitSym b = do
       (show b)
       (show st)
 
-
 -- | Remove bindings from emitSt
 removeEmitBindings
   :: ( Has (State TState) sig m)
@@ -87,4 +89,47 @@ removeEmitBindings
 removeEmitBindings bs = do
   emitSt %= (`Map.withoutKeys` Set.fromList bs)
 
+--------------------------------------------------------------------------------
+-- * Gensym Utils
+--
+-- $doc
+-- The following functions operate on a 'Range' and a 'QTy', form a `Binding` to
+-- be normalized to a variable name, perform modification and query to the emit
+-- symbol state and the __Gensym Binding__ effect.
+-- $doc
+--------------------------------------------------------------------------------
+bindingOfRangeQTy :: Range -> QTy -> Binding
+bindingOfRangeQTy r qty = Binding (variable r) (typingQEmit qty)
 
+gensymRangeQTy
+  :: ( Has (Gensym Binding) sig m
+     , Has (State TState) sig m
+     )
+  => Range -> QTy-> m String
+gensymRangeQTy r qty =
+  gensymEmit $ bindingOfRangeQTy r qty
+
+findEmitRangeQTy
+  :: ( Has (State TState) sig m
+     , Has (Error String) sig m
+     )
+  => Range -> QTy -> m String
+findEmitRangeQTy r qty = do
+  findEmitSym $ bindingOfRangeQTy r qty
+
+removeEmitRangeQTys
+  :: ( Has (State TState) sig m)
+  => [(Range, QTy)] -> m ()
+removeEmitRangeQTys rqts =
+  removeEmitBindings $ uncurry bindingOfRangeQTy <$> rqts
+
+
+--------------------------------------------------------------------------------
+
+exp2AExp
+  :: (Has (Error String) sig m)
+  => Exp -> m AExp
+exp2AExp (EVar v) = return $ AVar v
+exp2AExp (ENum n) = return $ ANat n
+exp2AExp e = throwError @String $
+  printf "%s cannot be projected to an AExp." (show e)

@@ -76,7 +76,7 @@ id                    { ( _, L.TId $$     ) }
 
 %%
 AST
-  : toplevels                         { reverse $1                           }
+  : toplevels                         { $1                                   }
                                                                           
 toplevels                                                                 
   : many(toplevel)                    { $1                                   }
@@ -119,7 +119,8 @@ ty
   | "int"                             { TInt                                 }
   | "bool"                            { TBool                                }
   | "seq" '<' ty '>'                  { TSeq $3                              }
-  | "qreg" '[' digits ']'             { TQReg $3                             }
+  | "qreg" '[' digits ']'             { TQReg (ANat $3)                      }
+  | "qreg" '[' id ']'                 { TQReg (AVar $3)                      }
           
 qty :: { QTy }
   : "nor"                             { TNor                            }
@@ -132,7 +133,7 @@ block
                                                                           
 
 stmts                                                                     
-  : many(stmt)                        { reverse $1                           }
+  : many(stmt)                        { $1                                   }
                                                                           
                                                                           
 stmt                                                                      
@@ -147,7 +148,7 @@ stmt
                                       { SFor $2 $5 $7 $10 $11 $12 $13        }
                                                                           
 partition :: { Partition }                                                               
-  : manyComma(range)                  { Partition $ reverse $1               }
+  : manyComma(range)                  { Partition $ $1                       }
                                                                           
 range                                                                     
   : id '[' expr ".." expr ']'         { Range $1 $3 $5                       }

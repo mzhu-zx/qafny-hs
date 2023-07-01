@@ -5,12 +5,17 @@ module Qafny.AST where
 import           Control.Monad (guard)
 import           Text.Printf   (printf)
 
+data AExp
+  = ANat Int
+  | AVar Var
+  deriving (Show, Eq, Ord)
+
 data Ty
   = TNat
   | TInt
   | TBool
   | TSeq Ty
-  | TQReg Int
+  | TQReg AExp
   | TMethod [Ty] [Ty] -- parameter and return types
   | TEmit EmitTy
   deriving (Show, Eq, Ord)
@@ -129,11 +134,11 @@ newtype Loc = Loc { deref :: Var }
 instance Show Loc where
   show = deref
 
-newtype Partition = Partition { unpackPartition :: [Range] }
+newtype Partition = Partition { unpackPart :: [Range] }
   deriving (Eq, Ord)
 
 instance Show Partition where
-  show = show . unpackPartition
+  show = show . unpackPart
 
 data Stmt
   = SAssert Exp

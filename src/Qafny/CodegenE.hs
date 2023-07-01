@@ -59,13 +59,14 @@ import           Qafny.TypingE
     , retypePartition1
     , typingExp
     , typingGuard
-    , typingQEmit
     )
+import           Qafny.TypeUtils
 import           Qafny.Utils
     ( findEmitSym
     , gensymEmit
     , gensymLoc
     , throwError'
+    , gensymRangeQTy
     )
 import           Qafny.Variable                 (Variable (variable))
 import           Text.Printf                    (printf)
@@ -156,10 +157,8 @@ codegenRequires rqs = forM rqs $ \rq ->
     ESpec s qt espec -> do
       sLoc <- gensymLoc "requires"
       sSt %= (at sLoc ?~ (s, qt))
-      let xMap = [ (v, [(r, sLoc)]) | r@(Range v _ _) <- unpackPartition s ]
-      let tyEmit = typingQEmit qt
-      let bdsEmit = [ Binding v tyEmit | v <- varFromPartition s ]
-      vsEmit <- forM bdsEmit gensymEmit
+      let xMap = [ (v, [(r, sLoc)]) | r@(Range v _ _) <- unpackPart s ]
+      vsEmit <- forM (unpackPart s) (`gensymRangeQTy` qt)
       xSt %= Map.unionWith (++) (Map.fromListWith (++) xMap)
       case espec of
         EQSpec v intv body -> codegenSpec vsEmit v intv body
@@ -431,11 +430,10 @@ codegenAlloc
      )
   => Var -> Exp -> Ty -> m Stmt
 codegenAlloc v e@(EOp2 ONor e1 e2) t@(TQReg _) = do
-  let tEmit = typingQEmit TNor
   let eEmit = EEmit $ EMakeSeq TNat e1 $ constExp e2
-  vEmit <- gensymEmit (Binding v tEmit)
   let rV = Range v (ENum 0) e1
       sV = partition1 rV
+  vEmit <- gensymRangeQTy rV TNor
   loc <- gensymLoc v
   xSt %= (at v . non [] %~ ((rV, loc) :))
   sSt %= (at loc ?~ (sV, TNor))
@@ -577,31 +575,3 @@ doubleHadCounter vCounter =
   SAssign vCounter $ EOp2 OMul (ENum 2) (EVar vCounter)
 
 
-
---------------------------------------------------------------------------------
--- * Gensymb Utils
--- 
--- $doc
--- The following functions operate on a 'Range' and a 'QTy', form a `Binding` to
--- be normalized to a variable name, perform modification and query to the emit
--- symbol state and the __Gensym Binding__ effect.
--- $doc
---------------------------------------------------------------------------------
-bindingOfRangeQTy :: Range -> QTy -> Binding
-bindingOfRangeQTy r qty = Binding (variable r) (typingQEmit qty)
-
-gensymRangeQTy
-  :: ( Has (Gensym Binding) sig m
-     , Has (State TState) sig m
-     )
-  => Range -> QTy-> m String
-gensymRangeQTy r qty =
-  gensymEmit $ bindingOfRangeQTy r qty
-
-findEmitRangeQTy
-  :: ( Has (State TState) sig m
-     , Has (Error String) sig m
-     )
-  => Range -> QTy -> m String
-findEmitRangeQTy r qty = do
-  findEmitSym $ bindingOfRangeQTy r qty

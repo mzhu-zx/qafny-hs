@@ -100,6 +100,10 @@ instance DafnyPrinter Ty where
   build (TSeq t)  = "seq<" <!> t <!> ">"
   build _        = undefined
 
+instance DafnyPrinter AExp where
+  build (ANat n) = build n
+  build (AVar v) = build v 
+
 instance DafnyPrinter QTy where
   build TNor = build "nor"
   build THad = build "had"

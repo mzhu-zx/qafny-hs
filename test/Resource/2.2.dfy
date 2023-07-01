@@ -15,7 +15,7 @@ import opened Power2
 import opened Unity
 import opened Seq
 
-// For Qafny Commit: fbb0b20eda52c82411cd90b35ef1a60699f59690
+// For Qafny Commit: 06badb404e5a1a5603b72ee1dc8c5b72fc5333e5
 
 method DeutschJozsa (n : nat) returns (m : nat)
   requires n > 0
