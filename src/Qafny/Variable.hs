@@ -1,8 +1,20 @@
-{-# LANGUAGE FlexibleInstances, TypeSynonymInstances #-}
+{-# LANGUAGE
+    FlexibleInstances
+  , TypeSynonymInstances
+  #-}
 
 module Qafny.Variable where
 
-import           Qafny.AST (Binding (..), Ty (..), typeTag, Loc (..))
+import           Qafny.AST
+    ( Binding (..)
+    , Exp (..)
+    , Loc (..)
+    , Op2 (..)
+    , Range (..)
+    , Ty (..)
+    , typeTag
+    )
+import           Text.Printf (printf)
 
 class Variable s where
   variable :: s -> String
@@ -15,6 +27,23 @@ instance Variable Ty where
 
 instance Variable Int where
   variable = show
+
+instance Variable Op2 where
+  variable OAdd = "_add_"
+  variable OSub = "_sub_"
+  variable _    = undefined
+
+instance Variable Exp where
+  variable (ENum n) = variable n
+  variable (EVar v) = variable v
+  variable (EOp2 op e1 e2) =
+    printf "%s__%s__%s__" (variable e1) (variable op) (variable e2)
+  variable _        = undefined
+
+instance Variable Range where
+  variable (Range x l r) =
+    printf "%s__%s__%s" (variable x) (variable l) (variable r)
+
 
 instance Variable Binding where
   variable (Binding s t) = variable (s, t)

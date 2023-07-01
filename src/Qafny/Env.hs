@@ -69,3 +69,13 @@ initTState = TState
   , _emitSt = mempty
   }
 
+
+data SplitScheme = SplitScheme
+  { schROrigin :: Range -- the original range
+  , schRTo     :: Range -- the range splitted _to_
+  , schRsRem   :: [Range] -- the remainder range
+  , schQty     :: QTy     -- entanglement types
+  , schSMain   :: STuple  -- the partition that was splitted _from_
+  , schSAux    :: STuple  -- the partition that was splitted _to_
+  }
+

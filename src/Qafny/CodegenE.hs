@@ -1,7 +1,10 @@
-{-# LANGUAGE DataKinds, FlexibleContexts, FlexibleInstances,
-             GeneralizedNewtypeDeriving, MultiParamTypeClasses, RankNTypes,
-             ScopedTypeVariables, TupleSections, TypeApplications,
-             TypeOperators, UndecidableInstances #-}
+{-# LANGUAGE
+    FlexibleContexts
+  , RecordWildCards
+  , ScopedTypeVariables
+  , TupleSections
+  , TypeApplications
+  #-}
 
 module Qafny.CodegenE where
 
@@ -30,12 +33,14 @@ import qualified Data.Map.Strict                as Map
 
 
 -- Qafny
+import           Carrier.Gensym.Emit            (runGensymEmit)
 import           Control.Monad                  (forM, forM_, unless)
 import           GHC.Stack                      (HasCallStack)
 import           Qafny.AST
 import           Qafny.Config
 import           Qafny.Env
     ( STuple (..)
+    , SplitScheme (..)
     , TEnv (..)
     , TState
     , kEnv
@@ -62,11 +67,11 @@ import           Qafny.Utils
     , gensymLoc
     , throwError'
     )
+import           Qafny.Variable                 (Variable (variable))
 import           Text.Printf                    (printf)
-import Carrier.Gensym.Emit (runGensymEmit)
 
 --------------------------------------------------------------------------------
--- | Codegen
+-- * Codegen
 --------------------------------------------------------------------------------
 
 codegenAST
@@ -144,9 +149,9 @@ codegenRequires
      , Has (Gensym Binding) sig m
      )
   => Requires -> m Requires
-codegenRequires rqs = forM rqs $ \rq -> 
+codegenRequires rqs = forM rqs $ \rq ->
   -- TODO: I need to check if partitions from different `requires` clauses are
-  -- indeed disjoint! 
+  -- indeed disjoint!
   case rq of
     ESpec s qt espec -> do
       sLoc <- gensymLoc "requires"
@@ -158,10 +163,10 @@ codegenRequires rqs = forM rqs $ \rq ->
       xSt %= Map.unionWith (++) (Map.fromListWith (++) xMap)
       case espec of
         EQSpec v intv body -> codegenSpec vsEmit v intv body
-        _ -> undefined
+        _                  -> undefined
     _ ->
       return rq
-  
+
 codegenSpec
   :: ( Has (Error String) sig m
      , Has (State TState) sig m
@@ -177,7 +182,7 @@ codegenSpec vsEmit bind (Intv l r) eValues = do
   let es = [ EForall (Binding bind TNat) eBound (EOp2 OEq (eSelect vE) eV)
            | (vE, eV) <- zip vsEmit eValues, eV /= EWildcard ]
   return $ case es of
-    [] -> EBool True
+    []     -> EBool True
     x : xs -> EEmit (EOpChained x [ (OAnd, x') | x' <- xs ])
 
 codegenBlock
@@ -520,16 +525,19 @@ makeLoopPartition s _ _ =
 
 
 --------------------------------------------------------------------------------
--- | Split Semantics
+-- * Split Semantics
 --------------------------------------------------------------------------------
--- | Generate emit variables and split operations from a given split scheme.   
+-- | Generate emit variables and split operations from a given split scheme.
 codegenSplitEmit
   :: ( Has (Error String) sig m
      , Has (Gensym Binding) sig m
      )
-  => [Range] -> Range
+  => SplitScheme
   -> m [Stmt]
-codegenSplitEmit = undefined
+codegenSplitEmit ss@SplitScheme {schQty=qty, schROrigin=rOrigin} =
+  case qty of
+    TNor -> undefined
+    _    -> undefined
 
 -- | Given a Had Partition and a partition, if the partition contains more qubits
 -- than the partition, then split the partition, return the STuple containing only
@@ -548,7 +556,7 @@ splitHadPartition sFull sPart =
     printf "%s or %s is not a singleton Had partition!" (show sFull) (show sPart)
 
 --------------------------------------------------------------------------------
--- | Merge Semantics
+-- * Merge Semantics
 --------------------------------------------------------------------------------
 -- | Merge semantics of a Had qubit into one CH emitted state
 -- uses the name of the emitted seq as well as the index name
@@ -568,3 +576,32 @@ doubleHadCounter :: Var -> Stmt
 doubleHadCounter vCounter =
   SAssign vCounter $ EOp2 OMul (ENum 2) (EVar vCounter)
 
+
+
+--------------------------------------------------------------------------------
+-- * Gensymb Utils
+-- 
+-- $doc
+-- The following functions operate on a 'Range' and a 'QTy', form a `Binding` to
+-- be normalized to a variable name, perform modification and query to the emit
+-- symbol state and the __Gensym Binding__ effect.
+-- $doc
+--------------------------------------------------------------------------------
+bindingOfRangeQTy :: Range -> QTy -> Binding
+bindingOfRangeQTy r qty = Binding (variable r) (typingQEmit qty)
+
+gensymRangeQTy
+  :: ( Has (Gensym Binding) sig m
+     , Has (State TState) sig m
+     )
+  => Range -> QTy-> m String
+gensymRangeQTy r qty =
+  gensymEmit $ bindingOfRangeQTy r qty
+
+findEmitRangeQTy
+  :: ( Has (State TState) sig m
+     , Has (Error String) sig m
+     )
+  => Range -> QTy -> m String
+findEmitRangeQTy r qty = do
+  findEmitSym $ bindingOfRangeQTy r qty

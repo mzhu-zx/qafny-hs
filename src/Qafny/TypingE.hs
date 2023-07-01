@@ -101,14 +101,6 @@ resolvePartitions =
 --------------------------------------------------------------------------------
 -- | Split Typing
 --------------------------------------------------------------------------------
-data SplitScheme = SplitScheme
-  { rOrigin :: Range -- the original range
-  , rTo     :: Range -- the range splitted _to_
-  , rsRem   :: [Range] -- the remainder range
-  , sMain   :: STuple  -- the partition that was splitted _from_
-  , sAux    :: STuple  -- the partition that was splitted _to_
-  }
-
 -- | Given a partition and a range, compute a split scheme if the range is a
 -- part of the partition. Return 'Nothing' if no split needs to be performed,
 
@@ -144,11 +136,12 @@ splitScheme s@(STuple (loc, p, qt)) rx@(Range x _ _) = do
                 List.filter ((/= rx) . fst) xRangeLocs -- "the rest with the old range removed"
           xSt %= (at x ?~ xrl)
           return . Just $ SplitScheme
-            { rOrigin = ry
-            , rTo = rx
-            , rsRem = rs
-            , sMain = STuple sMain'
-            , sAux  = STuple sAux'
+            { schROrigin = ry
+            , schRTo = rx
+            , schRsRem = rs
+            , schQty = qt
+            , schSMain = STuple sMain'
+            , schSAux  = STuple sAux'
             }
   where
     errXST = printf "No range beginning with %s cannot be found in `xSt`" x
@@ -161,7 +154,7 @@ splitScheme s@(STuple (loc, p, qt)) rx@(Range x _ _) = do
       | ry@(Range y _ _) <- unpackPartition p
       , x == y                -- must be in the same register file!
       , intX ⊑ rangeToNInt ry -- must be a sub-interval
-      , let iy@(Interval yl yr) = rangeToNInt ry
+      , let (Interval yl yr) = rangeToNInt ry
       ]
     γ :: NatInterval -> [Range]  = (maybeToList .: γRange) x
 

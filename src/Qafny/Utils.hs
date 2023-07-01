@@ -13,7 +13,7 @@ import           Effect.Gensym                (Gensym, gensym)
 --
 import qualified Data.Map.Strict              as Map
 import qualified Data.Set                     as Set
-import           Qafny.AST                    (Binding, Loc (..))
+import           Qafny.AST                    (Binding, Loc (..), Range, QTy)
 import           Qafny.Env              (TState, emitSt)
 import           Qafny.Variable               (Variable (variable))
 import           Text.Printf                  (printf)
@@ -60,6 +60,7 @@ gensymEmit b = do
   name <- gensym b
   emitSt %= (at b ?~ name)
   return name
+
 
 
 -- TODO: Binding can cause aliasing, Var is not sufficient, I need to define
