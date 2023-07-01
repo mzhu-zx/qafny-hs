@@ -8,15 +8,15 @@ import opened QPreludeUntyped
 import opened Seq
 import opened Power2
 
-method Test (q__seq__nat____0 : seq<nat>)
-  requires forall i : nat | 0 <= i < 10 :: q__seq__nat____0[i] == 0
+method Test ()
+  requires forall i : nat | 0 <= i < 10 :: q__0__10__seq__nat____0[i] == 0
 {
   // Forward Declaration
-  var q__seq__nat____1 : seq<nat>;
+  var q__0__10__seq__nat____1 : seq<nat>;
   
   // Method Definition
   // Cast TNor ==> THad
-  q__seq__nat____1 := CastNorHad(q__seq__nat____0);
+  q__0__10__seq__nat____1 := CastNorHad(q__0__10__seq__nat____0);
 }
 
 }
