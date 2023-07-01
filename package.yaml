@@ -26,7 +26,6 @@ dependencies:
 - lens
 - text
 - containers
-- extra
 - fused-effects
 - fused-effects-lens
 # - fused-effects-readline
