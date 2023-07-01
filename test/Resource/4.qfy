@@ -1,8 +1,8 @@
 method DeutschJozsa (n : nat)
   // requires n > 0
 {
-  var q : nor := nor(1, 0);
-  var p : nor := nor(n, 1);
+  var q : qreg[1] := nor(1, 0);
+  var p : qreg[n] := nor(n, 1);
   q[0 .. 1] *= H;
   p[0 .. n] *= H;
   // assert typeof (q) is (n) $ had { forall i : nat | i < n :: q[i] == 1 };

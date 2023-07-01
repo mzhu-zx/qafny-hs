@@ -11,18 +11,18 @@ import opened Power2
 method DeutschJozsa (n : nat)
 {
   // Forward Declaration
-  var p__seq__nat____3 : seq<nat>;
-  var q__seq__nat____2 : seq<nat>;
-  var p__seq__nat____1 : seq<nat>;
-  var q__seq__nat____0 : seq<nat>;
+  var p__0__n__seq__nat____3 : seq<nat>;
+  var q__0__1__seq__nat____2 : seq<nat>;
+  var p__0__n__seq__nat____1 : seq<nat>;
+  var q__0__1__seq__nat____0 : seq<nat>;
   
   // Method Definition
-  q__seq__nat____0 := seq<nat>(1, _ => 0);
-  p__seq__nat____1 := seq<nat>(n, _ => 1);
+  q__0__1__seq__nat____0 := seq<nat>(1, _ => 0);
+  p__0__n__seq__nat____1 := seq<nat>(n, _ => 1);
   // Cast TNor ==> THad
-  q__seq__nat____2 := CastNorHad(q__seq__nat____0);
+  q__0__1__seq__nat____2 := CastNorHad(q__0__1__seq__nat____0);
   // Cast TNor ==> THad
-  p__seq__nat____3 := CastNorHad(p__seq__nat____1);
+  p__0__n__seq__nat____3 := CastNorHad(p__0__n__seq__nat____1);
 }
 
 }
