@@ -8,9 +8,9 @@ import opened QPreludeUntyped
 import opened Seq
 import opened Power2
 
-method GHZ (q__seq__nat____0 : seq<nat>, q__seq__nat____1 : seq<nat>, n : nat, m : nat)
+method CH (n : nat, m : nat)
+  requires forall i : nat | 0 <= i < 10 :: q__0__n__seq__nat____0[i] == 0 && forall i : nat | 0 <= i < 10 :: q__m__10__seq__nat____1[i] == 1
   requires n < m < 10
-  requires forall i : nat | 0 <= i < 10 :: q__seq__nat____0[i] == 0 && forall i : nat | 0 <= i < 10 :: q__seq__nat____1[i] == 1
 {
   // Forward Declaration
   

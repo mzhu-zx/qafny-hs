@@ -14,48 +14,51 @@ import opened Power2
 method GHZ0 (n : nat)
 {
   // Forward Declaration
-  var p__seq__nat____10 : seq<nat>;
-  var q__seq__nat____9 : seq<nat>;
-  var g__seq__nat____8 : seq<nat>;
-  var q__seq__nat____7 : seq<nat>;
-  var g__seq__nat____6 : seq<nat>;
-  var g__seq__nat____5 : seq<nat>;
-  var p__seq__nat____4 : seq<nat>;
-  var q__seq__nat____3 : seq<nat>;
-  var g__seq__nat____2 : seq<nat>;
-  var p__seq__nat____1 : seq<nat>;
-  var q__seq__nat____0 : seq<nat>;
+  var p__0__1__seq__nat____13 : seq<nat>;
+  var q__0__1__seq__nat____12 : seq<nat>;
+  var g__0__1__seq__nat____11 : seq<nat>;
+  var q__0__1__seq__nat____10 : seq<nat>;
+  var g__0__1__seq__nat____9 : seq<nat>;
+  var q__0__1__seq__nat____8 : seq<nat>;
+  var g__0__1__seq__nat____7 : seq<nat>;
+  var g__0__1__seq__nat____6 : seq<nat>;
+  var g__0__1__seq__nat____5 : seq<nat>;
+  var p__0__1__seq__nat____4 : seq<nat>;
+  var q__0__1__seq__nat____3 : seq<nat>;
+  var g__0__1__seq__nat____2 : seq<nat>;
+  var p__0__1__seq__nat____1 : seq<nat>;
+  var q__0__1__seq__nat____0 : seq<nat>;
   
   // Method Definition
-  q__seq__nat____0 := seq<nat>(1, _ => 0);
-  p__seq__nat____1 := seq<nat>(1, _ => 0);
-  g__seq__nat____2 := seq<nat>(1, _ => 0);
+  q__0__1__seq__nat____0 := seq<nat>(1, _ => 0);
+  p__0__1__seq__nat____1 := seq<nat>(1, _ => 0);
+  g__0__1__seq__nat____2 := seq<nat>(1, _ => 0);
   // Cast TNor ==> THad
-  q__seq__nat____3 := CastNorHad(q__seq__nat____0);
+  q__0__1__seq__nat____3 := CastNorHad(q__0__1__seq__nat____0);
   // Cast TNor ==> THad
-  p__seq__nat____4 := CastNorHad(p__seq__nat____1);
-  // Cast Body Session TNor => TCH
+  p__0__1__seq__nat____4 := CastNorHad(p__0__1__seq__nat____1);
+  // Cast Body Partition TNor => TCH
   // Cast TNor ==> TCH
-  g__seq__nat____5 := CastNorCH10(g__seq__nat____2);
-  g__seq__nat____6 := g__seq__nat____5;
+  g__0__1__seq__nat____5 := CastNorCH10(g__0__1__seq__nat____2);
+  g__0__1__seq__nat____6 := g__0__1__seq__nat____7;
   {
-    g__seq__nat____5 := Map(x => x + 1 % 2, g__seq__nat____5);
+    g__0__1__seq__nat____7 := Map(x => x + 1 % 2, g__0__1__seq__nat____7);
   }
 
-  g__seq__nat____5 := g__seq__nat____5 + g__seq__nat____6;
-  // Merge: Body session + the Guard session.
-  q__seq__nat____7 := seq<nat>(|g__seq__nat____5|, _ => 0 + 1) + seq<nat>(|g__seq__nat____6|, _ => 0);
-  g__seq__nat____8 := g__seq__nat____5;
-  q__seq__nat____9 := q__seq__nat____7;
+  g__0__1__seq__nat____7 := g__0__1__seq__nat____7 + g__0__1__seq__nat____6;
+  // Merge: Body partition + the Guard partition.
+  q__0__1__seq__nat____8 := seq<nat>(|g__0__1__seq__nat____7|, _ => 0 + 1) + seq<nat>(|g__0__1__seq__nat____6|, _ => 0);
+  g__0__1__seq__nat____9 := g__0__1__seq__nat____11;
+  q__0__1__seq__nat____10 := q__0__1__seq__nat____12;
   {
-    q__seq__nat____7 := Map(x => x + 1 % 2, q__seq__nat____7);
-    g__seq__nat____5 := Map(x => x + 1 % 2, g__seq__nat____5);
+    q__0__1__seq__nat____12 := Map(x => x + 1 % 2, q__0__1__seq__nat____12);
+    g__0__1__seq__nat____11 := Map(x => x + 1 % 2, g__0__1__seq__nat____11);
   }
 
-  g__seq__nat____5 := g__seq__nat____5 + g__seq__nat____8;
-  q__seq__nat____7 := q__seq__nat____7 + q__seq__nat____9;
-  // Merge: Body session + the Guard session.
-  p__seq__nat____10 := seq<nat>(|g__seq__nat____5|, _ => 0 + 1) + seq<nat>(|g__seq__nat____8|, _ => 0);
+  g__0__1__seq__nat____11 := g__0__1__seq__nat____11 + g__0__1__seq__nat____9;
+  q__0__1__seq__nat____12 := q__0__1__seq__nat____12 + q__0__1__seq__nat____10;
+  // Merge: Body partition + the Guard partition.
+  p__0__1__seq__nat____13 := seq<nat>(|g__0__1__seq__nat____11|, _ => 0 + 1) + seq<nat>(|g__0__1__seq__nat____9|, _ => 0);
 }
 
 }

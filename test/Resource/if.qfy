@@ -5,8 +5,8 @@
 method GHZ0 (n : nat)
   // requires n > 0
 {
-  var q : nor := nor(1, 0);
-  var p : nor := nor(1, 0);
+  var q : qreg[1] := nor(1, 0);
+  var p : qreg[1] := nor(1, 0);
   // var g : nor := nor(1, 0);
   q[0 .. 1] *= H;
   if (q[0 .. 1])
