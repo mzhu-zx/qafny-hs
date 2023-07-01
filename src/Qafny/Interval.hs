@@ -4,6 +4,8 @@ module Qafny.Interval where
 import           Text.Printf (printf)
 
 -- Interval Interpreter
+
+-- Nat Domain
 data Nat
   = Inf
   | Mt
@@ -48,6 +50,9 @@ instance Num Nat where
   signum = undefined
   fromInteger a = Nat (fromInteger a)
 
+
+-- One Point Int Domain
+type PointInt = (String, Int)
 
 --------------------------------------------------------------------------------
 -- | Partial Ordering

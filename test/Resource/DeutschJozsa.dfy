@@ -1,3 +1,13 @@
+include "../../external//QPreludeUntyped.dfy"
+include "../../external//libraries/src/Collections/Sequences/Seq.dfy"
+include "../../external//libraries/src/NonlinearArithmetic/Power2.dfy"
+
+// target Dafny version: 3.12.0
+abstract module QafnyDefault {
+import opened QPreludeUntyped
+import opened Seq
+import opened Power2
+
 
 import opened QPrelude
 import opened DivMod
@@ -61,7 +71,7 @@ method CrossMinus(n : nat, m : nat, q : qreg, p : qreg)
   }
   modifies q, p
 
-method DeutschJozsaOracle(n : nat, p : qreg, q : qreg)
+method DeutschJozsaOracle (n : nat, p : qreg 1, q : qreg n)
   requires n > 0
   requires typeof (q) is (n) $ had { forall i : nat | i < n :: q[i] == 1 }
   requires typeof (p) is (1) $ had { p[0] == -1 }
@@ -221,4 +231,4 @@ method Alternate(p : qreg, q : qreg, n : nat, m : nat, f : nat --> nat)
 ;
 
 
-
+}

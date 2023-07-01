@@ -12,6 +12,7 @@ import qualified Data.Text.Lazy.IO  as Txt.IO
 
 import           System.Environment (getArgs)
 import           System.Exit        (exitFailure)
+import Control.Arrow (ArrowChoice(left))
 
 
 
@@ -23,7 +24,7 @@ pipelineE s =
   do ast <- scanAndParse s
      let configs = Configs { stdlibPath = "../../external/" }
      let (result, state, ev) = produceCodegen configs ast
-     ir <- result
+     ir <- left ( ++ "\n" ++ show state) result
      return (texify ir, state, ev)
 
 

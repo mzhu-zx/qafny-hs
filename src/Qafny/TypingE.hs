@@ -103,13 +103,15 @@ resolvePartition se@(Partition rs) = do
     rlocs <- use (xSt . at name) `rethrowMaybe` (show . UnknownRangeError) r
     return [ loc |  (r', loc) <- rlocs, rangeToNInt r ⊑ rangeToNInt r' ]
   case List.nub . concat $ locs of
-    [] -> throwError "Internal Error? An empty partition has no type!"
+    [] -> throwError errInternal
     [x] -> (use (sSt . at x) `rethrowMaybe` (show . UnknownLocError) x)
       <&> STuple . uncurry (x,,)
     ss ->
       throwError @String $ printf "`%s` is not a sub-partition, counterexample: %s"
         (show se) (show ss)
-
+  where
+    errInternal :: String = printf
+      "Internal Error: The session `%s` is empty which has no type!" (show se)
 resolvePartitions
   :: ( Has (State TState) sig m
      , Has (Error String) sig m

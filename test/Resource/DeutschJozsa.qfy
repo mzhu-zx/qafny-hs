@@ -61,7 +61,7 @@ method DeutschJozsa(n : nat)
 #  }
 #  modifies q, p
 #
-method DeutschJozsaOracle(n : nat, p : qreg, q : qreg)
+method DeutschJozsaOracle(n : nat, p : qreg[1], q : qreg[n])
 #  requires n > 0
 #  requires typeof (q) is (n) $ had { forall i : nat | i < n :: q[i] == 1 }
 #  requires typeof (p) is (1) $ had { p[0] == -1 }

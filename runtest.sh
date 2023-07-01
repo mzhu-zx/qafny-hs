@@ -3,10 +3,22 @@
 samples=$(cd test/Resource; ls *.qfy)
 
 for f in $samples; do
-    test=${f%.*}
-    stack run -- $test
-    if [ $? -ne 0 ]; then
+    status="r"
+    while [[ $status = "r" ]]; do 
+        test=${f%.*}
+        stack run -- $test
+        if [[ $? -eq 0 ]]; then
+            break
+        fi
         echo "Test failed when executing 'stack run -- $test'"
-        exit -1
-    fi
+        read -n1 \
+             -p"Put 's' to skip, 'r' to rety and any other character to exit." \
+             status
+        if [[ $status = "s" ]]; then
+            break
+        elif [[ $status != "r" ]]; then
+            echo "\nTest interrupted!"
+            exit -1;
+        fi
+    done
 done
