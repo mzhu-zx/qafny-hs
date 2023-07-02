@@ -55,7 +55,7 @@ instance Num Nat where
 type PointInt = (String, Int)
 
 --------------------------------------------------------------------------------
--- | Partial Ordering
+-- * Partial Ordering
 --------------------------------------------------------------------------------
 class PartialOrd a where
   (≤) :: a -> a -> Bool
@@ -80,7 +80,7 @@ instance Show a => Show (Interval a) where
   show (Interval l r) = printf "[%s, %s]" (show l) (show r)
 
 --------------------------------------------------------------------------------
--- | Lattice
+-- * Lattice
 --------------------------------------------------------------------------------
 class Lattice a where
   isTop :: a -> Bool
@@ -106,7 +106,7 @@ instance Lattice (Interval Nat) where
 
   isBot (Interval a b) = not (a ≤ b)
 
-  (Interval a1 b1) ⊑ (Interval a2 b2) = a1 ⊑ a2 && b1 ⊑ b2
+  (Interval a1 b1) ⊑ (Interval a2 b2) = a2 ⊑ a1 && b1 ⊑ b2
 
   i1@(Interval a1 b1) ⊔ i2@(Interval a2 b2) =
     Interval (a1 ⊓ a2) (b1 ⊔ b2)

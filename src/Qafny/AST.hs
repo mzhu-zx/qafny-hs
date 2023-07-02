@@ -107,6 +107,7 @@ data EmitExp
   | ECard Exp
   | ECall Var [Exp]
   | ESelect Exp Exp
+  | ESeqRange Exp Exp Exp
   | EDafnyVar Var
   | EOpChained Exp [(Op2, Exp)]
   deriving  (Show, Eq, Ord)

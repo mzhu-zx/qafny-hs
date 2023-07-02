@@ -64,7 +64,7 @@ import           Qafny.TypeUtils
 import           Qafny.Utils
     ( gensymLoc
     , throwError'
-    , gensymEmitRangeQTy, findEmitRangeQTy, gensymRangeQTy, bindingOfRangeQTy, gensymEmit
+    , gensymEmitRangeQTy, findEmitRangeQTy, gensymRangeQTy, bindingOfRangeQTy, gensymEmit, removeEmitRangeQTys
     )
 import           Qafny.Variable                 (Variable (variable))
 import           Text.Printf                    (printf)
@@ -526,14 +526,30 @@ makeLoopPartition s _ _ =
 -- | Generate emit variables and split operations from a given split scheme.
 codegenSplitEmit
   :: ( Has (Error String) sig m
+     , Has (State TState) sig m
      , Has (Gensym Binding) sig m
      )
   => SplitScheme
   -> m [Stmt]
-codegenSplitEmit ss@SplitScheme {schQty=qty, schROrigin=rOrigin} =
+codegenSplitEmit
+  ss@SplitScheme { schQty=qty
+                 , schROrigin=rOrigin@(Range x left _)
+                 , schRTo=rTo
+                 , schRsRem = rsRem
+                 , ..
+                 }
+  =
   case qty of
-    TNor -> undefined
-    _    -> undefined
+    t | t `elem` [ TNor, THad, TCH ] -> do
+      vEmitR <- findEmitRangeQTy rOrigin qty -- locate the one to be deleted
+      removeEmitRangeQTys [(rOrigin, qty)]   -- destroy it
+      rSyms <- (rTo : rsRem) `forM` (`gensymEmitRangeQTy` qty)
+      let offset e = EOp2 OSub e left
+      let stmtsSplit =
+            [ SAssign vEmitNew $ EEmit (ESeqRange (EVar vEmitR) (offset el) (offset er))
+            | (vEmitNew, Range _ el er) <- zip rSyms (rTo : rsRem) ]
+      return stmtsSplit
+    _    -> throwError @String $ printf "Unsupport split: %s." (show qty)
 
 -- | Given a Had Partition and a partition, if the partition contains more qubits
 -- than the partition, then split the partition, return the STuple containing only
