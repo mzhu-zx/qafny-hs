@@ -53,7 +53,7 @@ import qualified Data.List                      as List
 import qualified Data.Map.Strict                as Map
 import           Data.Maybe                     (listToMaybe, maybeToList)
 import qualified Data.Set                       as Set
-import           Debug.Trace                    (traceM, traceStack)
+import           Debug.Trace                    (trace, traceM, traceStack)
 import           GHC.Stack                      (HasCallStack)
 import           Text.Printf                    (printf)
 
@@ -160,51 +160,52 @@ splitScheme
   => STuple
   -> Range
   -> m (Maybe SplitScheme)
-splitScheme s@(STuple (loc, p, qt)) rx@(Range x _ _) = do
-  when (isBot intX) $ throwError errBotRx
+splitScheme s@(STuple (loc, p, qt)) rSplitTo@(Range to _ _) = do
+  when (isBot intvTo) $ throwError errBotRx
   case matched of
     Nothing -> throwError errImproperRx
-    Just (intL, _, intY, ry)  ->
-      let rs = γ intL ++ γ intY -- the list of ranges to be broken
+    Just (intL, _, intR, ry)  ->
+      let rs = γ intL ++ γ intR -- the list of ranges to be broken
           rsMain = (rs ++) . List.delete ry $ unpackPart p
-          rsAux  = [rx]
+          rsAux  = [rSplitTo]
           pMain  = Partition rsMain
           pAux   = Partition rsAux
-      in case rsMain of
+      in case trace ("rsMain: " ++ show rsMain) rsMain of
         [] -> return Nothing -- no split actually needs to be done
         _  -> do             -- split actually happens here:
-          locAux <- gensymLoc x
+          locAux <- gensymLoc to
           let sMain' = (loc, pMain, qt)   -- the part that's splited _from_
           let sAux'  = (locAux, pAux, qt) -- the part that's splited _to_
           sSt %= (at loc ?~ (pMain, qt)) . (at locAux ?~ (pAux, qt))
-          xRangeLocs <- use (xSt . at x) `rethrowMaybe` errXST
+          xRangeLocs <- use (xSt . at to) `rethrowMaybe` errXST
           let xrl =
                 [ (rAux, locAux) | rAux <- rsAux ] ++ -- "new range -> new loc"
                 [ (rMainNew, loc) | rMainNew <- rs ] ++ -- "broken ranges -> old loc"
-                List.filter ((/= rx) . fst) xRangeLocs -- "the rest with the old range removed"
-          xSt %= (at x ?~ xrl)
+                -- "the rest with the old range removed"
+                List.filter ((/= rSplitTo) . fst) xRangeLocs
+          xSt %= (at to ?~ xrl)
           return . Just $ SplitScheme
             { schROrigin = ry
-            , schRTo = rx
+            , schRTo = rSplitTo
             , schRsRem = rs
             , schQty = qt
             , schSMain = STuple sMain'
             , schSAux  = STuple sAux'
             }
   where
-    errXST = printf "No range beginning with %s cannot be found in `xSt`" x
-    errBotRx :: String = printf "The range %s contains no qubit!" $ show rx
+    errXST = printf "No range beginning with %s cannot be found in `xSt`" to
+    errBotRx :: String = printf "The range %s contains no qubit!" $ show rSplitTo
     errImproperRx :: String = printf
-      "The range %s is not a part of the partition %s!" (show rx) (show s)
-    intX@(Interval xl xr) = rangeToNInt rx
+      "The range %s is not a part of the partition %s!" (show rSplitTo) (show s)
+    intvTo@(Interval tol tor) = rangeToNInt rSplitTo
     matched = listToMaybe -- logically, there should be at most one partition!
-      [ (Interval yl xl, intX, Interval xr yr, ry)
+      [ (Interval yl (tol - 1), intvTo, Interval (tor + 1) yr, ry)
       | ry@(Range y _ _) <- unpackPart p
-      , x == y                -- must be in the same register file!
-      , intX ⊑ rangeToNInt ry -- must be a sub-interval
+      , to == y                -- must be in the same register file!
+      , intvTo ⊑ rangeToNInt ry -- must be a sub-interval
       , let (Interval yl yr) = rangeToNInt ry
       ]
-    γ :: NatInterval -> [Range]  = (maybeToList .: γRange) x
+    γ :: NatInterval -> [Range]  = (maybeToList .: γRange) to
 
 
 --------------------------------------------------------------------------------

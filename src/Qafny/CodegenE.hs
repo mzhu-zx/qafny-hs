@@ -28,13 +28,15 @@ import           Qafny.Gensym                   (resumeGensym)
 -- Utils
 import           Control.Lens                   (at, non, (%~), (?~), (^.))
 import           Control.Lens.Tuple
+import           Control.Monad                  (forM, forM_, unless, when)
 import           Data.Functor                   ((<&>))
 import qualified Data.Map.Strict                as Map
+import           Text.Printf                    (printf)
 
 
 -- Qafny
 import           Carrier.Gensym.Emit            (runGensymEmit)
-import           Control.Monad                  (forM, forM_, unless)
+import           Debug.Trace                    (trace)
 import           GHC.Stack                      (HasCallStack)
 import           Qafny.AST
 import           Qafny.Config
@@ -47,6 +49,7 @@ import           Qafny.Env
     , sSt
     , xSt
     )
+import           Qafny.TypeUtils
 import           Qafny.TypingE
     ( appkEnvWithBds
     , checkSubtype
@@ -57,17 +60,22 @@ import           Qafny.TypingE
     , resolvePartitions
     , retypePartition
     , retypePartition1
+    , splitScheme
     , typingExp
     , typingGuard
     )
-import           Qafny.TypeUtils
 import           Qafny.Utils
-    ( gensymLoc
+    ( bindingOfRangeQTy
+    , findEmitRangeQTy
+    , gensymEmit
+    , gensymEmitRangeQTy
+    , gensymLoc
+    , gensymRangeQTy
+    , removeEmitRangeQTys
     , throwError'
-    , gensymEmitRangeQTy, findEmitRangeQTy, gensymRangeQTy, bindingOfRangeQTy, gensymEmit, removeEmitRangeQTys
     )
 import           Qafny.Variable                 (Variable (variable))
-import           Text.Printf                    (printf)
+import Qafny.AInterp (reduceExp)
 
 --------------------------------------------------------------------------------
 -- * Codegen
@@ -229,17 +237,26 @@ codegenStmt s@(SVar (Binding v t) (Just e)) = do
   checkSubtype t te -- check if `t` agrees with the type of `e`
   codegenAlloc v e t <&> (: [])
 codegenStmt (SApply s EHad) = do
+  r <- case unpackPart s of
+    [r] -> return r
+    _   -> throwError "TODO: support non-singleton partition in `*=`"
   st@(STuple(_, _, qt)) <- resolvePartition s
   opCast <- opCastHad qt
-  castWithOp opCast st THad
+  -- run split semantics here!
+  ssMaybe <- splitScheme st r
+  (stmtsSplit, st') <- case ssMaybe of
+    Nothing -> return ([], st)
+    Just ss -> codegenSplitEmit ss <&> (, schSAux ss)
+  (stmtsSplit ++) <$> castWithOp opCast st' THad
   where
     opCastHad TNor = return "CastNorHad"
     opCastHad t = throwError $ "type `" ++ show t ++ "` cannot be casted to Had type"
+
 codegenStmt (SApply s@(Partition ranges) e@(EEmit (ELambda {}))) = do
   st@(STuple (_, _, qt)) <- resolvePartition s
   checkSubtypeQ TCH qt
   -- it's important not to use the fully resolved `s` here, because the OP should
-  -- only be applied to the sub-partition specified in the annotation. 
+  -- only be applied to the sub-partition specified in the annotation.
   vsEmit <- unpackPart s `forM` (`findEmitRangeQTy` qt)
   return $ mkMapCall `map` vsEmit
   where
@@ -536,15 +553,15 @@ codegenSplitEmit
                  , schROrigin=rOrigin@(Range x left _)
                  , schRTo=rTo
                  , schRsRem = rsRem
-                 , ..
                  }
   =
+  trace (show ss) $
   case qty of
     t | t `elem` [ TNor, THad, TCH ] -> do
       vEmitR <- findEmitRangeQTy rOrigin qty -- locate the one to be deleted
       removeEmitRangeQTys [(rOrigin, qty)]   -- destroy it
       rSyms <- (rTo : rsRem) `forM` (`gensymEmitRangeQTy` qty)
-      let offset e = EOp2 OSub e left
+      let offset e = reduceExp $ EOp2 OSub e left
       let stmtsSplit =
             [ SAssign vEmitNew $ EEmit (ESeqRange (EVar vEmitR) (offset el) (offset er))
             | (vEmitNew, Range _ el er) <- zip rSyms (rTo : rsRem) ]

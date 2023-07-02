@@ -24,7 +24,9 @@ rangeToNInt r@(Range _ n m) =
   in trace (printf "[rangeToNInt]: %s ← %s " (show i) (show r)) i
 
 γRange :: String -> NatInterval -> Maybe Range
-γRange x (Interval (Nat i) (Nat j)) = Just $ Range x (ENum i) (ENum (j + 1))
+γRange x intv@(Interval (Nat i) (Nat j)) =
+  if isBot intv then Nothing
+  else Just $ Range x (ENum i) (ENum (j + 1))
 γRange _ _                          = Nothing
 
 

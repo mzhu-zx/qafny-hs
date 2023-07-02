@@ -78,4 +78,5 @@ data SplitScheme = SplitScheme
   , schSMain   :: STuple  -- the partition that was splitted _from_
   , schSAux    :: STuple  -- the partition that was splitted _to_
   }
+  deriving Show
 

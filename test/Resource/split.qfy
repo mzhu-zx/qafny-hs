@@ -1,0 +1,5 @@
+method SplitTest()
+{
+  var q : qreg[10] := nor(10, 0);
+  q[0..1] *= H;
+}
