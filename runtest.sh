@@ -14,10 +14,11 @@ for f in $samples; do
         read -n1 \
              -p"Put 's' to skip, 'r' to rety and any other character to exit." \
              status
+        echo ""
         if [[ $status = "s" ]]; then
             break
         elif [[ $status != "r" ]]; then
-            echo "\nTest interrupted!"
+            echo "Test interrupted!"
             exit -1;
         fi
     done

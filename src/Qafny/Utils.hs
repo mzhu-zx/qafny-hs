@@ -45,7 +45,7 @@ rethrowMaybe
   -> String
   -> m a
 rethrowMaybe mayFail err =
-  mayFail >>= maybe (error err) return
+  mayFail >>= maybe (throwError' err) return
 
 
 gensymLoc

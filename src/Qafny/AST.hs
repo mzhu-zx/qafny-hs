@@ -85,6 +85,20 @@ data Exp
   | RLt Exp Exp Var Exp -- compare exp < exp and store the value in var[exp], var must be Q type
   deriving (Show, Eq, Ord)
 
+
+showExp :: Exp -> String
+showExp (ENum n) = show n
+showExp (EVar v) = v
+showExp (EOp2 op e1 e2) = showExp e1 ++ sop ++ showExp e2
+  where
+    sop =
+      case op of
+        OAdd -> " + "
+        OSub -> " - "
+        OMul -> " * "
+        _    -> undefined
+showExp e = show e
+
 -- | EmitExp : Unsafe Expressions for Codegen Only
 data EmitExp
   = ELambda Var Exp
@@ -126,7 +140,7 @@ data Range = Range Var Exp Exp
   deriving (Eq, Ord)
 
 instance Show Range where
-  show (Range x y z) = printf "%s[%s .. %s]" x (show y) (show z)
+  show (Range x y z) = printf "%s[%s .. %s]" x (showExp y) (showExp z)
 
 newtype Loc = Loc { deref :: Var }
   deriving (Eq, Ord)

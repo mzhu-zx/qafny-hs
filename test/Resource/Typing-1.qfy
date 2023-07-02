@@ -6,10 +6,10 @@
 method DeutschJozsa (n : nat)
   // requires n > 0
 {
-  var q : nor := a; // nor(n, _ => 0);
-  var p : nor := 2; // nor(1, _ => 1);
-  q[0 .. 1] *= H;
-  p[0 .. n] *= H;
+  var q : qreg[n] := nor(n, 0);
+  var p : qreg[1] := nor(1, 1);
+  q[0 .. n] *= H;
+  p[0 .. 1] *= H;
   // assert typeof (q) is (n) $ had { forall i : nat | i < n :: q[i] == 1 };
   // assert typeof (p) is (1) $ had { p[0] == -1 };
 }

@@ -1,9 +1,13 @@
 module Qafny.IntervalUtils where
 
-import           Debug.Trace    (trace)
+-- import           Debug.Trace    (trace)
 import           Qafny.AST      (Exp (..), Op2 (OAdd, OSub), Range (..), fVars)
 import           Qafny.Interval
 import           Text.Printf    (printf)
+
+trace :: String -> a -> a
+trace _ i = i
+{-# INLINE trace #-}
 
 expToNat :: Exp -> Nat
 expToNat (ENum a)          = if a >= 0 then Nat a else Mt

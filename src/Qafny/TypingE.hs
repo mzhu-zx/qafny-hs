@@ -1,6 +1,6 @@
 {-# LANGUAGE
-    FlexibleInstances
-  , FlexibleContexts
+    FlexibleContexts
+  , FlexibleInstances
   , MultiParamTypeClasses
   , ScopedTypeVariables
   , TupleSections
@@ -33,11 +33,15 @@ import           Qafny.Interval
 import           Qafny.IntervalUtils            (rangeToNInt, γRange)
 import           Qafny.TypeUtils
 import           Qafny.Utils
-    ( findEmitSym
+    ( exp2AExp
+    , findEmitRangeQTy
+    , findEmitSym
     , gensymEmit
+    , gensymEmitRangeQTy
     , gensymLoc
     , removeEmitBindings
-    , rethrowMaybe, gensymEmitRangeQTy, findEmitRangeQTy, removeEmitRangeQTys, exp2AExp
+    , removeEmitRangeQTys
+    , rethrowMaybe
     )
 
 -- Utils
@@ -82,7 +86,7 @@ typingExp (EOp2 op2 e1 e2) =
     typingOp2 OLt  = return (TNat, TNat, TBool)
     typingOp2 OLe  = return (TNat, TNat, TBool)
     typingOp2 ONor = exp2AExp e1 >>= \ae -> return (TNat, TNat, TQReg ae)
-    
+
 -- typing e = throwError $ "Typing for "  ++ show e ++ " is unimplemented!"
 
 
@@ -99,19 +103,41 @@ resolvePartition
      )
   => Partition -> m STuple
 resolvePartition se@(Partition rs) = do
-  locs <- forM rs $ \r@(Range name _ _) -> do
-    rlocs <- use (xSt . at name) `rethrowMaybe` (show . UnknownRangeError) r
-    return [ loc |  (r', loc) <- rlocs, rangeToNInt r ⊑ rangeToNInt r' ]
-  case List.nub . concat $ locs of
-    [] -> throwError errInternal
+  rsResolved <- rs `forM` resolveRange
+  let locs = [ loc | (_, _, True, loc) <- concat rsResolved ]
+  let related = printf "Related:%s" $
+        concatMap (("\n\t" ++) . showRel) [ (r1, r2, b) | (r1, r2, b, _) <- concat rsResolved ]
+  case List.nub locs of
+    [] ->  throwError $ errInternal related
     [x] -> (use (sSt . at x) `rethrowMaybe` (show . UnknownLocError) x)
       <&> STuple . uncurry (x,,)
-    ss ->
-      throwError @String $ printf "`%s` is not a sub-partition, counterexample: %s"
-        (show se) (show ss)
+    ss -> throwError $ errNonunique ss related
   where
-    errInternal :: String = printf
-      "Internal Error: The session `%s` is empty which has no type!" (show se)
+    errNonunique :: [Loc] -> String -> String
+    errNonunique ss = printf
+      ("Type Error: " ++
+       "`%s` is not the sub-partition of a unique partition.\n" ++
+       "Counterexample: %s\n%s")
+        (show se) (show ss)
+    errInternal :: String -> String
+    errInternal = printf
+      ("Type Error: " ++
+       "The partition `%s` is not a sub-partition of any existing ones!\n%s")
+      (show se)
+    showRel :: (Range, Range, Bool) -> String
+    showRel (r1, r2, True)  = printf "%s ⊑ %s" (show r1) (show r2)
+    showRel (r1, r2, False) = printf "%s ⋢ %s" (show r1) (show r2)
+
+resolveRange
+  :: ( Has (State TState) sig m
+     , Has (Error String) sig m
+     )
+  => Range -> m [(Range, Range, Bool, Loc)]
+resolveRange r@(Range name _ _) = do
+  rlocs <- use (xSt . at name) `rethrowMaybe` (show . UnknownRangeError) r
+  return [ (r, r', rangeToNInt r ⊑ rangeToNInt r', loc) |  (r', loc) <- rlocs ]
+
+
 resolvePartitions
   :: ( Has (State TState) sig m
      , Has (Error String) sig m
