@@ -11,17 +11,17 @@ import opened Power2
 method SplitTest ()
 {
   // Forward Declaration
-  var q__0__1__seq__nat____3 : seq<nat>;
-  var q__1__10__seq__nat____2 : seq<nat>;
-  var q__0__1__seq__nat____1 : seq<nat>;
-  var q__0__10__seq__nat____0 : seq<nat>;
+  var q_0_1___seqL_nat_R___3__emit : seq<nat>;
+  var q_1_10___seqL_nat_R___2__emit : seq<nat>;
+  var q_0_1___seqL_nat_R___1__emit : seq<nat>;
+  var q_0_10___seqL_nat_R___0__emit : seq<nat>;
   
   // Method Definition
-  q__0__10__seq__nat____0 := seq<nat>(10, _ => 0);
-  q__0__1__seq__nat____1 := q__0__10__seq__nat____0[0..1];
-  q__1__10__seq__nat____2 := q__0__10__seq__nat____0[1..10];
+  q_0_10___seqL_nat_R___0__emit := seq<nat>(10, _ => 0);
+  q_0_1___seqL_nat_R___1__emit := q_0_10___seqL_nat_R___0__emit[0..1];
+  q_1_10___seqL_nat_R___2__emit := q_0_10___seqL_nat_R___0__emit[1..10];
   // Cast TNor ==> THad
-  q__0__1__seq__nat____3 := CastNorHad(q__0__1__seq__nat____1);
+  q_0_1___seqL_nat_R___3__emit := CastNorHad(q_0_1___seqL_nat_R___1__emit);
 }
 
 }

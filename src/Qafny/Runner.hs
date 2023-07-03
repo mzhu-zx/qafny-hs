@@ -6,8 +6,6 @@ import qualified Control.Carrier.Error.Either    as ErrE (runError)
 import           Control.Carrier.Reader          (runReader)
 import           Control.Carrier.State.Strict    (runState)
 import           Control.Carrier.Trace.Returning (runTrace)
-
-import           Control.Carrier.Trace.Returning (runTrace)
 import           Qafny.AST                       (AST, Ty)
 import           Qafny.CodegenE                  (codegenAST)
 import           Qafny.Config                    (Configs)
@@ -54,5 +52,5 @@ produceCodegen conf ast =
   let (trace, (st, res)) = runCodegen conf ast
   in Production { pResult = res
                 , pState = st
-                , pTrace = "Trace:\n" ++ concatMap (\s -> "\t" ++ "\n") trace
+                , pTrace = "Trace:\n" ++ concatMap (\s -> "\t" ++ s ++ "\n") trace
                 }

@@ -16,18 +16,18 @@ import opened Mul
 method DeutschJozsa (n : nat)
 {
   // Forward Declaration
-  var p__0__n__seq__nat____3 : seq<nat>;
-  var q__0__1__seq__nat____2 : seq<nat>;
-  var p__0__n__seq__nat____1 : seq<nat>;
-  var q__0__1__seq__nat____0 : seq<nat>;
+  var p_0_n___seqL_nat_R___3__emit : seq<nat>;
+  var q_0_1___seqL_nat_R___2__emit : seq<nat>;
+  var p_0_n___seqL_nat_R___1__emit : seq<nat>;
+  var q_0_1___seqL_nat_R___0__emit : seq<nat>;
   
   // Method Definition
-  q__0__1__seq__nat____0 := seq<nat>(1, _ => 0);
-  p__0__n__seq__nat____1 := seq<nat>(n, _ => 1);
+  q_0_1___seqL_nat_R___0__emit := seq<nat>(1, _ => 0);
+  p_0_n___seqL_nat_R___1__emit := seq<nat>(n, _ => 1);
   // Cast TNor ==> THad
-  q__0__1__seq__nat____2 := CastNorHad(q__0__1__seq__nat____0);
+  q_0_1___seqL_nat_R___2__emit := CastNorHad(q_0_1___seqL_nat_R___0__emit);
   // Cast TNor ==> THad
-  p__0__n__seq__nat____3 := CastNorHad(p__0__n__seq__nat____1);
+  p_0_n___seqL_nat_R___3__emit := CastNorHad(p_0_n___seqL_nat_R___1__emit);
 }
 
 method CrossMinus (n : nat, m : nat, q : nat, p : nat)

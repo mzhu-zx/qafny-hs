@@ -79,7 +79,7 @@ data SplitScheme = SplitScheme
   , schRsRem   :: [Range] -- the remainder range
   , schQty     :: QTy     -- entanglement types
   , schSMain   :: STuple  -- the partition that was splitted _from_
-  , schSAux    :: STuple  -- the partition that was splitted _to_
+  --  , schSAux    :: STuple  -- the partition that was splitted _to_
   , schVEmitOrigin :: Var   -- the emit variable of the original range
   , schVsEmitAll   :: [Var] -- the emit variables of new ranges
   }

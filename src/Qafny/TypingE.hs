@@ -151,7 +151,12 @@ resolvePartitions =
 -- | Split Typing
 --------------------------------------------------------------------------------
 -- | Given a partition and a range, compute a split scheme if the range is a
--- part of the partition. Return 'Nothing' if no split needs to be performed,
+-- part of the partition.
+--
+-- The returned 'STuple' is the partition covering the range
+-- 
+-- For the optional return value, return 'Nothing' if no split needs **on a specific
+-- range** needs to be performed, i.e. no codegen needs to be done.
 
 splitScheme
   :: ( Has (Error String) sig m
@@ -162,51 +167,68 @@ splitScheme
      )
   => STuple
   -> Range
-  -> m (Maybe SplitScheme)
+  -> m (STuple, Maybe SplitScheme)
 splitScheme s@(STuple (loc, p, qt)) rSplitTo@(Range to _ _) = do
   when (isBot intvTo) $ throwError errBotRx
+  trace infoSS
   case matched of
     Nothing -> throwError errImproperRx
     Just (intL, _, intR, rOrigin)  ->
-      let rsRem = γ intL ++ γ intR -- the list of ranges to be broken
-          rsMain = (rsRem ++) . List.delete rOrigin $ unpackPart p
+      let rsRem = γ intL ++ γ intR -- the "quotient" ranges
+          rsRest = List.delete rOrigin $ unpackPart p
+          -- the ranges except the chosen one + the quotient ranges
+          rsMain = rsRem ++ rsRest
           rsAux  = [rSplitTo]
           pMain  = Partition rsMain
           pAux   = Partition rsAux
       in trace ("rsMain: " ++ show rsMain) >>
          case rsMain of
-           [] -> return Nothing -- no split actually needs to be done
-           _  -> do             -- split actually happens here:
+           [] -> return (s, Nothing) -- no split at all!
+           _  -> do            
+             -- ^ Split in partition or in both partition and a range
+             -- 1. Allocate partitions, break ranges and move them around
              locAux <- gensymLoc to
              let sMain' = (loc, pMain, qt)   -- the part that's splited _from_
              let sAux'  = (locAux, pAux, qt) -- the part that's splited _to_
              sSt %= (at loc ?~ (pMain, qt)) . (at locAux ?~ (pAux, qt))
+             -- use sSt >>= \s' -> trace $ printf "sSt: %s" (show s')
              xRangeLocs <- use (xSt . at to) `rethrowMaybe` errXST
              let xrl =
-                   [ (rAux, locAux) | rAux <- rsAux ] ++ -- "new range -> new loc"
-                   [ (rMainNew, loc) | rMainNew <- rsRem ] ++ -- "broken ranges -> old loc"
+                   -- "new range -> new loc"
+                   [ (rAux, locAux) | rAux <- rsAux ] ++ 
+                   -- "split ranges -> old loc"
+                   [ (rMainNew, loc) | rMainNew <- rsRem ] ++ 
                    -- "the rest with the old range removed"
                    List.filter ((/= rOrigin) . fst) xRangeLocs
              -- trace (printf "State Filtered by %s: %s" (show rSplitTo) (show xrl))
              xSt %= (at to ?~ xrl)
-             (vEmitR, rSyms) <- case qt of
-               t | t `elem` [ TNor, THad, TCH01 ] -> do
-                 vEmitR <- findEmitRangeQTy rOrigin qt -- locate the one to be deleted
-                 removeEmitRangeQTys [(rOrigin, qt)]   -- destroy it
-                 rSyms <- (rSplitTo : rsRem) `forM` (`gensymEmitRangeQTy` qt)
-                 return (vEmitR, rSyms)
-               _    -> throwError errUnsupprtedTy
-             return . Just $ SplitScheme
-               { schROrigin = rOrigin
-               , schRTo = rSplitTo
-               , schRsRem = rsRem
-               , schQty = qt
-               , schSMain = STuple sMain'
-               , schSAux  = STuple sAux'
-               , schVEmitOrigin = vEmitR
-               , schVsEmitAll = rSyms
-               }
+             -- 2. Generate emit symbols for split ranges
+             case rsRem of
+               [] -> return (STuple sAux', Nothing) -- only split in partition but not in a range  
+               _  -> do
+                 (vEmitR, rSyms) <- case qt of
+                   t | t `elem` [ TNor, THad, TCH01 ] -> do
+                     -- locate the original range 
+                     vEmitR <- findEmitRangeQTy rOrigin qt
+                     -- delete it from the record
+                     removeEmitRangeQTys [(rOrigin, qt)]  
+                     -- gensym for each split ranges 
+                     rSyms <- (rSplitTo : rsRem) `forM` (`gensymEmitRangeQTy` qt)
+                     return (vEmitR, rSyms)
+                   _    -> throwError $ errUnsupprtedTy ++ "\n" ++ infoSS
+                 let ans = SplitScheme
+                       { schROrigin = rOrigin
+                       , schRTo = rSplitTo
+                       , schRsRem = rsRem
+                       , schQty = qt
+                       , schSMain = STuple sMain'
+                       , schVEmitOrigin = vEmitR
+                       , schVsEmitAll = rSyms
+                       }
+                 trace $ printf "[splitScheme (post)] %s" (show ans)
+                 return (STuple sAux', Just ans)
   where
+    infoSS :: String = printf "[splitScheme] from (%s) to (%s)" (show s) (show rSplitTo)
     errUnsupprtedTy :: String
     errUnsupprtedTy = printf "Splitting a %s partition is unsupported." (show qt)
     errXST = printf "No range beginning with %s cannot be found in `xSt`" to
@@ -242,15 +264,14 @@ splitThenCastScheme
   -> m (Maybe ( CastScheme                   
               , Maybe SplitScheme)          -- May split if cast or not
        )                                    -- May cast or not
-splitThenCastScheme s@(STuple (loc, p, qt1)) qt2 rSplitTo =
+splitThenCastScheme s'@(STuple (loc, p, qt1)) qt2 rSplitTo =
   case (qt1, qt2) of 
     (TCH, TCH) -> do
-      scheme <- splitScheme s rSplitTo
+      (s, scheme) <- splitScheme s' rSplitTo
       maybe (return Nothing) handleErr scheme
     (_  , TCH) -> do
-      maySchemeS <- splitScheme s rSplitTo
-      let sSplited = maybe s schSAux maySchemeS 
-      schemeC <- castScheme sSplited qt2
+      (sSplit, maySchemeS) <- splitScheme s' rSplitTo
+      schemeC <- castScheme sSplit qt2
       return . Just $ (schemeC, maySchemeS)
     _ -> undefined
    where
@@ -262,7 +283,7 @@ splitThenCastScheme s@(STuple (loc, p, qt1)) qt2 rSplitTo =
      errSplitCH :: SplitScheme -> String
      errSplitCH scheme = printf
        "Attempting to split a 'EN' partition (%s) from (%s) into (%s) which is not advised."
-       (show s) (show (schROrigin scheme)) (show (schRTo scheme))
+       (show s') (show (schROrigin scheme)) (show (schRTo scheme))
 
 
 

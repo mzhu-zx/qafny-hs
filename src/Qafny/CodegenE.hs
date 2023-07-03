@@ -249,11 +249,14 @@ codegenStmt (SApply s EHad) = do
   st@(STuple(_, _, qt)) <- resolvePartition s
   opCast <- opCastHad qt
   -- run split semantics here!
-  ssMaybe <- splitScheme st r
-  (stmtsSplit, st') <- case ssMaybe of
-    Nothing -> return ([], st)
-    Just ss -> codegenSplitEmit ss <&> (, schSAux ss)
-  (stmtsSplit ++) <$> castWithOp opCast st' THad
+  (stSplit, ssMaybe) <- splitScheme st r
+  stmtsSplit <- case ssMaybe of
+    Nothing -> return []
+    Just ss -> codegenSplitEmit ss
+  -- use sSt >>= \s' -> trace $ printf "[precast] sSt: %s" (show s')
+  ret <- (stmtsSplit ++) <$> castWithOp opCast stSplit THad
+  -- use sSt >>= \s' -> trace $ printf "[codegen] sSt: %s" (show s')
+  return ret
   where
     opCastHad TNor = return "CastNorHad"
     opCastHad t = throwError $ "type `" ++ show t ++ "` cannot be casted to Had type"
@@ -303,28 +306,27 @@ codegenStmt (SFor idx boundl boundr eG invs seps body) = do
   (sL, eConstraint) <- makeLoopPartition sG boundl boundr
 
   (stmtsPrelude, stmtsBody) <- case qtG of
-    THad -> do (stGSplited, stmtsSplitG) <- undefined -- splitHadPartition stG sL
-               schemeC <- retypePartition stGSplited TCH
-               let CastScheme { schVsNewEmit=(~[vEmitG])
-                              , schTNewEmit=tEmitG
-                              } = schemeC
-               let cardVEmitG = EEmit . ECard . EVar $ vEmitG
-               let stmtsInitG =
-                     [ qComment "Retype from Had to CH and initialize with 0"
-                     , SAssign vEmitG $
-                         EEmit $ EMakeSeq TNat cardVEmitG $ constExp $ ENum 0 ]
-               -- Make a temporary counter to record `Pow`s when coverting a Had
-               -- to a CH partition (not added to `emitSt` on purpose!)
-               -- vEmitCounter <- gensym (Binding "had_counter" TNat)
-               -- let stmtsInitCounter =
-               --       [ qComment "Initialize Had Power Counter"
-               --       , SAssign vEmitCounter (ENum 1) ]
-               -- Resolve again to get the new quantum type!
-               stG' <- resolvePartition (unSTup stGSplited ^. _2)
-               stmtsCGHad <-
-                 codegenStmt'For'Had stB stG' vEmitG idx body
-               return $ ( stmtsInitG -- ++ stmtsInitCounter
-                        , stmtsSplitG ++ stmtsCGHad)
+    THad ->
+      do (stGSplited, stmtsSplitG) <- undefined -- splitHadPartition stG sL
+         schemeC <- retypePartition stGSplited TCH
+         let CastScheme { schVsNewEmit=(~[vEmitG])} = schemeC
+         let cardVEmitG = EEmit . ECard . EVar $ vEmitG
+         let stmtsInitG =
+               [ qComment "Retype from Had to CH and initialize with 0"
+               , SAssign vEmitG $
+                   EEmit $ EMakeSeq TNat cardVEmitG $ constExp $ ENum 0 ]
+         -- Make a temporary counter to record `Pow`s when coverting a Had
+         -- to a CH partition (not added to `emitSt` on purpose!)
+         -- vEmitCounter <- gensym (Binding "had_counter" TNat)
+         -- let stmtsInitCounter =
+         --       [ qComment "Initialize Had Power Counter"
+         --       , SAssign vEmitCounter (ENum 1) ]
+         -- Resolve again to get the new quantum type!
+         stG' <- resolvePartition (unSTup stGSplited ^. _2)
+         stmtsCGHad <-
+           codegenStmt'For'Had stB stG' vEmitG idx body
+         return $ ( stmtsInitG -- ++ stmtsInitCounter
+                  , stmtsSplitG ++ stmtsCGHad)
     _    -> undefined
   let innerFor = SEmit $ SForEmit idx boundl boundr [] $ Block stmtsBody
   return $ stmtsCastB ++ stmtsDupG ++ stmtsPrelude ++ [innerFor]

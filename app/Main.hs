@@ -27,7 +27,7 @@ pipeline s =
     withAST ast = do
       let prod = produceCodegen configs ast
       -- print trace
-      putStrLn $ pTrace prod
+      putStr $ pTrace prod
       return $ prod { pResult = texify <$> pResult prod }
 
 main :: IO ()
