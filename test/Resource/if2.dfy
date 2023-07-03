@@ -37,9 +37,9 @@ method GHZ0 (n : nat)
   q_0_1___seqL_nat_R___3__emit := CastNorHad(q_0_1___seqL_nat_R___0__emit);
   // Cast TNor ==> THad
   p_0_1___seqL_nat_R___4__emit := CastNorHad(p_0_1___seqL_nat_R___1__emit);
-  // Cast Body Partition TNor => TCH
-  // Cast TNor ==> TCH
-  g_0_1___seqL_nat_R___5__emit := CastNorCH(g_0_1___seqL_nat_R___2__emit);
+  // Cast Body Partition TNor => TEN
+  // Cast TNor ==> TEN
+  g_0_1___seqL_nat_R___5__emit := CastNorEN(g_0_1___seqL_nat_R___2__emit);
   g_0_1___seqL_nat_R___6__emit := g_0_1___seqL_nat_R___7__emit;
   {
     g_0_1___seqL_nat_R___7__emit := Map(x => x + 1 % 2, g_0_1___seqL_nat_R___7__emit);

@@ -6,7 +6,7 @@ import           Qafny.AST (QTy (..), Ty (..))
 typingQEmit :: QTy -> Ty
 typingQEmit TNor  = TSeq TNat
 typingQEmit THad  = TSeq TNat
-typingQEmit TCH   = TSeq TNat
-typingQEmit TCH01 = TSeq (TSeq TNat)
+typingQEmit TEN   = TSeq TNat
+typingQEmit TEN01 = TSeq (TSeq TNat)
 {-# INLINE typingQEmit #-}
 

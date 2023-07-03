@@ -67,7 +67,7 @@ method DeutschJozsaOracle(n : nat, p : qreg[1], q : qreg[n])
 #  requires typeof (p) is (1) $ had { p[0] == -1 }
 #  modifies q, p
 #{ 
-#  q.PlusToCH();
+#  q.PlusToEN();
 #  var m := Pow2(n);
 #  CrossMinus(n, m, q, p);
 #  LemmaSmallMod(2, 4);

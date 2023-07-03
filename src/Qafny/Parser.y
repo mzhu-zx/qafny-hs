@@ -34,9 +34,9 @@ dafny                 { ( _, L.TDafny $$  ) }
 "QFT"                 { ( _, L.TQFT       ) }
 "RQFT"                { ( _, L.TRQFT      ) }
 "meas"                { ( _, L.TMea       ) }
-"ch"                  { ( _, L.TCH        ) }
+"en"                  { ( _, L.TEN        ) }
 "qreg"                { ( _, L.TQReg      ) }
-"ch01"                { ( _, L.TCH01      ) }
+"en01"                { ( _, L.TEN01      ) }
 "var"                 { ( _, L.TVar       ) }
 "if"                  { ( _, L.TIf        ) }
 "λ"                   { ( _, L.TCl        ) }
@@ -125,8 +125,8 @@ ty
 qty :: { QTy }
   : "nor"                             { TNor                            }
   | "had"                             { THad                            }
-  | "ch"                              { TCH                             }
-  | "ch01"                            { TCH01                           }
+  | "en"                              { TEN                             }
+  | "en01"                            { TEN01                           }
                                                                 
 block                                                                     
   : '{' stmts '}'                     { Block $2                             }

@@ -257,7 +257,7 @@ splitScheme' s@(STuple (loc, p, qt)) rSplitTo@(Range to _ _) = do
                [] -> return (STuple sAux', Nothing) -- only split in partition but not in a range  
                _  -> do
                  (vEmitR, rSyms) <- case qt of
-                   t | t `elem` [ TNor, THad, TCH01 ] -> do
+                   t | t `elem` [ TNor, THad, TEN01 ] -> do
                      -- locate the original range 
                      vEmitR <- findEmitRangeQTy rOrigin qt
                      -- delete it from the record
@@ -317,12 +317,12 @@ splitThenCastScheme
        )                                     -- May cast or not
 splitThenCastScheme s'@(STuple (loc, p, qt1)) qt2 rSplitTo =
   case (qt1, qt2) of 
-    (TCH, TCH) -> do
+    (TEN, TEN) -> do
       (rOrigin, rsRem) <- getRangeSplits s' rSplitTo
       case rsRem of
         [] -> return (s', Nothing)
-        _  -> throwError $ errSplitCH rOrigin rsRem 
-    (_  , TCH) -> do
+        _  -> throwError $ errSplitEN rOrigin rsRem 
+    (_  , TEN) -> do
       (sSplit, maySchemeS) <- splitScheme s' rSplitTo
       schemeC <- castScheme sSplit qt2
       return $ (sSplit, Just (schemeC, maySchemeS))
@@ -332,9 +332,9 @@ splitThenCastScheme s'@(STuple (loc, p, qt1)) qt2 rSplitTo =
        -- TODO: this actually implies a type mismatch. need to improve the error
        -- message and use a unified type error interface/effect. 
        trace (show scheme) >> 
-       (throwError . errSplitCH) scheme
-     errSplitCH :: Range -> [Range] -> String
-     errSplitCH rO rsR = printf
+       (throwError . errSplitEN) scheme
+     errSplitEN :: Range -> [Range] -> String
+     errSplitEN rO rsR = printf
        "Attempting to split a 'EN' partition (%s) from (%s) into (%s) which is not advised."
        (show s') (show rO) (show (rSplitTo : rsR))
 
@@ -380,10 +380,10 @@ sub = (==)
 -- | QSubtyping
 --------------------------------------------------------------------------------
 subQ :: QTy -> QTy -> Bool
-subQ _    TCH   = True
+subQ _    TEN   = True
 subQ THad THad  = True
-subQ THad TCH01 = True
-subQ TNor TCH01 = True
+subQ THad TEN01 = True
+subQ TNor TEN01 = True
 subQ TNor TNor  = True
 subQ _     _    = False
 
@@ -459,7 +459,7 @@ retypePartition
   => STuple -> QTy -> m CastScheme
 retypePartition = castScheme
 
--- Merge two given partition tuples if both of them are of CH type.
+-- Merge two given partition tuples if both of them are of EN type.
 mergeSTuples
   :: ( Has (State TState) sig m
      , Has (Error String) sig m
@@ -470,7 +470,7 @@ mergeSTuples
   stA@(STuple (locAux, sAux@(Partition rsAux), qtAux)) =
   do
     -- Sanity Check
-    unless (qtMain == qtAux && qtAux == TCH) $
+    unless (qtMain == qtAux && qtAux == TEN) $
       -- traceStack "" $
       throwError @String $ printf "%s and %s have different Q types!"
         (show stM) (show stA)
@@ -485,7 +485,7 @@ mergeSTuples
                   let loc' = if loc == locAux then locMain else loc])
     sSt %=
       (`Map.withoutKeys` Set.singleton locAux) . -- GC aux's loc
-      (at locMain ?~ (newPartition, TCH))          -- update main's state
+      (at locMain ?~ (newPartition, TEN))          -- update main's state
     return ()
 
   

@@ -1,5 +1,5 @@
 method TestLambda(q : qreg[10])
-  requires { q[0..10] : ch ↦ Σ i ∈ [0 .. 2] . (i) }
+  requires { q[0..10] : en ↦ Σ i ∈ [0 .. 2] . (i) }
 {
   q[0 .. 5] *= λ (x => 1 + x); // this should fail
 }

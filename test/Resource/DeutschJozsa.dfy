@@ -33,7 +33,7 @@ method DeutschJozsa (n : nat)
 lemma PhaseEquivF(p : qreg, q : qreg, n : nat, m : nat, f : nat --> nat)
   requires m == Pow2(n)
   requires forall i | 0 <= i < Pow2(n) :: f.requires(i)
-  requires typeof (q, p) is exactly (n, 1) $ ch (2 * m) {
+  requires typeof (q, p) is exactly (n, 1) $ en (2 * m) {
     (forall i : nat | i < 2 * m :: 0 <= q[i] < m && (f(q[i]) == 0 || f(q[i]) == 1)) &&
     (forall i : nat | i < m :: 
       (f(q[2*i]) == 0 &&
@@ -41,7 +41,7 @@ lemma PhaseEquivF(p : qreg, q : qreg, n : nat, m : nat, f : nat --> nat)
       (f(q[2*i]) == 1 &&
         q.GetPhases()[2*i] == phasem1() && q.GetPhases()[2*i+1] == phase1()))
   }
-  ensures typeof (q, p) is exactly (n, 1) $ ch (2 * m) {
+  ensures typeof (q, p) is exactly (n, 1) $ en (2 * m) {
     (forall i : nat | i < 2 * m :: 0 <= q[i] < m) &&
     (forall i : nat | i < 2 * m :: 0 <= q[i] < m && (f(q[i]) == 0 || f(q[i]) == 1)) &&
     (forall i : nat | i < m :: 
@@ -58,11 +58,11 @@ lemma PhaseEquivF(p : qreg, q : qreg, n : nat, m : nat, f : nat --> nat)
 // }
 
 method CrossMinus(n : nat, m : nat, q : qreg, p : qreg)
-  requires typeof (q) is exactly (n) $ ch(m) { 
+  requires typeof (q) is exactly (n) $ en(m) { 
     forall i : nat | i < m :: unitPhase(q.GetPhases()[i])
   }
   requires typeof (p) is (1) $ had { p[0] == -1 }
-  ensures typeof (q, p) is exactly (n, 1) $ ch (2 * m) {
+  ensures typeof (q, p) is exactly (n, 1) $ en (2 * m) {
     (forall i : nat | i < m :: p[i] == 0) && 
     (forall i : nat | m <= i < 2 * m :: p[i] == 1) &&
     (forall i : nat | i < m :: q.GetPhases()[i] == phaseSingleProduct(phase1(), old(q.GetPhases()[i]))) &&
@@ -77,14 +77,14 @@ method DeutschJozsaOracle (n : nat, p : qreg 1, q : qreg n)
   requires typeof (p) is (1) $ had { p[0] == -1 }
   modifies q, p
 { 
-  q.PlusToCH();
+  q.PlusToEN();
   var m := Pow2(n);
   CrossMinus(n, m, q, p);
   LemmaSmallMod(2, 4);
   LemmaSmallMod(0, 4);
   // This postcondition looks nice but the precondition in
   // [ApplyWithPositionIrrelavance] is more useful because of [Parititon]  
-  assert typeof (q, p) is exactly (n, 1) $ ch (2 * m) {
+  assert typeof (q, p) is exactly (n, 1) $ en (2 * m) {
     (forall i : nat | i < m :: p[i] == 0) && 
     (forall i : nat | m <= i < 2 * m :: p[i] == 1) &&
     (forall i : nat | i < m :: q.GetPhases()[i] == phase1()) &&
@@ -98,7 +98,7 @@ method DeutschJozsaOracle (n : nat, p : qreg 1, q : qreg n)
 method ApplyWithPositionIrrelavence(p : qreg, q : qreg, n : nat, m : nat, f : nat --> nat)
   requires m == Pow2(n)
   requires forall i | 0 <= i < Pow2(n) :: f.requires(i)
-  requires typeof (q, p) is exactly (n, 1) $ ch (2 * m) {
+  requires typeof (q, p) is exactly (n, 1) $ en (2 * m) {
     (forall i : nat | i < m :: p[2*i] == 0 && p[2*i+1] == 1) && 
     (forall i : nat | i < m :: q.GetPhases()[2*i] == phase1() && q.GetPhases()[2*i+1] == phasem1()) &&
     (forall i : nat | i < m :: q.GetSession()[q][2*i] == q.GetSession()[q][2*i+1]) &&
@@ -109,7 +109,7 @@ method ApplyWithPositionIrrelavence(p : qreg, q : qreg, n : nat, m : nat, f : na
       (forall i : nat | 2 * g <= i < 2 * m :: f(q[i]) == 1)
     )
   }
-  ensures typeof (q, p) is exactly (n, 1) $ ch (2 * m) {
+  ensures typeof (q, p) is exactly (n, 1) $ en (2 * m) {
     (forall i : nat | i < m :: p[2*i] == 0 && p[2*i+1] == 1) && 
     (forall i : nat | i < m :: q.GetSession()[q][2*i] == q.GetSession()[q][2*i+1]) &&
     (forall i : nat | i < 2 * m :: 0 <= q[i] < m) &&

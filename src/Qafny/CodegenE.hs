@@ -266,20 +266,20 @@ codegenStmt (SApply s EHad) = do
 -- | The semantics of a 'SApply' is tricky because of the timing to do the split
 -- and cast. Here's the current strategy:
 -- 
--- If the current session is not in CH or CH10 type, compute the
+-- If the current session is not in EN or EN10 type, compute the
 -- 'splitThenCastScheme' and apply the scheme to the codegen.
 --
--- If however, the current session is in CH or CH10 type, perform no split at
+-- If however, the current session is in EN or EN10 type, perform no split at
 -- all! (Although applying a lambda to a range that requires tearing a range
 -- apart is not advised and is undefined. )
 codegenStmt (SApply s@(Partition ranges) e@(EEmit (ELambda {}))) = do
   st'@(STuple (_, _, qt)) <- resolvePartition s
-  checkSubtypeQ qt TCH
+  checkSubtypeQ qt TEN
   r <- case ranges of
     []  -> throwError "Parser says no!"
     [x] -> return x
     _   -> throwError errRangeGt1
-  (_, maybeScheme) <- splitThenCastScheme st' TCH r
+  (_, maybeScheme) <- splitThenCastScheme st' TEN r
   stmts <- codegenSplitThenCastEmit maybeScheme
   -- it's important not to use the fully resolved `s` here, because the OP should
   -- only be applied to the sub-partition specified in the annotation.
@@ -295,10 +295,10 @@ codegenStmt (SIf e seps b) = do
   -- resolve the body partition
   stB'@(STuple( _, sB, qtB)) <- resolvePartitions . leftPartitions . inBlock $ b
   let annotateCastB = qComment $
-        printf "Cast Body Partition %s => %s" (show qtB) (show TCH)
+        printf "Cast Body Partition %s => %s" (show qtB) (show TEN)
   (stmtsCastB, stB) <- case qtB of
-    TCH -> return ([], stB')
-    _   -> (,) . (annotateCastB :) <$> castPartitionCH stB' <*> resolvePartition sB
+    TEN -> return ([], stB')
+    _   -> (,) . (annotateCastB :) <$> castPartitionEN stB' <*> resolvePartition sB
   -- act based on the type of the guard
   stmts <- case qtG of
     THad -> codegenStmt'If'Had stG stB b
@@ -310,8 +310,8 @@ codegenStmt (SFor idx boundl boundr eG invs seps body) = do
   stG@(STuple (_, sG, qtG)) <- typingGuard eG
   stB'@(STuple (_, sB, qtB)) <- resolvePartitions . leftPartitions . inBlock $ body
   (stmtsCastB, stB) <- case qtB of
-    TCH -> return ([], stB')
-    _   -> (,) <$> castPartitionCH stB' <*> resolvePartition (unSTup stB' ^. _2)
+    TEN -> return ([], stB')
+    _   -> (,) <$> castPartitionEN stB' <*> resolvePartition (unSTup stB' ^. _2)
   -- what to do with the guard partition is unsure...
   (stmtsDupG, gCorr) <- dupState sG
   (sL, eConstraint) <- makeLoopPartition sG boundl boundr
@@ -319,15 +319,15 @@ codegenStmt (SFor idx boundl boundr eG invs seps body) = do
   (stmtsPrelude, stmtsBody) <- case qtG of
     THad ->
       do (stGSplited, stmtsSplitG) <- undefined -- splitHadPartition stG sL
-         schemeC <- retypePartition stGSplited TCH
+         schemeC <- retypePartition stGSplited TEN
          let CastScheme { schVsNewEmit=(~[vEmitG])} = schemeC
          let cardVEmitG = EEmit . ECard . EVar $ vEmitG
          let stmtsInitG =
-               [ qComment "Retype from Had to CH and initialize with 0"
+               [ qComment "Retype from Had to EN and initialize with 0"
                , SAssign vEmitG $
                    EEmit $ EMakeSeq TNat cardVEmitG $ constExp $ ENum 0 ]
          -- Make a temporary counter to record `Pow`s when coverting a Had
-         -- to a CH partition (not added to `emitSt` on purpose!)
+         -- to a EN partition (not added to `emitSt` on purpose!)
          -- vEmitCounter <- gensym (Binding "had_counter" TNat)
          -- let stmtsInitCounter =
          --       [ qComment "Initialize Had Power Counter"
@@ -404,13 +404,13 @@ codegenStmt'For'Had stB stG vEmitG vIdx b = do
   -- the body, this strategy is incorrect!
 
   -- 5. (Compromise) double the counter
-  let stmtAdd1 = addCHHad1 vEmitG vIdx
+  let stmtAdd1 = addENHad1 vEmitG vIdx
   mergeSTuples stB stG
   return $ stmtsDupB ++ [stmtB] ++ stmtsMergeB ++ [stmtAdd1]
 
 
 
--- | Assume `stG` is a Had guard, cast it into `CH` type and merge it with
+-- | Assume `stG` is a Had guard, cast it into `EN` type and merge it with
 -- the partition in`stB`. The number of kets in the generated states depends on
 -- the number of kets in the body and that in the stashed body
 mergeHadGuard
@@ -428,7 +428,7 @@ mergeHadGuardWith
      )
   => Exp -> STuple -> STuple -> Exp -> Exp -> m [Stmt]
 mergeHadGuardWith eBase stG' stB cardBody cardStashed = do
-  (_, _, vGENow, tGENow) <- retypePartition1 stG' TCH
+  (_, _, vGENow, tGENow) <- retypePartition1 stG' TEN
   stG <- resolvePartition (unSTup stG' ^. _2)
   mergeSTuples stB stG
   return $ hadGuardMergeExp vGENow tGENow cardBody cardStashed eBase
@@ -506,8 +506,8 @@ codegenCastEmit
         ]
       | (vOld, vNew) <- zip vsOldEmits vsNewEmit ]
   where
-    mkOp TNor TCH   = return "CastNorCH"
-    mkOp TNor TCH01 = return "CastNorCH01"
+    mkOp TNor TEN   = return "CastNorEN"
+    mkOp TNor TEN01 = return "CastNorEN01"
     mkOp TNor THad  = return "CastNorHad"
     mkOp _    _     = throwError err
     err :: String = printf "Unsupport cast from %s to %s." (show qtOld) (show qtNew)
@@ -533,19 +533,19 @@ castWithOp op s newTy =
       | (vOld, vNew) <- zip vsOldEmits vsNewEmit ]
 
 
--- | Cast the given partition to CH type!
-castPartitionCH
+-- | Cast the given partition to EN type!
+castPartitionEN
   :: ( Has (Error String) sig m
      , Has (State TState) sig m
      , Has (Gensym Binding) sig m
      )
   => STuple -> m [Stmt]
-castPartitionCH st@(STuple (locS, s, qtS)) = do
+castPartitionEN st@(STuple (locS, s, qtS)) = do
   case qtS of
-    TNor -> castWithOp "CastNorCH" st TCH
-    THad -> castWithOp "CastHadCH" st TCH
-    TCH -> throwError' $
-      printf "Partition `%s` is already of CH type." (show st)
+    TNor -> castWithOp "CastNorEN" st TEN
+    THad -> castWithOp "CastHadEN" st TEN
+    TEN -> throwError' $
+      printf "Partition `%s` is already of EN type." (show st)
 
 
 -- | Duplicate the data, i.e. sequences to be emitted, by generating statement
@@ -612,7 +612,7 @@ codegenSplitEmit
                  } =
   trace ("codegenSplitEmit: " ++ show ss) >>
   case qty of
-    t | t `elem` [ TNor, THad, TCH01 ] -> do
+    t | t `elem` [ TNor, THad, TEN01 ] -> do
       let offset e = reduceExp $ EOp2 OSub e left
       let stmtsSplit =
             [ SAssign vEmitNew $ EEmit (ESeqRange (EVar (schVEmitOrigin ss)) (offset el) (offset er))
@@ -658,10 +658,10 @@ codegenSplitThenCastEmit =
 --------------------------------------------------------------------------------
 -- * Merge Semantics
 --------------------------------------------------------------------------------
--- | Merge semantics of a Had qubit into one CH emitted state
+-- | Merge semantics of a Had qubit into one EN emitted state
 -- uses the name of the emitted seq as well as the index name
-addCHHad1 :: Var -> Var -> Stmt
-addCHHad1 vEmit idx =
+addENHad1 :: Var -> Var -> Stmt
+addENHad1 vEmit idx =
   SAssign vEmit $
     EOp2 OAdd (EVar vEmit) (EEmit $ ECall "Map" [eLamPlusPow2, EVar vEmit])
   where

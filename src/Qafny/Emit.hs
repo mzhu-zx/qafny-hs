@@ -107,8 +107,8 @@ instance DafnyPrinter AExp where
 instance DafnyPrinter QTy where
   build TNor = build "nor"
   build THad = build "had"
-  build TCH  = build "ch"
-  build TCH01  = build "ch01"
+  build TEN  = build "ch"
+  build TEN01  = build "ch01"
 
 instance DafnyPrinter Binding where
   build (Binding x t) = x <!>  " : " <!> t

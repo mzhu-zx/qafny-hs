@@ -28,8 +28,8 @@ data EmitTy
 data QTy
   = TNor
   | THad
-  | TCH
-  | TCH01
+  | TEN
+  | TEN01
   deriving (Show, Eq, Ord)
 
 type Var = String
