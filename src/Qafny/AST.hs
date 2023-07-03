@@ -190,7 +190,7 @@ typeTag :: Ty -> String
 typeTag TNat     = "nat"
 typeTag TInt     = "int"
 typeTag TBool    = "bool"
-typeTag (TSeq t) = "seq__" ++ typeTag t ++ "__"
+typeTag (TSeq t) = "_seqL_" ++ typeTag t ++ "_R_"
 typeTag _        = "unsupported"
 
 qComment :: String -> Stmt

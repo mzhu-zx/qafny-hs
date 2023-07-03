@@ -80,5 +80,16 @@ data SplitScheme = SplitScheme
   , schQty     :: QTy     -- entanglement types
   , schSMain   :: STuple  -- the partition that was splitted _from_
   , schSAux    :: STuple  -- the partition that was splitted _to_
+  , schVEmitOrigin :: Var   -- the emit variable of the original range
+  , schVsEmitAll   :: [Var] -- the emit variables of new ranges
   }
   deriving Show
+
+data CastScheme = CastScheme
+  { schVsOldEmit :: [Var]
+  , schTOldEmit :: Ty
+  , schVsNewEmit :: [Var]
+  , schTNewEmit :: Ty
+  , schQtOld :: QTy
+  , schQtNew :: QTy
+  }

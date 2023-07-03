@@ -17,8 +17,13 @@ abstract module {:options "-functionSyntax:4"} QPreludeUntyped {
     (q[k] == 0 ==> h[k] == 1) && (q[k] == 1 ==> h[k] == 0)
   ;
 
-  function CastNorCH10(q : seq<nat>) : (c : seq<nat>)
+  function CastNorCH(q : seq<nat>) : (c : seq<nat>)
     requires forall k : nat | k < |q| :: q[k] == 0 || q[k] == 1
     ensures c == [LittleEndianNat.ToNatRight(q)]
+  ;
+
+  function CastNorCH01(q : seq<nat>) : (c : seq<seq<nat>>)
+    requires forall k : nat | k < |q| :: q[k] == 0 || q[k] == 1
+    ensures c == [q]
   ;
 }

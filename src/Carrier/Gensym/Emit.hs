@@ -18,7 +18,7 @@ newtype GensymC s m a = GensymC { runGensymC :: StateC (Int, [(s, String)]) m a 
 instance (Variable s, Algebra sig m) => Algebra (Gensym s :+: sig) (GensymC s m) where
   alg hdl sig ctx = GensymC $ case sig of
     L (Gensym s) -> state $ \(i, w) ->
-      let v = variable (s, i)
+      let v = variable (s, i) ++ "__emit"
       in ((i + 1 :: Int, (s, v) : w), v <$ ctx)
     R other      -> alg (runGensymC . hdl) (R other) ctx
 

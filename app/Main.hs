@@ -1,19 +1,16 @@
 module Main (main) where
 
-import           Qafny.AST          (AST, Ty)
+import           Qafny.AST          (AST)
 import           Qafny.Config
 import           Qafny.Emit         (texify)
-import           Qafny.Env          (TState)
 import           Qafny.Parser       (scanAndParse)
 import           Qafny.Runner       (Production (..), produceCodegen)
 
 import qualified Data.Text.Lazy     as Txt
 import qualified Data.Text.Lazy.IO  as Txt.IO
 
-import           Control.Arrow      (ArrowChoice (left))
-import           Control.Monad.RWS  (Product (Product))
 import           System.Environment (getArgs)
-import           System.Exit        (exitFailure, exitSuccess)
+import           System.Exit        (exitFailure)
 
 
 

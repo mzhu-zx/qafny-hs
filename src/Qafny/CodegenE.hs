@@ -44,6 +44,7 @@ import           Qafny.Config
 import           Qafny.Env
     ( STuple (..)
     , SplitScheme (..)
+    , CastScheme (..)
     , TEnv (..)
     , TState
     , kEnv
@@ -63,7 +64,7 @@ import           Qafny.TypingE
     , retypePartition1
     , splitScheme
     , typingExp
-    , typingGuard
+    , typingGuard, splitThenCastScheme
     )
 import           Qafny.Utils
     ( bindingOfRangeQTy
@@ -76,6 +77,7 @@ import           Qafny.Utils
     , throwError'
     )
 import           Qafny.Variable                 (Variable (variable))
+import Data.Maybe (listToMaybe)
 
 --------------------------------------------------------------------------------
 -- * Codegen
@@ -259,12 +261,19 @@ codegenStmt (SApply s EHad) = do
 codegenStmt (SApply s@(Partition ranges) e@(EEmit (ELambda {}))) = do
   st@(STuple (_, _, qt)) <- resolvePartition s
   checkSubtypeQ qt TCH
-  
+  r <- case ranges of
+    [] -> throwError "Parser says no!"
+    [x] -> return x
+    _  -> throwError errRangeGt1
+  maybeScheme <- splitThenCastScheme st TCH r
+  stmts <- codegenSplitThenCastEmit maybeScheme
   -- it's important not to use the fully resolved `s` here, because the OP should
   -- only be applied to the sub-partition specified in the annotation.
   vsEmit <- unpackPart s `forM` (`findEmitRangeQTy` qt)
   return $ mkMapCall `map` vsEmit
   where
+    errRangeGt1 :: String
+    errRangeGt1 = printf "%s contains more than 1 range no!" (show ranges)
     mkMapCall v = v `SAssign` EEmit (ECall "Map" [e, EVar v])
 codegenStmt (SIf e seps b) = do
   -- resolve the type of the guard
@@ -294,8 +303,11 @@ codegenStmt (SFor idx boundl boundr eG invs seps body) = do
   (sL, eConstraint) <- makeLoopPartition sG boundl boundr
 
   (stmtsPrelude, stmtsBody) <- case qtG of
-    THad -> do (stGSplited, stmtsSplitG) <- splitHadPartition stG sL
-               (_, _, ~[vEmitG], tEmitG)<- retypePartition stGSplited TCH
+    THad -> do (stGSplited, stmtsSplitG) <- undefined -- splitHadPartition stG sL
+               schemeC <- retypePartition stGSplited TCH
+               let CastScheme { schVsNewEmit=(~[vEmitG])
+                              , schTNewEmit=tEmitG
+                              } = schemeC
                let cardVEmitG = EEmit . ECard . EVar $ vEmitG
                let stmtsInitG =
                      [ qComment "Retype from Had to CH and initialize with 0"
@@ -462,6 +474,30 @@ codegenAlloc v e@(EOp2 ONor _ _) _ =
   throwError "Internal: Attempt to create a Nor partition that's not of nor type"
 codegenAlloc v e _ = return $ SAssign v e
 
+--------------------------------------------------------------------------------
+-- * Cast Semantics
+--------------------------------------------------------------------------------
+codegenCastEmit
+  :: ( Has (Error String) sig m)
+  => CastScheme -> m [Stmt]
+codegenCastEmit
+  CastScheme{ schVsOldEmit=vsOldEmits
+            , schVsNewEmit=vsNewEmit
+            , schQtNew=qtNew
+            , schQtOld=qtOld
+            } = do
+  op <- mkOp qtOld qtNew
+  return . concat $
+      [ [ qComment $ "Cast " ++ show qtOld ++ " ==> " ++ show qtNew
+        , SAssign vNew $ EEmit (op `ECall` [EEmit $ EDafnyVar vOld])
+        ]
+      | (vOld, vNew) <- zip vsOldEmits vsNewEmit ]
+  where
+    mkOp TNor TCH   = return "CastNorCH"
+    mkOp TNor TCH01 = return "CastNorCH01"
+    mkOp TNor THad  = return "CastNorHad"
+    mkOp _    _     = throwError err
+    err :: String = printf "Unsupport cast from %s to %s." (show qtOld) (show qtNew)
 
 -- | Convert quantum type of `s` to `newTy` and emit a cast statement with a
 -- provided `op`
@@ -473,14 +509,15 @@ castWithOp
   => String -> STuple -> QTy -> m [Stmt]
 castWithOp op s newTy =
   do
-    (vOldEmits, tOldEmit, vNewEmits, tNewEmit) <- retypePartition s newTy
+    schemeC <- retypePartition s newTy
+    let CastScheme{ schVsOldEmit=vsOldEmits , schVsNewEmit=vsNewEmit} = schemeC
     let partitionTy = unSTup s ^. _3
     -- assemble the emitted terms
     return . concat $
       [ [ qComment $ "Cast " ++ show partitionTy ++ " ==> " ++ show newTy
         , SAssign vNew $ EEmit (op `ECall` [EEmit $ EDafnyVar vOld])
         ]
-      | (vOld, vNew) <- zip vOldEmits vNewEmits ]
+      | (vOld, vNew) <- zip vsOldEmits vsNewEmit ]
 
 
 -- | Cast the given partition to CH type!
@@ -550,8 +587,6 @@ makeLoopPartition s _ _ =
 -- | Generate emit variables and split operations from a given split scheme.
 codegenSplitEmit
   :: ( Has (Error String) sig m
-     , Has (State TState) sig m
-     , Has (Gensym Binding) sig m
      , Has Trace sig m
      )
   => SplitScheme
@@ -560,38 +595,52 @@ codegenSplitEmit
   ss@SplitScheme { schQty=qty
                  , schROrigin=rOrigin@(Range x left _)
                  , schRTo=rTo
-                 , schRsRem = rsRem
-                 }
-  =
-  trace (show ss) >>
+                 , schRsRem=rsRem
+                 } =
+  trace ("codegenSplitEmit: " ++ show ss) >>
   case qty of
-    t | t `elem` [ TNor, THad, TCH ] -> do
-      vEmitR <- findEmitRangeQTy rOrigin qty -- locate the one to be deleted
-      removeEmitRangeQTys [(rOrigin, qty)]   -- destroy it
-      rSyms <- (rTo : rsRem) `forM` (`gensymEmitRangeQTy` qty)
+    t | t `elem` [ TNor, THad, TCH01 ] -> do
       let offset e = reduceExp $ EOp2 OSub e left
       let stmtsSplit =
-            [ SAssign vEmitNew $ EEmit (ESeqRange (EVar vEmitR) (offset el) (offset er))
-            | (vEmitNew, Range _ el er) <- zip rSyms (rTo : rsRem) ]
+            [ SAssign vEmitNew $ EEmit (ESeqRange (EVar (schVEmitOrigin ss)) (offset el) (offset er))
+            | (vEmitNew, Range _ el er) <- zip (schVsEmitAll ss) (rTo : rsRem) ]
       return stmtsSplit
     _    -> throwError @String $ printf "Splitting a %s partition is unsupported." (show qty)
 
 
--- | Given a Had Partition and a partition, if the partition contains more qubits
--- than the partition, then split the partition, return the STuple containing only
--- this partition and generates statements to perform the split in Dafny.n
-splitHadPartition
+-- -- | Given a Had Partition and a partition, if the partition contains more qubits
+-- -- than the partition, then split the partition, return the STuple containing only
+-- -- this partition and generates statements to perform the split in Dafny.n
+-- splitHadPartition
+--   :: ( Has (Error String) sig m
+--      )
+--   => STuple -> Partition
+--   -> m (STuple, [Stmt])
+-- splitHadPartition sFull@(STuple (locS, Partition [rS], THad)) (Partition [rS']) = do
+--   if rS == rS'
+--     then return (sFull, [])
+--     else undefined -- TODO: implement the split
+-- splitHadPartition sFull sPart =
+--   throwError' $
+--     printf "%s or %s is not a singleton Had partition!" (show sFull) (show sPart)
+
+--------------------------------------------------------------------------------
+-- * Split & Cast Semantics 
+--------------------------------------------------------------------------------
+codegenSplitThenCastEmit
   :: ( Has (Error String) sig m
+     , Has Trace sig m
      )
-  => STuple -> Partition
-  -> m (STuple, [Stmt])
-splitHadPartitionsplitHadPartition sFull@(STuple (locS, Partition [rS], THad)) (Partition [rS']) = do
-  if rS == rS'
-    then return (sFull, [])
-    else undefined -- TODO: implement the split
-splitHadPartition sFull sPart =
-  throwError' $
-    printf "%s or %s is not a singleton Had partition!" (show sFull) (show sPart)
+  => Maybe(CastScheme, Maybe SplitScheme)
+  -> m [Stmt]
+codegenSplitThenCastEmit =
+  maybe (return []) inner
+  where
+    inner (schemeC, maybeSchemeS) =
+      (++)
+      <$> maybe (return []) codegenSplitEmit maybeSchemeS
+      <*> codegenCastEmit schemeC  
+
 
 --------------------------------------------------------------------------------
 -- * Merge Semantics

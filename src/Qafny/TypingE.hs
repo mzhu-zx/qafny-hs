@@ -157,6 +157,7 @@ splitScheme
   :: ( Has (Error String) sig m
      , Has (Gensym String) sig m
      , Has (State TState) sig m
+     , Has (Gensym Binding) sig m
      , Has Trace sig m
      )
   => STuple
@@ -167,8 +168,8 @@ splitScheme s@(STuple (loc, p, qt)) rSplitTo@(Range to _ _) = do
   case matched of
     Nothing -> throwError errImproperRx
     Just (intL, _, intR, rOrigin)  ->
-      let rs = γ intL ++ γ intR -- the list of ranges to be broken
-          rsMain = (rs ++) . List.delete rOrigin $ unpackPart p
+      let rsRem = γ intL ++ γ intR -- the list of ranges to be broken
+          rsMain = (rsRem ++) . List.delete rOrigin $ unpackPart p
           rsAux  = [rSplitTo]
           pMain  = Partition rsMain
           pAux   = Partition rsAux
@@ -183,23 +184,36 @@ splitScheme s@(STuple (loc, p, qt)) rSplitTo@(Range to _ _) = do
              xRangeLocs <- use (xSt . at to) `rethrowMaybe` errXST
              let xrl =
                    [ (rAux, locAux) | rAux <- rsAux ] ++ -- "new range -> new loc"
-                   [ (rMainNew, loc) | rMainNew <- rs ] ++ -- "broken ranges -> old loc"
+                   [ (rMainNew, loc) | rMainNew <- rsRem ] ++ -- "broken ranges -> old loc"
                    -- "the rest with the old range removed"
                    List.filter ((/= rOrigin) . fst) xRangeLocs
              -- trace (printf "State Filtered by %s: %s" (show rSplitTo) (show xrl))
              xSt %= (at to ?~ xrl)
+             (vEmitR, rSyms) <- case qt of
+               t | t `elem` [ TNor, THad, TCH01 ] -> do
+                 vEmitR <- findEmitRangeQTy rOrigin qt -- locate the one to be deleted
+                 removeEmitRangeQTys [(rOrigin, qt)]   -- destroy it
+                 rSyms <- (rSplitTo : rsRem) `forM` (`gensymEmitRangeQTy` qt)
+                 return (vEmitR, rSyms)
+               _    -> throwError errUnsupprtedTy
              return . Just $ SplitScheme
                { schROrigin = rOrigin
                , schRTo = rSplitTo
-               , schRsRem = rs
+               , schRsRem = rsRem
                , schQty = qt
                , schSMain = STuple sMain'
                , schSAux  = STuple sAux'
+               , schVEmitOrigin = vEmitR
+               , schVsEmitAll = rSyms
                }
   where
+    errUnsupprtedTy :: String
+    errUnsupprtedTy = printf "Splitting a %s partition is unsupported." (show qt)
     errXST = printf "No range beginning with %s cannot be found in `xSt`" to
-    errBotRx :: String = printf "The range %s contains no qubit!" $ show rSplitTo
-    errImproperRx :: String = printf
+    errBotRx :: String
+    errBotRx = printf "The range %s contains no qubit!" $ show rSplitTo
+    errImproperRx :: String
+    errImproperRx = printf
       "The range %s is not a part of the partition %s!" (show rSplitTo) (show s)
     intvTo@(Interval tol tor) = rangeToNInt rSplitTo
     matched = listToMaybe -- logically, there should be at most one partition!
@@ -213,10 +227,11 @@ splitScheme s@(STuple (loc, p, qt)) rSplitTo@(Range to _ _) = do
 
 
 
--- | Cast a partition of type 'qt1' to 'qt2' and perform a split if needed.
--- return 'Nothing' if no cast is required.
-castSplit
+-- | Cast a partition of type 'qt1' to 'qt2' and perform a split before the
+-- casting if needed.  return 'Nothing' if no cast is required.
+splitThenCastScheme
   :: ( Has (Gensym String) sig m
+     , Has (Gensym Binding) sig m
      , Has (State TState) sig m
      , Has Trace sig m
      , Has (Error String) sig m
@@ -224,14 +239,24 @@ castSplit
   => STuple
   -> QTy
   -> Range
-  -> m (Maybe SplitScheme)
-castSplit s@(STuple (loc, p, qt1)) qt2 rSplitTo =
+  -> m (Maybe ( CastScheme                   
+              , Maybe SplitScheme)          -- May split if cast or not
+       )                                    -- May cast or not
+splitThenCastScheme s@(STuple (loc, p, qt1)) qt2 rSplitTo =
   case (qt1, qt2) of 
     (TCH, TCH) -> do
       scheme <- splitScheme s rSplitTo
       maybe (return Nothing) handleErr scheme
+    (_  , TCH) -> do
+      maySchemeS <- splitScheme s rSplitTo
+      let sSplited = maybe s schSAux maySchemeS 
+      schemeC <- castScheme sSplited qt2
+      return . Just $ (schemeC, maySchemeS)
+    _ -> undefined
    where
      handleErr scheme =
+       -- TODO: this actually implies a type mismatch. need to improve the error
+       -- message and use a unified type error interface/effect. 
        trace (show scheme) >> 
        (throwError . errSplitCH) scheme
      errSplitCH :: SplitScheme -> String
@@ -296,7 +321,7 @@ checkSubtypeQ t1 t2 =
   -- traceStack "" .
   throwError $
   "Type mismatch: `" ++ show t1 ++ "` is not a subtype of `" ++ show t2 ++ "`"
---------------------------------------------------------------------------------
+-------------------------------------------------------------------------------
 -- | Type Manipulation
 --------------------------------------------------------------------------------
 retypePartition1
@@ -306,7 +331,12 @@ retypePartition1
      )
   => STuple -> QTy -> m (Var, Ty, Var, Ty)
 retypePartition1 st qtNow = do
-  (vsPrev, tPrev, vsNow, tNow) <- retypePartition st qtNow
+  schemeC <- retypePartition st qtNow
+  let CastScheme{ schVsOldEmit=vsPrev
+                , schTOldEmit=tPrev
+                , schVsNewEmit=vsNow
+                , schTNewEmit=tNow
+                } = schemeC
   case (vsPrev, vsNow) of
     ([vPrev], [vNow]) ->
       return (vPrev, tPrev, vNow, tNow)
@@ -318,13 +348,13 @@ retypePartition1 st qtNow = do
 -- emit variable.
 --
 -- However, retyping doesn't generate a new meta variable
-retypePartition
+castScheme
   :: ( Has (Error String) sig m
      , Has (State TState) sig m
      , Has (Gensym Binding) sig m
      )
-  => STuple -> QTy -> m ([Var], Ty, [Var], Ty)
-retypePartition st qtNow = do
+  => STuple -> QTy -> m CastScheme
+castScheme st qtNow = do
   let STuple(locS, sResolved, qtPrev) = st
   when (qtNow == qtPrev) $
     throwError @String  $ printf
@@ -338,8 +368,22 @@ retypePartition st qtNow = do
   let tNewEmit = typingQEmit qtNow
   sSt %= (at locS ?~ (sResolved, qtNow))
   vsNewEmit <- unpackPart sResolved `forM` (`gensymEmitRangeQTy` qtNow)
-  return (vsOldEmit, tOldEmit, vsNewEmit, tNewEmit)
+  return CastScheme { schVsOldEmit=vsOldEmit
+                    , schTOldEmit=tOldEmit
+                    , schVsNewEmit=vsNewEmit
+                    , schTNewEmit=tNewEmit
+                    , schQtOld=qtPrev
+                    , schQtNew=qtNow
+                    }
 
+-- | The same as 'castScheme', for compatibility 
+retypePartition
+  :: ( Has (Error String) sig m
+     , Has (State TState) sig m
+     , Has (Gensym Binding) sig m
+     )
+  => STuple -> QTy -> m CastScheme
+retypePartition = castScheme
 
 -- Merge two given partition tuples if both of them are of CH type.
 mergeSTuples
