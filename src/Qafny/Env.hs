@@ -1,4 +1,7 @@
-{-# LANGUAGE LambdaCase, TemplateHaskell #-}
+{-# LANGUAGE
+    LambdaCase
+  , TemplateHaskell
+  #-}
 module Qafny.Env where
 
 import           Control.Lens
@@ -79,4 +82,3 @@ data SplitScheme = SplitScheme
   , schSAux    :: STuple  -- the partition that was splitted _to_
   }
   deriving Show
-

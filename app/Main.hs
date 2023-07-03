@@ -1,32 +1,37 @@
 module Main (main) where
 
-import           Qafny.AST          (Ty)
-import           Qafny.Emit         (texify)
-import           Qafny.Parser       (scanAndParse)
-import           Qafny.Env    (TState)
-import           Qafny.Runner       (produceCodegen)
+import           Qafny.AST          (AST, Ty)
 import           Qafny.Config
+import           Qafny.Emit         (texify)
+import           Qafny.Env          (TState)
+import           Qafny.Parser       (scanAndParse)
+import           Qafny.Runner       (Production (..), produceCodegen)
 
 import qualified Data.Text.Lazy     as Txt
 import qualified Data.Text.Lazy.IO  as Txt.IO
 
+import           Control.Arrow      (ArrowChoice (left))
+import           Control.Monad.RWS  (Product (Product))
 import           System.Environment (getArgs)
-import           System.Exit        (exitFailure)
-import Control.Arrow (ArrowChoice(left))
+import           System.Exit        (exitFailure, exitSuccess)
 
 
 
 parseArg :: IO String
 parseArg = fmap (head :: [String] -> String) getArgs
 
-pipelineE :: String -> Either String (Txt.Text, TState, [(String, Ty)])
-pipelineE s =
-  do ast <- scanAndParse s
-     let configs = Configs { stdlibPath = "../../external/" }
-     let (result, state, ev) = produceCodegen configs ast
-     ir <- left ( ++ "\n" ++ show state) result
-     return (texify ir, state, ev)
-
+pipeline :: String -> Either String (IO (Production Txt.Text))
+pipeline s =
+  -- do parsing, rethrow error if any
+  withAST <$> scanAndParse s
+  where
+    configs = Configs { stdlibPath = "../../external/" }
+    withAST :: AST -> IO (Production Txt.Text)
+    withAST ast = do
+      let prod = produceCodegen configs ast
+      -- print trace
+      putStrLn $ pTrace prod
+      return $ prod { pResult = texify <$> pResult prod }
 
 main :: IO ()
 main =
@@ -35,21 +40,24 @@ main =
     withProg prog
   where
     withProg prog = do
-      s <- readFile src
-      writeOrReport $ pipelineE s
-      putStrLn $ "\ESC[32mSuccess: target is emited as `" ++ tgt ++ "` \ESC[0m"
+      src <- readFile srcFile
+      either ((>> exitFailure) . putStrLn) (>>= writeOrReportP) (pipeline src)
+      putStrLn $ "\ESC[32mSuccess: target is emited as `" ++ tgtFile ++ "` \ESC[0m"
       where
-        writeOrReport (Right (txt, st, emittedVars)) =
-          do
-            putStrLn $ "Pipeline Finished!\nStatistics from Codegen:\n" ++ show st
-            putStrLn $ "Writer Result:\n  " ++ show emittedVars
-            Txt.IO.writeFile tgt txt
-        writeOrReport (Left e) =
-          do
-            putStrLn $ "\ESC[31m[Error]\ESC[93m " ++ e ++ "\ESC[0m"
-            exitFailure
-        src = "./test/Resource/" ++ prog ++ ".qfy"
-        tgt = "./test/Resource/" ++ prog ++ ".dfy"
+        writeOrReportP :: Production Txt.Text -> IO ()
+        writeOrReportP (Production {pResult=res, pState=st})  = do
+          wrapUp <- case res of
+            Left err -> do
+              putStrLn $ "\ESC[31m[Error]\ESC[93m " ++ err ++ "\ESC[0m"
+              return exitFailure
+            Right txt -> do
+              putStrLn "Pipeline Finished!\n"
+              Txt.IO.writeFile tgtFile txt
+              return (return ())
+          putStrLn $ "Statistics from Codegen:\n" ++ show st
+          wrapUp
+        srcFile = "./test/Resource/" ++ prog ++ ".qfy"
+        tgtFile = "./test/Resource/" ++ prog ++ ".dfy"
 
 -- loadDefaultFile :: IO String
 -- loadDefaultFile =

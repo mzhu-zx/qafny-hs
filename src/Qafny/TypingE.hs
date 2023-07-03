@@ -1,6 +1,7 @@
 {-# LANGUAGE
     FlexibleContexts
   , FlexibleInstances
+  , LambdaCase
   , MultiParamTypeClasses
   , ScopedTypeVariables
   , TupleSections
@@ -45,6 +46,7 @@ import           Qafny.Utils
     )
 
 -- Utils
+import           Control.Effect.Trace
 import           Control.Lens                   (at, non, (%~), (?~), (^.))
 import           Control.Monad                  (forM, unless, when)
 import           Data.Functor                   ((<&>))
@@ -53,7 +55,6 @@ import qualified Data.List                      as List
 import qualified Data.Map.Strict                as Map
 import           Data.Maybe                     (listToMaybe, maybeToList)
 import qualified Data.Set                       as Set
-import           Debug.Trace                    (trace, traceM, traceStack)
 import           GHC.Stack                      (HasCallStack)
 import           Text.Printf                    (printf)
 
@@ -156,6 +157,7 @@ splitScheme
   :: ( Has (Error String) sig m
      , Has (Gensym String) sig m
      , Has (State TState) sig m
+     , Has Trace sig m
      )
   => STuple
   -> Range
@@ -164,34 +166,36 @@ splitScheme s@(STuple (loc, p, qt)) rSplitTo@(Range to _ _) = do
   when (isBot intvTo) $ throwError errBotRx
   case matched of
     Nothing -> throwError errImproperRx
-    Just (intL, _, intR, ry)  ->
+    Just (intL, _, intR, rOrigin)  ->
       let rs = γ intL ++ γ intR -- the list of ranges to be broken
-          rsMain = (rs ++) . List.delete ry $ unpackPart p
+          rsMain = (rs ++) . List.delete rOrigin $ unpackPart p
           rsAux  = [rSplitTo]
           pMain  = Partition rsMain
           pAux   = Partition rsAux
-      in case trace ("rsMain: " ++ show rsMain) rsMain of
-        [] -> return Nothing -- no split actually needs to be done
-        _  -> do             -- split actually happens here:
-          locAux <- gensymLoc to
-          let sMain' = (loc, pMain, qt)   -- the part that's splited _from_
-          let sAux'  = (locAux, pAux, qt) -- the part that's splited _to_
-          sSt %= (at loc ?~ (pMain, qt)) . (at locAux ?~ (pAux, qt))
-          xRangeLocs <- use (xSt . at to) `rethrowMaybe` errXST
-          let xrl =
-                [ (rAux, locAux) | rAux <- rsAux ] ++ -- "new range -> new loc"
-                [ (rMainNew, loc) | rMainNew <- rs ] ++ -- "broken ranges -> old loc"
-                -- "the rest with the old range removed"
-                List.filter ((/= rSplitTo) . fst) xRangeLocs
-          xSt %= (at to ?~ xrl)
-          return . Just $ SplitScheme
-            { schROrigin = ry
-            , schRTo = rSplitTo
-            , schRsRem = rs
-            , schQty = qt
-            , schSMain = STuple sMain'
-            , schSAux  = STuple sAux'
-            }
+      in trace ("rsMain: " ++ show rsMain) >>
+         case rsMain of
+           [] -> return Nothing -- no split actually needs to be done
+           _  -> do             -- split actually happens here:
+             locAux <- gensymLoc to
+             let sMain' = (loc, pMain, qt)   -- the part that's splited _from_
+             let sAux'  = (locAux, pAux, qt) -- the part that's splited _to_
+             sSt %= (at loc ?~ (pMain, qt)) . (at locAux ?~ (pAux, qt))
+             xRangeLocs <- use (xSt . at to) `rethrowMaybe` errXST
+             let xrl =
+                   [ (rAux, locAux) | rAux <- rsAux ] ++ -- "new range -> new loc"
+                   [ (rMainNew, loc) | rMainNew <- rs ] ++ -- "broken ranges -> old loc"
+                   -- "the rest with the old range removed"
+                   List.filter ((/= rOrigin) . fst) xRangeLocs
+             -- trace (printf "State Filtered by %s: %s" (show rSplitTo) (show xrl))
+             xSt %= (at to ?~ xrl)
+             return . Just $ SplitScheme
+               { schROrigin = rOrigin
+               , schRTo = rSplitTo
+               , schRsRem = rs
+               , schQty = qt
+               , schSMain = STuple sMain'
+               , schSAux  = STuple sAux'
+               }
   where
     errXST = printf "No range beginning with %s cannot be found in `xSt`" to
     errBotRx :: String = printf "The range %s contains no qubit!" $ show rSplitTo
@@ -261,7 +265,8 @@ checkSubtypeQ
   => QTy -> QTy -> m ()
 checkSubtypeQ t1 t2 =
   unless (subQ t1 t2) $
-  traceStack "" . throwError $
+  -- traceStack "" .
+  throwError $
   "Type mismatch: `" ++ show t1 ++ "` is not a subtype of `" ++ show t2 ++ "`"
 
 
@@ -322,7 +327,7 @@ mergeSTuples
   do
     -- Sanity Check
     unless (qtMain == qtAux && qtAux == TCH) $
-      traceStack "" $
+      -- traceStack "" $
       throwError @String $ printf "%s and %s have different Q types!"
         (show stM) (show stA)
     -- start merge

@@ -20,6 +20,7 @@ import           Control.Effect.Lens
 import           Control.Effect.Reader
 import qualified Control.Effect.Reader.Labelled as L
 import           Control.Effect.State           (State)
+import           Control.Effect.Trace
 import           Effect.Gensym                  (Gensym, gensym)
 
 -- Handlers
@@ -36,8 +37,8 @@ import           Text.Printf                    (printf)
 
 -- Qafny
 import           Carrier.Gensym.Emit            (runGensymEmit)
-import           Debug.Trace                    (trace)
 import           GHC.Stack                      (HasCallStack)
+import           Qafny.AInterp                  (reduceExp)
 import           Qafny.AST
 import           Qafny.Config
 import           Qafny.Env
@@ -75,7 +76,6 @@ import           Qafny.Utils
     , throwError'
     )
 import           Qafny.Variable                 (Variable (variable))
-import Qafny.AInterp (reduceExp)
 
 --------------------------------------------------------------------------------
 -- * Codegen
@@ -86,6 +86,7 @@ codegenAST
      , Has (Reader TEnv) sig m
      , Has (State TState)  sig m
      , Has (Error String) sig m
+     , Has Trace sig m
      )
   => AST
   -> m AST
@@ -117,6 +118,7 @@ codegenToplevel
   :: ( Has (Reader TEnv) sig m
      , Has (State TState)  sig m
      , Has (Error String) sig m
+     , Has Trace sig m
      )
   => Toplevel
   -> m Toplevel
@@ -196,6 +198,7 @@ codegenBlock
      , Has (Error String) sig m
      , Has (Gensym String) sig m
      , Has (Gensym Binding) sig m
+     , Has Trace sig m
      )
   => Block
   -> m Block
@@ -208,7 +211,7 @@ codegenStmts
      , Has (Error String) sig m
      , Has (Gensym String) sig m
      , Has (Gensym Binding) sig m
-     , HasCallStack
+     , Has Trace sig m
      )
   => [Stmt]
   -> m [Stmt]
@@ -228,6 +231,7 @@ codegenStmt
      , Has (Error String) sig m
      , Has (Gensym String) sig m
      , Has (Gensym Binding) sig m
+     , Has Trace sig m
      )
   => Stmt
   -> m [Stmt]
@@ -322,6 +326,7 @@ codegenStmt'If'Had
      , Has (Error String) sig m
      , Has (Gensym String) sig m
      , Has (Gensym Binding) sig m
+     , Has Trace sig m
      )
   => STuple -> STuple -> Block
   -> m [Stmt]
@@ -348,6 +353,7 @@ codegenStmt'For'Had
      , Has (Error String) sig m
      , Has (Gensym String) sig m
      , Has (Gensym Binding) sig m
+     , Has Trace sig m
      )
   => STuple -> STuple -> Var -> Var -> Block
   -> m [Stmt]
@@ -545,6 +551,7 @@ codegenSplitEmit
   :: ( Has (Error String) sig m
      , Has (State TState) sig m
      , Has (Gensym Binding) sig m
+     , Has Trace sig m
      )
   => SplitScheme
   -> m [Stmt]
@@ -555,7 +562,7 @@ codegenSplitEmit
                  , schRsRem = rsRem
                  }
   =
-  trace (show ss) $
+  trace (show ss) >>
   case qty of
     t | t `elem` [ TNor, THad, TCH ] -> do
       vEmitR <- findEmitRangeQTy rOrigin qty -- locate the one to be deleted
