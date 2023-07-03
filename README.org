@@ -1,0 +1,46 @@
+#+TITLE: Qafny 2.0
+* QuickStart
+
+** Setup
+0. Fetch Dafny and Dafny Library
+
+   Both Dafny and its standard library have been included as submodules. Fetch
+   them using
+   #+begin_src sh
+     git submodule init
+     git submodule update --recursive 
+   #+end_src
+
+   (At this point, Dafny is fixed to =v3.12.0=.)
+
+   Installing Dafny is not required.
+
+1. Install Stack and GHC
+
+   It's recommanded to use [[https://www.haskell.org/ghcup/][GHCup]] to install GHC and Stack. 
+
+
+2. Build Qafny
+   Simply run
+   #+begin_src sh
+     stack build
+   #+end_src
+
+** Usage
+
+All samples/tests (=<testname>.qfy=) are located in =external/Resources=.
+
+- To compile a single file =<testname>.qfy=, run
+  #+begin_src sh
+    stack run -- testname
+  #+end_src
+
+- To compile all examples, run
+  #+begin_src sh
+    ./runtest.sh
+  #+end_src
+
+  
+* What's New with Qafny 2?
+- `fused-effects`
+
