@@ -40,12 +40,13 @@ ty
   | "bool"
   | "seq" '<' ty '>'
   | "qreg" '[' digits ']'
+  | "qreg" '[' id ']'
 
 qty
   : "nor"
   | "had"
-  | "ch"
-  | "ch01"
+  | "en"
+  | "en01"
 
 block
   : '{' stmts '}'
