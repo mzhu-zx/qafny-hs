@@ -212,6 +212,35 @@ splitScheme s@(STuple (loc, p, qt)) rSplitTo@(Range to _ _) = do
     γ :: NatInterval -> [Range]  = (maybeToList .: γRange) to
 
 
+
+-- | Cast a partition of type 'qt1' to 'qt2' and perform a split if needed.
+-- return 'Nothing' if no cast is required.
+castSplit
+  :: ( Has (Gensym String) sig m
+     , Has (State TState) sig m
+     , Has Trace sig m
+     , Has (Error String) sig m
+     )
+  => STuple
+  -> QTy
+  -> Range
+  -> m (Maybe SplitScheme)
+castSplit s@(STuple (loc, p, qt1)) qt2 rSplitTo =
+  case (qt1, qt2) of 
+    (TCH, TCH) -> do
+      scheme <- splitScheme s rSplitTo
+      maybe (return Nothing) handleErr scheme
+   where
+     handleErr scheme =
+       trace (show scheme) >> 
+       (throwError . errSplitCH) scheme
+     errSplitCH :: SplitScheme -> String
+     errSplitCH scheme = printf
+       "Attempting to split a 'EN' partition (%s) from (%s) into (%s) which is not advised."
+       (show s) (show (schROrigin scheme)) (show (schRTo scheme))
+
+
+
 --------------------------------------------------------------------------------
 -- | Aux Typing
 --------------------------------------------------------------------------------
@@ -248,7 +277,6 @@ checkSubtype2 (top1, top2, tret) t1 t2 =
 sub :: Ty -> Ty -> Bool
 sub = (==)
 
-
 --------------------------------------------------------------------------------
 -- | QSubtyping
 --------------------------------------------------------------------------------
@@ -268,8 +296,6 @@ checkSubtypeQ t1 t2 =
   -- traceStack "" .
   throwError $
   "Type mismatch: `" ++ show t1 ++ "` is not a subtype of `" ++ show t2 ++ "`"
-
-
 --------------------------------------------------------------------------------
 -- | Type Manipulation
 --------------------------------------------------------------------------------
@@ -343,6 +369,9 @@ mergeSTuples
       (`Map.withoutKeys` Set.singleton locAux) . -- GC aux's loc
       (at locMain ?~ (newPartition, TCH))          -- update main's state
     return ()
+
+  
+
 
 --------------------------------------------------------------------------------
 -- | Helpers

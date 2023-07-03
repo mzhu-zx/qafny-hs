@@ -258,7 +258,8 @@ codegenStmt (SApply s EHad) = do
 
 codegenStmt (SApply s@(Partition ranges) e@(EEmit (ELambda {}))) = do
   st@(STuple (_, _, qt)) <- resolvePartition s
-  checkSubtypeQ TCH qt
+  checkSubtypeQ qt TCH
+  
   -- it's important not to use the fully resolved `s` here, because the OP should
   -- only be applied to the sub-partition specified in the annotation.
   vsEmit <- unpackPart s `forM` (`findEmitRangeQTy` qt)
@@ -573,7 +574,8 @@ codegenSplitEmit
             [ SAssign vEmitNew $ EEmit (ESeqRange (EVar vEmitR) (offset el) (offset er))
             | (vEmitNew, Range _ el er) <- zip rSyms (rTo : rsRem) ]
       return stmtsSplit
-    _    -> throwError @String $ printf "Unsupport split: %s." (show qty)
+    _    -> throwError @String $ printf "Splitting a %s partition is unsupported." (show qty)
+
 
 -- | Given a Had Partition and a partition, if the partition contains more qubits
 -- than the partition, then split the partition, return the STuple containing only
@@ -583,7 +585,7 @@ splitHadPartition
      )
   => STuple -> Partition
   -> m (STuple, [Stmt])
-splitHadPartition sFull@(STuple (locS, Partition [rS], THad)) (Partition [rS']) = do
+splitHadPartitionsplitHadPartition sFull@(STuple (locS, Partition [rS], THad)) (Partition [rS']) = do
   if rS == rS'
     then return (sFull, [])
     else undefined -- TODO: implement the split

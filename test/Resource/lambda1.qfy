@@ -1,0 +1,5 @@
+method TestLambda()
+{
+  var q : qreg[10] := nor(10, 0);
+  q[0 .. 1] *= λ (x => 1 + x);
+}
