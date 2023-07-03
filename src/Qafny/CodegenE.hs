@@ -37,14 +37,15 @@ import           Text.Printf                    (printf)
 
 -- Qafny
 import           Carrier.Gensym.Emit            (runGensymEmit)
+import           Data.Maybe                     (listToMaybe)
 import           GHC.Stack                      (HasCallStack)
 import           Qafny.AInterp                  (reduceExp)
 import           Qafny.AST
 import           Qafny.Config
 import           Qafny.Env
-    ( STuple (..)
+    ( CastScheme (..)
+    , STuple (..)
     , SplitScheme (..)
-    , CastScheme (..)
     , TEnv (..)
     , TState
     , kEnv
@@ -63,8 +64,9 @@ import           Qafny.TypingE
     , retypePartition
     , retypePartition1
     , splitScheme
+    , splitThenCastScheme
     , typingExp
-    , typingGuard, splitThenCastScheme
+    , typingGuard
     )
 import           Qafny.Utils
     ( bindingOfRangeQTy
@@ -77,7 +79,6 @@ import           Qafny.Utils
     , throwError'
     )
 import           Qafny.Variable                 (Variable (variable))
-import Data.Maybe (listToMaybe)
 
 --------------------------------------------------------------------------------
 -- * Codegen
@@ -261,14 +262,24 @@ codegenStmt (SApply s EHad) = do
     opCastHad TNor = return "CastNorHad"
     opCastHad t = throwError $ "type `" ++ show t ++ "` cannot be casted to Had type"
 
+
+-- | The semantics of a 'SApply' is tricky because of the timing to do the split
+-- and cast. Here's the current strategy:
+-- 
+-- If the current session is not in CH or CH10 type, compute the
+-- 'splitThenCastScheme' and apply the scheme to the codegen.
+--
+-- If however, the current session is in CH or CH10 type, perform no split at
+-- all! (Although applying a lambda to a range that requires tearing a range
+-- apart is not advised and is undefined. )
 codegenStmt (SApply s@(Partition ranges) e@(EEmit (ELambda {}))) = do
-  st@(STuple (_, _, qt)) <- resolvePartition s
+  st'@(STuple (_, _, qt)) <- resolvePartition s
   checkSubtypeQ qt TCH
   r <- case ranges of
-    [] -> throwError "Parser says no!"
+    []  -> throwError "Parser says no!"
     [x] -> return x
-    _  -> throwError errRangeGt1
-  maybeScheme <- splitThenCastScheme st TCH r
+    _   -> throwError errRangeGt1
+  (_, maybeScheme) <- splitThenCastScheme st' TCH r
   stmts <- codegenSplitThenCastEmit maybeScheme
   -- it's important not to use the fully resolved `s` here, because the OP should
   -- only be applied to the sub-partition specified in the annotation.
@@ -531,8 +542,8 @@ castPartitionCH
   => STuple -> m [Stmt]
 castPartitionCH st@(STuple (locS, s, qtS)) = do
   case qtS of
-    TNor -> castWithOp "CastNorCH10" st TCH
-    THad -> castWithOp "CastHadCH10" st TCH
+    TNor -> castWithOp "CastNorCH" st TCH
+    THad -> castWithOp "CastHadCH" st TCH
     TCH -> throwError' $
       printf "Partition `%s` is already of CH type." (show st)
 
@@ -627,7 +638,7 @@ codegenSplitEmit
 --     printf "%s or %s is not a singleton Had partition!" (show sFull) (show sPart)
 
 --------------------------------------------------------------------------------
--- * Split & Cast Semantics 
+-- * Split & Cast Semantics
 --------------------------------------------------------------------------------
 codegenSplitThenCastEmit
   :: ( Has (Error String) sig m
@@ -641,7 +652,7 @@ codegenSplitThenCastEmit =
     inner (schemeC, maybeSchemeS) =
       (++)
       <$> maybe (return []) codegenSplitEmit maybeSchemeS
-      <*> codegenCastEmit schemeC  
+      <*> codegenCastEmit schemeC
 
 
 --------------------------------------------------------------------------------

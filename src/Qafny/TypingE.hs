@@ -168,7 +168,57 @@ splitScheme
   => STuple
   -> Range
   -> m (STuple, Maybe SplitScheme)
-splitScheme s@(STuple (loc, p, qt)) rSplitTo@(Range to _ _) = do
+splitScheme s r = do
+  ans <- splitScheme' s r
+  trace $ printf "[splitScheme]\n\tIn: %s %s\n\tOut: %s"
+    (show s) (show r) (show ans)
+  return ans
+
+-- | Get the original range splitting from and a list of quotient ranges to be
+-- split into.
+getRangeSplits
+  :: ( Has (Error String) sig m
+     , Has Trace sig m
+     )
+  => STuple
+  -> Range
+  -> m (Range, [Range])
+getRangeSplits s@(STuple (loc, p, qt)) rSplitTo@(Range to _ _) = do
+  when (isBot intvTo) $ throwError errBotRx
+  trace infoSS
+  case matched of
+    Nothing -> throwError errImproperRx
+    Just (intL, _, intR, rOrigin)  ->
+      let rsRem = γ intL ++ γ intR -- the "quotient" ranges
+      in return (rOrigin, rsRem)
+  where
+    infoSS :: String = printf "[checkScheme] from (%s) to (%s)" (show s) (show rSplitTo)
+    errBotRx :: String
+    errBotRx = printf "The range %s contains no qubit!" $ show rSplitTo
+    errImproperRx :: String
+    errImproperRx = printf
+      "The range %s is not a part of the partition %s!" (show rSplitTo) (show s)
+    intvTo@(Interval tol tor) = rangeToNInt rSplitTo
+    matched = listToMaybe -- logically, there should be at most one partition!
+      [ (Interval yl (tol - 1), intvTo, Interval (tor + 1) yr, ry)
+      | ry@(Range y _ _) <- unpackPart p
+      , to == y                -- must be in the same register file!
+      , intvTo ⊑ rangeToNInt ry -- must be a sub-interval
+      , let (Interval yl yr) = rangeToNInt ry
+      ]
+    γ :: NatInterval -> [Range]  = (maybeToList .: γRange) to
+
+splitScheme'
+  :: ( Has (Error String) sig m
+     , Has (Gensym String) sig m
+     , Has (State TState) sig m
+     , Has (Gensym Binding) sig m
+     , Has Trace sig m
+     )
+  => STuple
+  -> Range
+  -> m (STuple, Maybe SplitScheme)
+splitScheme' s@(STuple (loc, p, qt)) rSplitTo@(Range to _ _) = do
   when (isBot intvTo) $ throwError errBotRx
   trace infoSS
   case matched of
@@ -261,18 +311,21 @@ splitThenCastScheme
   => STuple
   -> QTy
   -> Range
-  -> m (Maybe ( CastScheme                   
-              , Maybe SplitScheme)          -- May split if cast or not
-       )                                    -- May cast or not
+  -> m (STuple                               -- the latest state
+       , Maybe ( CastScheme         
+               , Maybe SplitScheme)          -- May split if cast or not
+       )                                     -- May cast or not
 splitThenCastScheme s'@(STuple (loc, p, qt1)) qt2 rSplitTo =
   case (qt1, qt2) of 
     (TCH, TCH) -> do
-      (s, scheme) <- splitScheme s' rSplitTo
-      maybe (return Nothing) handleErr scheme
+      (rOrigin, rsRem) <- getRangeSplits s' rSplitTo
+      case rsRem of
+        [] -> return (s', Nothing)
+        _  -> throwError $ errSplitCH rOrigin rsRem 
     (_  , TCH) -> do
       (sSplit, maySchemeS) <- splitScheme s' rSplitTo
       schemeC <- castScheme sSplit qt2
-      return . Just $ (schemeC, maySchemeS)
+      return $ (sSplit, Just (schemeC, maySchemeS))
     _ -> undefined
    where
      handleErr scheme =
@@ -280,10 +333,10 @@ splitThenCastScheme s'@(STuple (loc, p, qt1)) qt2 rSplitTo =
        -- message and use a unified type error interface/effect. 
        trace (show scheme) >> 
        (throwError . errSplitCH) scheme
-     errSplitCH :: SplitScheme -> String
-     errSplitCH scheme = printf
+     errSplitCH :: Range -> [Range] -> String
+     errSplitCH rO rsR = printf
        "Attempting to split a 'EN' partition (%s) from (%s) into (%s) which is not advised."
-       (show s') (show (schROrigin scheme)) (show (schRTo scheme))
+       (show s') (show rO) (show (rSplitTo : rsR))
 
 
 
