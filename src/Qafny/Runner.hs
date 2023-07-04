@@ -7,7 +7,7 @@ import           Control.Carrier.Reader          (runReader)
 import           Control.Carrier.State.Strict    (runState)
 import           Control.Carrier.Trace.Returning (runTrace)
 import           Qafny.AST                       (AST, Ty)
-import           Qafny.CodegenE                  (codegenAST)
+import           Qafny.Codegen                  (codegenAST)
 import           Qafny.Config                    (Configs)
 import           Qafny.Env
 

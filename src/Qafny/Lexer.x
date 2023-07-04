@@ -16,6 +16,7 @@ $digit = 0-9
 @dafny = \#(~\n)*
 @comment = (\/\/)(~\n)*
 @id = ($alpha) ($alpha | $digit | \_ | \')*
+@wild=(\_)
 @assign = (:=)
 @qassign = (\*=)
 @aand = (&&)
@@ -30,6 +31,7 @@ $digit = 0-9
 token :-
   $white+          ;
   @comment         ;
+  @wild            { emit $  TWildcard           }
   @dafny           { pushToken $ TDafny . tail   }
   method           { emit $  TMethod             }
   ensures          { emit $  TEnsures            }
@@ -63,7 +65,6 @@ token :-
   QFT              { emit $  TQFT                }
   RQFT             { emit $  TRQFT               }
   meas             { emit $  TMea                }
-  '_'              { emit $  TWildcard       }
   @id              { pushToken $ TId             }
   @digits          { pushToken $ TLitInt . read  }
   @assign          { emit $  TAssign             }

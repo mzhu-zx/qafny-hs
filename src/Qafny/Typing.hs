@@ -8,7 +8,7 @@
   , TypeApplications
   #-}
 
-module Qafny.TypingE where
+module Qafny.Typing where
 
 -- | Typing though Fused Effects
 
@@ -107,7 +107,8 @@ resolvePartition se@(Partition rs) = do
   rsResolved <- rs `forM` resolveRange
   let locs = [ loc | (_, _, True, loc) <- concat rsResolved ]
   let related = printf "Related:%s" $
-        concatMap (("\n\t" ++) . showRel) [ (r1, r2, b) | (r1, r2, b, _) <- concat rsResolved ]
+        concatMap (("\n\t" ++) . showRel)
+        [ (r1, r2, b) | (r1, r2, b, _) <- concat rsResolved ]
   case List.nub locs of
     [] ->  throwError $ errInternal related
     [x] -> (use (sSt . at x) `rethrowMaybe` (show . UnknownLocError) x)
@@ -129,6 +130,7 @@ resolvePartition se@(Partition rs) = do
     showRel (r1, r2, True)  = printf "%s ⊑ %s" (show r1) (show r2)
     showRel (r1, r2, False) = printf "%s ⋢ %s" (show r1) (show r2)
 
+-- | Query all ranges related to the given range.
 resolveRange
   :: ( Has (State TState) sig m
      , Has (Error String) sig m

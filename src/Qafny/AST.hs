@@ -76,13 +76,18 @@ data Exp
   | EDafny String
   | EEmit EmitExp
   | EPartition Partition
-  | ESpec Partition QTy Exp
-  | EQSpec Var Intv [Exp]
-  | EQSpec01 Var Intv Var Intv [Exp] 
+  | ESpec Partition QTy SpecExp
   -- ?
   | RInd Var Exp -- boolean at var[exp], var must be Q type
   | REq Exp Exp Var Exp -- compare exp == exp and store the value in var[exp], var must be Q type
   | RLt Exp Exp Var Exp -- compare exp < exp and store the value in var[exp], var must be Q type
+  deriving (Show, Eq, Ord)
+
+data SpecExp
+  = SESpecNor  Var [Exp]
+  | SESpecCH   Var Intv [Exp]
+  | SESpecCH01 Var Intv Var Intv [Exp] 
+  | SEWildcard
   deriving (Show, Eq, Ord)
 
 
@@ -180,15 +185,6 @@ data EmitStmt
 
 type AST = [Toplevel]
 
---------------------------------------------------------------------------------
--- | AST Constants
--------------------------------------------------------------------------------
-wild :: Var
-wild =  "_"
-
-constExp :: Exp -> EmitExp
-constExp = ELambda wild
-
 
 typeTag :: Ty -> String
 typeTag TNat     = "nat"
@@ -197,8 +193,6 @@ typeTag TBool    = "bool"
 typeTag (TSeq t) = "_seqL_" ++ typeTag t ++ "_R_"
 typeTag _        = "unsupported"
 
-qComment :: String -> Stmt
-qComment = SDafny . ("// " ++)
 
 --------------------------------------------------------------------------------
 -- * Partition Utils

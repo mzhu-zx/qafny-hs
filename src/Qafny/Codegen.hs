@@ -6,7 +6,7 @@
   , TypeApplications
   #-}
 
-module Qafny.CodegenE where
+module Qafny.Codegen where
 
 
 
@@ -29,8 +29,9 @@ import           Qafny.Gensym                   (resumeGensym)
 -- Utils
 import           Control.Lens                   (at, non, (%~), (?~), (^.))
 import           Control.Lens.Tuple
-import           Control.Monad                  (forM, forM_, unless, when)
+import           Control.Monad                  (forM, forM_, unless, when, MonadPlus (mzero))
 import           Data.Functor                   ((<&>))
+import qualified Data.List                      as List
 import qualified Data.Map.Strict                as Map
 import           Text.Printf                    (printf)
 
@@ -41,6 +42,7 @@ import           Data.Maybe                     (listToMaybe)
 import           GHC.Stack                      (HasCallStack)
 import           Qafny.AInterp                  (reduceExp)
 import           Qafny.AST
+import           Qafny.ASTFactory
 import           Qafny.Config
 import           Qafny.Env
     ( CastScheme (..)
@@ -53,7 +55,7 @@ import           Qafny.Env
     , xSt
     )
 import           Qafny.TypeUtils
-import           Qafny.TypingE
+import           Qafny.Typing
     ( appkEnvWithBds
     , checkSubtype
     , checkSubtypeQ
@@ -171,29 +173,68 @@ codegenRequires rqs = forM rqs $ \rq ->
       let xMap = [ (v, [(r, sLoc)]) | r@(Range v _ _) <- unpackPart s ]
       vsEmit <- forM (unpackPart s) (`gensymEmitRangeQTy` qt)
       xSt %= Map.unionWith (++) (Map.fromListWith (++) xMap)
-      case espec of
-        EQSpec v intv body -> codegenSpec vsEmit v intv body
-        _                  -> undefined
-    _ ->
-      return rq
+      ands <$> codegenSpecExp (zip vsEmit (unpackPart s)) qt espec
 
-codegenSpec
+-- | Take in the emit variable corresponding to each range in the partition and the
+-- partition type; with which, generate expressions (predicates)
+codegenSpecExp
+  :: ( Has (Error String) sig m )
+  => [(Var, Range)] -> QTy -> SpecExp -> m [Exp]
+codegenSpecExp vrs p e =
+  case (p, e) of
+    (_, SEWildcard) -> return []
+    (TNor, SESpecNor idx es) -> do
+      checkListCorr vrs es
+      -- In x[l .. r]
+      -- @
+      --   forall idx | 0 <= idx < (r - l) :: xEmit[idx] == eBody
+      -- @
+      return [ EForall (natB idx) eBound eBody
+             | ((v, Range _ el er), eBody) <- zip vrs es
+             , let eBound = Just (eIntv idx (ENum 0) (er `eSub` el)) ]
+    (TEN, SESpecCH idx (Intv l r) eValues) -> do
+      checkListCorr vrs eValues
+      -- In x[l .. r]
+      -- @
+      --   forall idx | l <= idx < r :: xEmit[idx] == eBody
+      -- @
+      let eBound = Just $ eIntv idx l r
+      let eSelect x = EEmit (ESelect (EVar x) (EVar idx))
+      return [ EForall (natB idx) eBound (EOp2 OEq (eSelect vE) eV)
+             | ((vE, _), eV) <- zip vrs eValues
+             , eV /= EWildcard ]
+      -- In x[l .. r]
+      -- @
+      --   forall idxS | lS <= idxS < rS ::
+      --   forall idxT | 0 <= idxT < rT - lT ::
+      --   xEmit[idxS][idxT] == eBody
+      -- @
+    (TEN01, SESpecCH01 idxSum (Intv lSum rSum) idxTen (Intv lTen rTen) eValues) -> do
+      checkListCorr vrs eValues
+      return $ do
+        ((vE, Range _ el er), eV) <- zip vrs eValues
+        when (eV == EWildcard) mzero
+        let eBoundSum = Just $ eIntv idxSum lSum rSum
+        let eBoundTen = Just $ eIntv idxTen (ENum 0) (er `eSub` el)
+        let eForallSum = EForall (natB idxSum) eBoundSum
+        let eForallTen = EForall (natB idxTen) eBoundTen
+        let eSel = (EVar vE `eAt` EVar idxSum) `eAt` EVar idxTen
+        let eBody = EOp2 OEq eSel eV
+        return . eForallSum . eForallTen $ eBody
+    _ -> throwError' $ printf "%s is not compatible with the specification %s"
+         (show p) (show e)
+
+checkListCorr
   :: ( Has (Error String) sig m
-     , Has (State TState) sig m
+     , Show a
+     , Show b
      )
-  => [Var] -> Var -> Intv -> [Exp] -> m Exp
-codegenSpec vsEmit bind (Intv l r) eValues = do
+  => [a] -> [b] -> m ()
+checkListCorr vsEmit eValues =
   unless (length vsEmit == length eValues) $
     throwError' $ printf
-      "The number of values doesn't agree with that of partitions: %s %s"
+      "The number of elements doesn't agree with each other: %s %s"
       (show vsEmit) (show eValues)
-  let eBound = Just (EEmit (EOpChained l [(OLe, EVar bind), (OLt, r)]))
-  let eSelect x = EEmit (ESelect (EVar x) (EVar bind))
-  let es = [ EForall (Binding bind TNat) eBound (EOp2 OEq (eSelect vE) eV)
-           | (vE, eV) <- zip vsEmit eValues, eV /= EWildcard ]
-  return $ case es of
-    []     -> EBool True
-    x : xs -> EEmit (EOpChained x [ (OAnd, x') | x' <- xs ])
 
 codegenBlock
   :: ( Has (Reader TEnv) sig m
@@ -262,10 +303,9 @@ codegenStmt (SApply s EHad) = do
     opCastHad TNor = return "CastNorHad"
     opCastHad t = throwError $ "type `" ++ show t ++ "` cannot be casted to Had type"
 
-
 -- | The semantics of a 'SApply' is tricky because of the timing to do the split
 -- and cast. Here's the current strategy:
--- 
+--
 -- If the current session is not in EN or EN10 type, compute the
 -- 'splitThenCastScheme' and apply the scheme to the codegen.
 --
@@ -327,24 +367,37 @@ codegenStmt (SFor idx boundl boundr eG invs seps body) = do
                [ qComment "Retype from Had to EN and initialize with 0"
                , SAssign vEmitG $
                    EEmit $ EMakeSeq TNat cardVEmitG $ constExp $ ENum 0 ]
-         -- Make a temporary counter to record `Pow`s when coverting a Had
-         -- to a EN partition (not added to `emitSt` on purpose!)
-         -- vEmitCounter <- gensym (Binding "had_counter" TNat)
-         -- let stmtsInitCounter =
-         --       [ qComment "Initialize Had Power Counter"
-         --       , SAssign vEmitCounter (ENum 1) ]
-         -- Resolve again to get the new quantum type!
          stG' <- resolvePartition (unSTup stGSplited ^. _2)
          stmtsCGHad <-
            codegenStmt'For'Had stB stG' vEmitG idx body
-         return $ ( stmtsInitG -- ++ stmtsInitCounter
+         return $ ( stmtsInitG
                   , stmtsSplitG ++ stmtsCGHad)
     _    -> undefined
   let innerFor = SEmit $ SForEmit idx boundl boundr [] $ Block stmtsBody
   return $ stmtsCastB ++ stmtsDupG ++ stmtsPrelude ++ [innerFor]
 
+codegenStmt (SAssert (ESpec s qt espec)) = do
+  st@(STuple(_, pResolved, qtResolved)) <- resolvePartition s
+  when (qt /= qtResolved) $ throwError' (errTypeMismatch st)
+  when (List.sort (unpackPart s) /= List.sort (unpackPart pResolved)) $
+    throwError' $ errIncompletePartition st
+  vsEmit <- unpackPart s `forM` (`findEmitRangeQTy` qt)
+  (SAssert <$>) <$> codegenSpecExp (zip vsEmit (unpackPart s)) qt espec
+  where
+    errTypeMismatch st =
+      printf "The partition %s is not of type %s.\nResolved: %s"
+      (show s) (show qt) (show st)
+    errIncompletePartition st@(STuple(_, p, _)) =
+      printf "The partition %s is a sub-partition of %s.\nResolved: %s"
+      (show s) (show p) (show st)
+  -- check type or cast here
+
+
 codegenStmt s = error $ "Unimplemented:\n\t" ++ show s ++ "\n"
 
+--------------------------------------------------------------------------------
+-- * Conditional
+--------------------------------------------------------------------------------
 
 -- | Code Generation of an `If` statement with a Had partition
 codegenStmt'If'Had
@@ -372,7 +425,9 @@ codegenStmt'If'Had stG stB' b = do
   let stmtsMerge = mergeEmitted corr
   return $ stmtsDupB ++ [stmtB] ++ stmtsMerge ++ stmtsG
 
-
+--------------------------------------------------------------------------------
+-- * Loop
+--------------------------------------------------------------------------------
 -- | Code Generation of a `For` statement with a Had partition
 codegenStmt'For'Had
   :: ( Has (Reader TEnv) sig m
@@ -598,7 +653,7 @@ makeLoopRange s _ _ =
 --------------------------------------------------------------------------------
 -- * Split Semantics
 --------------------------------------------------------------------------------
-codegenSplitEmitMaybe 
+codegenSplitEmitMaybe
   :: ( Has (Error String) sig m
      , Has Trace sig m
      )
@@ -624,7 +679,8 @@ codegenSplitEmit
     t | t `elem` [ TNor, THad, TEN01 ] -> do
       let offset e = reduceExp $ EOp2 OSub e left
       let stmtsSplit =
-            [ SAssign vEmitNew $ EEmit (ESeqRange (EVar (schVEmitOrigin ss)) (offset el) (offset er))
+            [ SAssign vEmitNew $
+              EEmit (ESeqRange (EVar (schVEmitOrigin ss)) (offset el) (offset er))
             | (vEmitNew, Range _ el er) <- zip (schVsEmitAll ss) (rTo : rsRem) ]
       return stmtsSplit
     _    -> throwError @String $ printf "Splitting a %s partition is unsupported." (show qty)

@@ -81,32 +81,21 @@ AST
 toplevels                                                                 
   : many(toplevel)                    { $1                                   }
                                                                           
-toplevel                                                                  
+toplevel :: { Toplevel }
   :  dafny                            { QDafny $1                            }
-  | "method" id '(' bindings ')'                                          
-    requireEnsures opt(block)                                                  
-                                      { let (rs, es) = $6 in                 
-                                          QMethod $2 $4 [] rs es $7          }
-  | "method" id '(' bindings ')' "returns" '(' bindings ')'               
-    requireEnsures opt(block)                                                  
-                                      { let (rs, es) = $10 in                
-                                          QMethod $2 $4 $8 rs es $11         }
-requireEnsures
-  : conds                             { (reverse [e | (Requires e) <- $1], 
-                                         reverse [e | (Ensures  e) <- $1])   }
-invs
-  : conds                             { reverse [e | (Invariants e) <- $1]   }
+  | "method" id '(' bindings ')' "returns" '(' bindings ')' conds opt(block)                           {% (\(rs, es) -> QMethod $2 $4 $8 rs es $11) `fmap` (requireEnsures $10) }
+  | "method" id '(' bindings ')' conds opt(block)                                                  
+    {% (\(rs, es) -> QMethod $2 $4 [] rs es $7) `fmap` (requireEnsures $6) }
 
-separates :: { Partition }
-  : "separates" partition             { $2                                   }
-
-conds
+conds :: { [ Conds ] }
   : many(cond)                        { $1                                   }
                                                                           
-cond                                                                      
+cond :: { Conds }
   : "requires" expr                   { Requires $2                          }
   | "ensures" expr                    { Ensures $2                           }
   | "invariant" expr                  { Invariants $2                        }
+  | "separates" partition             { Separates $2                         }
+
                                                                           
 bindings
   : manyComma(binding)                     { $1 }
@@ -136,16 +125,16 @@ stmts
   : many(stmt)                        { $1                                   }
                                                                           
                                                                           
-stmt                                                                      
+stmt :: { Stmt }
   : "assert" expr ';'                 { SAssert $2                           }
   | "var" binding ';'                 { SVar $2 Nothing                      }
   | "var" binding ":=" expr ';'       { SVar $2 (Just $4)                    }
   | id ":=" expr ';'                  { SAssign $1 $3                        }
   | partition "*=" expr ';'           { SApply $1 $3                         }
-  | "if" '(' expr ')' separates block
-                                      { SIf $3 $5 $6                         }
-  | "for" id "in" '[' expr ".." expr ']' "with" expr invs separates block
-                                      { SFor $2 $5 $7 $10 $11 $12 $13        }
+  | "if" '(' expr ')' cond block
+    {% do sep <- separatesOnly $5; return $ SIf $3 sep $6                     }
+  | "for" id "in" '[' expr ".." expr ']' "with" expr conds block
+    {% do (invs, sep) <- invariantSeperates $11; return $ SFor $2 $5 $7 $10 invs sep $12 }
                                                                           
 partition :: { Partition }                                                               
   : manyComma(range)                  { Partition $ $1                       }
@@ -157,14 +146,16 @@ spec ::   { Exp }
   : '{' partition ':'  qty "↦" qspec '}'
                                       { ESpec $2 $4 $6                       }
 
-qspec ::  { Exp }
-  : "Σ" id "∈" '[' expr ".." expr ']' '.' tuple(expr)
-                                      { EQSpec $2 (Intv $5 $7) $10           }
+qspec ::  { SpecExp }
+  : "⊗" id '.' tuple(expr)
+                                      { SESpecNor $2 $4                   }
+  | "Σ" id "∈" '[' expr ".." expr ']' '.' tuple(expr)
+                                      { SESpecCH $2 (Intv $5 $7) $10           }
   | "Σ" id "∈" '[' expr ".." expr ']' '.'             {- 9  -}
     "⊗" id "∈" '[' expr ".." expr ']' '.'             {- 18 -}
     tuple(expr)
-                                      { EQSpec01 $2 (Intv $5 $7) $11 (Intv $14 $16) $19           }
-  | {- empty -}                       { EWildcard }
+                                      { SESpecCH01 $2 (Intv $5 $7) $11 (Intv $14 $16) $19           }
+  | {- empty -}                       { SEWildcard }
 
 tuple(p)
   : '(' manyComma(p) ')'              { $2 }
