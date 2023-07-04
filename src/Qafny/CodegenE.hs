@@ -629,23 +629,6 @@ codegenSplitEmit
       return stmtsSplit
     _    -> throwError @String $ printf "Splitting a %s partition is unsupported." (show qty)
 
-
--- -- | Given a Had Partition and a partition, if the partition contains more qubits
--- -- than the partition, then split the partition, return the STuple containing only
--- -- this partition and generates statements to perform the split in Dafny.n
--- splitHadPartition
---   :: ( Has (Error String) sig m
---      )
---   => STuple -> Partition
---   -> m (STuple, [Stmt])
--- splitHadPartition sFull@(STuple (locS, Partition [rS], THad)) (Partition [rS']) = do
---   if rS == rS'
---     then return (sFull, [])
---     else undefined -- TODO: implement the split
--- splitHadPartition sFull sPart =
---   throwError' $
---     printf "%s or %s is not a singleton Had partition!" (show sFull) (show sPart)
-
 --------------------------------------------------------------------------------
 -- * Split & Cast Semantics
 --------------------------------------------------------------------------------
