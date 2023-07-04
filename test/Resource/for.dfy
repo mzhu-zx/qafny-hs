@@ -12,35 +12,35 @@ method For0 (n : nat)
   requires n > 0
 {
   // Forward Declaration
-  var p__0__n__seq__nat____8 : seq<nat>;
-  var p__0__n__seq__nat____7 : seq<nat>;
-  var q__0__n__seq__nat____6 : seq<nat>;
-  var q__0__n__seq__nat____5 : seq<nat>;
-  var q__0__n__seq__nat____4 : seq<nat>;
-  var p__0__n__seq__nat____3 : seq<nat>;
-  var q__0__n__seq__nat____2 : seq<nat>;
-  var p__0__n__seq__nat____1 : seq<nat>;
-  var q__0__n__seq__nat____0 : seq<nat>;
+  var p_0_n___seqL_nat_R___8__emit : seq<nat>;
+  var p_0_n___seqL_nat_R___7__emit : seq<nat>;
+  var q_0_n___seqL_nat_R___6__emit : seq<nat>;
+  var q_0_n___seqL_nat_R___5__emit : seq<nat>;
+  var q_0_n___seqL_nat_R___4__emit : seq<nat>;
+  var p_0_n___seqL_nat_R___3__emit : seq<nat>;
+  var q_0_n___seqL_nat_R___2__emit : seq<nat>;
+  var p_0_n___seqL_nat_R___1__emit : seq<nat>;
+  var q_0_n___seqL_nat_R___0__emit : seq<nat>;
   
   // Method Definition
-  q__0__n__seq__nat____0 := seq<nat>(n, _ => 0);
-  p__0__n__seq__nat____1 := seq<nat>(n, _ => 0);
+  q_0_n___seqL_nat_R___0__emit := seq<nat>(n, _ => 0);
+  p_0_n___seqL_nat_R___1__emit := seq<nat>(n, _ => 0);
   // Cast TNor ==> THad
-  q__0__n__seq__nat____2 := CastNorHad(q__0__n__seq__nat____0);
+  q_0_n___seqL_nat_R___2__emit := CastNorHad(q_0_n___seqL_nat_R___0__emit);
   // Cast TNor ==> TEN
-  p__0__n__seq__nat____3 := CastNorEN10(p__0__n__seq__nat____1);
-  q__0__n__seq__nat____4 := q__0__n__seq__nat____5;
+  p_0_n___seqL_nat_R___3__emit := CastNorEN(p_0_n___seqL_nat_R___1__emit);
+  q_0_n___seqL_nat_R___4__emit := q_0_n___seqL_nat_R___5__emit;
   // Retype from Had to EN and initialize with 0
-  q__0__n__seq__nat____6 := seq<nat>(|q__0__n__seq__nat____6|, _ => 0);
+  q_0_n___seqL_nat_R___6__emit := seq<nat>(|q_0_n___seqL_nat_R___6__emit|, _ => 0);
   for i := 0 to n
   {
-    p__0__n__seq__nat____7 := p__0__n__seq__nat____8;
+    p_0_n___seqL_nat_R___7__emit := p_0_n___seqL_nat_R___8__emit;
     {
-      p__0__n__seq__nat____8 := Map(x => x + 1 % 2, p__0__n__seq__nat____8);
+      p_0_n___seqL_nat_R___8__emit := Map(x => x + 1 % 2, p_0_n___seqL_nat_R___8__emit);
     }
 
-    p__0__n__seq__nat____8 := p__0__n__seq__nat____8 + p__0__n__seq__nat____7;
-    q__0__n__seq__nat____6 := q__0__n__seq__nat____6 + Map(x__lambda => x__lambda + Pow2(i), q__0__n__seq__nat____6);
+    p_0_n___seqL_nat_R___8__emit := p_0_n___seqL_nat_R___8__emit + p_0_n___seqL_nat_R___7__emit;
+    q_0_n___seqL_nat_R___6__emit := q_0_n___seqL_nat_R___6__emit + Map(x__lambda => x__lambda + Pow2(i), q_0_n___seqL_nat_R___6__emit);
   }
 
 }

@@ -314,11 +314,12 @@ codegenStmt (SFor idx boundl boundr eG invs seps body) = do
     _   -> (,) <$> castPartitionEN stB' <*> resolvePartition (unSTup stB' ^. _2)
   -- what to do with the guard partition is unsure...
   (stmtsDupG, gCorr) <- dupState sG
-  (sL, eConstraint) <- makeLoopPartition sG boundl boundr
+  (rL, eConstraint) <- makeLoopRange sG boundl boundr
 
   (stmtsPrelude, stmtsBody) <- case qtG of
     THad ->
-      do (stGSplited, stmtsSplitG) <- undefined -- splitHadPartition stG sL
+      do (stGSplited, schemeSMaybe) <- splitScheme stG rL
+         stmtsSplitG <- codegenSplitEmitMaybe schemeSMaybe
          schemeC <- retypePartition stGSplited TEN
          let CastScheme { schVsNewEmit=(~[vEmitG])} = schemeC
          let cardVEmitG = EEmit . ECard . EVar $ vEmitG
@@ -579,15 +580,15 @@ dupState s' = do
 -- Precondition: Split has been performed at the subtyping stage so that it's
 -- guaranteed that only one range can be in the partition
 --
-makeLoopPartition
+makeLoopRange
   :: Has (Error String) sig m
-  => Partition -> Exp -> Exp -> m (Partition, Exp)
-makeLoopPartition (Partition [Range r sl sh]) l h =
+  => Partition -> Exp -> Exp -> m (Range, Exp)
+makeLoopRange (Partition [Range r sl sh]) l h =
   return
-    ( Partition [Range r l h]
+    ( Range r l h
     , EEmit (EOpChained l [(OLe, sl), (OLt, sh), (OLe, h)])
     )
-makeLoopPartition s _ _ =
+makeLoopRange s _ _ =
   throwError $
     "Partition `"
       ++ show s
@@ -597,6 +598,14 @@ makeLoopPartition s _ _ =
 --------------------------------------------------------------------------------
 -- * Split Semantics
 --------------------------------------------------------------------------------
+codegenSplitEmitMaybe 
+  :: ( Has (Error String) sig m
+     , Has Trace sig m
+     )
+  => Maybe SplitScheme
+  -> m [Stmt]
+codegenSplitEmitMaybe = maybe (return []) codegenSplitEmit
+
 -- | Generate emit variables and split operations from a given split scheme.
 codegenSplitEmit
   :: ( Has (Error String) sig m
@@ -651,7 +660,7 @@ codegenSplitThenCastEmit =
   where
     inner (schemeC, maybeSchemeS) =
       (++)
-      <$> maybe (return []) codegenSplitEmit maybeSchemeS
+      <$> codegenSplitEmitMaybe maybeSchemeS
       <*> codegenCastEmit schemeC
 
 
