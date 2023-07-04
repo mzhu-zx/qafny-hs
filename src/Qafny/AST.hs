@@ -152,8 +152,12 @@ instance Show Loc where
 newtype Partition = Partition { unpackPart :: [Range] }
   deriving (Eq, Ord)
 
+
 instance Show Partition where
-  show = show . unpackPart
+  show = showPP . unpackPart
+    where
+      showPP [] = "∅"
+      showPP (r : rs) = foldr (\r' s -> show r' ++ " ⊎ " ++ s) (show r) rs
 
 data Stmt
   = SAssert Exp
