@@ -29,10 +29,8 @@ dependencies:
 - fused-effects
 - fused-effects-lens
 - recursion-schemes
-# - fused-effects-readline
-# - fused-effects-exceptions
-# - hashable
-# - unordered-containers
+- tasty
+- tasty-hunit
 
 ghc-options:
 - -Wall

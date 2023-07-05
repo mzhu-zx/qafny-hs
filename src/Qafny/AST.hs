@@ -8,7 +8,7 @@
 
 module Qafny.AST where
 
-import           Data.Functor.Foldable    (Recursive (cata), Corecursive (embed))
+import           Data.Functor.Foldable    (Recursive (cata, project), Corecursive (embed))
 import           Data.Functor.Foldable.TH (makeBaseFunctor)
 import           Text.Printf              (printf)
 
@@ -248,9 +248,12 @@ fVars = cata go
     go (EVarF x) = [x]
     go fvs       = concat fvs
 
+
+-- | Perform expression subtitution 
+--
 substE :: [(Var, Int)] -> Exp -> Exp
-substE env = cata go
+substE env = go
   where
-    go :: ExpF Exp -> Exp
-    go e@(EVarF x) = maybe (EVar x) ENum $ lookup x env
-    go e = undefined -- embed $ fmap go e
+    go :: Exp -> Exp
+    go e@(EVar x) = maybe (EVar x) ENum $ lookup x env
+    go e = embed $ go <$> project e
