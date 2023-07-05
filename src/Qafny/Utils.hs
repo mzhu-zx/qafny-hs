@@ -15,8 +15,6 @@ import           Effect.Gensym                (Gensym, gensym)
 --
 import qualified Data.Map.Strict              as Map
 import qualified Data.Set                     as Set
-import           Debug.Trace                  (trace, traceStack)
-import           GHC.Stack                    (CallStack, HasCallStack)
 import           Qafny.AST
 import           Qafny.Env                    (TState, emitSt)
 import           Qafny.TypeUtils              (typingQEmit)
@@ -39,8 +37,7 @@ throwError' = throwError @String
 
 -- | Catch the error in the Maybe and rethrow it as an Error
 rethrowMaybe
-  :: ( Has (Error String) sig m
-     , HasCallStack )
+  :: ( Has (Error String) sig m )
   => m (Maybe a)
   -> String
   -> m a

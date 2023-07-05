@@ -1,9 +1,16 @@
-{-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE
+    DeriveFoldable
+  , DeriveFunctor
+  , DeriveTraversable
+  , TemplateHaskell
+  , TypeFamilies
+  #-}
 
 module Qafny.AST where
 
-import           Control.Monad (guard)
-import           Text.Printf   (printf)
+import           Data.Functor.Foldable    (Recursive (cata), Corecursive (embed))
+import           Data.Functor.Foldable.TH (makeBaseFunctor)
+import           Text.Printf              (printf)
 
 data AExp
   = ANat Int
@@ -86,7 +93,7 @@ data Exp
 data SpecExp
   = SESpecNor  Var [Exp]
   | SESpecCH   Var Intv [Exp]
-  | SESpecCH01 Var Intv Var Intv [Exp] 
+  | SESpecCH01 Var Intv Var Intv [Exp]
   | SEWildcard
   deriving (Show, Eq, Ord)
 
@@ -161,7 +168,7 @@ newtype Partition = Partition { unpackPart :: [Range] }
 instance Show Partition where
   show = showPP . unpackPart
     where
-      showPP [] = "∅"
+      showPP []       = "∅"
       showPP (r : rs) = foldr (\r' s -> show r' ++ " ⊎ " ++ s) (show r) rs
 
 data Stmt
@@ -226,10 +233,24 @@ leftPartitions =
 
 
 --------------------------------------------------------------------------------
+-- * Recursion Schemes
+--------------------------------------------------------------------------------
+makeBaseFunctor ''Exp
+
+
+--------------------------------------------------------------------------------
 -- * Exp Utils
 --------------------------------------------------------------------------------
 fVars :: Exp -> [Var]
-fVars (ENum _)       = []
-fVars (EVar x)       = [x]
-fVars (EOp1 _ e)     = fVars e
-fVars (EOp2 _ e1 e2) = fVars e1 ++ fVars e2
+fVars = cata go
+  where
+    go :: ExpF [Var] -> [Var]
+    go (EVarF x) = [x]
+    go fvs       = concat fvs
+
+substE :: [(Var, Int)] -> Exp -> Exp
+substE env = cata go
+  where
+    go :: ExpF Exp -> Exp
+    go e@(EVarF x) = maybe (EVar x) ENum $ lookup x env
+    go e = undefined -- embed $ fmap go e
