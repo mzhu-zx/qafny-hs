@@ -146,6 +146,7 @@ instance DafnyPrinter Stmt where
       buildStmt (SAssign v e) = v <!> " := " <!> e
       buildStmt (SCall e es) = e <!> withParen (byComma es)
       buildStmt (SEmit s') = buildEmit s'
+      buildStmt (SAssert e) = "assert " <!> e
       buildStmt e = "// undefined builder for Stmt : " <!> show e
       buildEmit :: EmitStmt -> Builder
       buildEmit (SIfDafny e b) = "if " <!> withParen (build e) <!> b
@@ -156,7 +157,8 @@ instance DafnyPrinter Exp where
   build (EVar v) = build v
   build (EEmit e) = build e
   build (EOp2 op e1 e2) = buildOp2 op (build e1) (build e2)
-  build (EForall x eb e) = "forall " <!> x  <!> beb eb <!>  " :: " <!> e
+  -- parentheses are critical to forall expressions!
+  build (EForall x eb e) = withParen $ "forall " <!> x  <!> beb eb <!>  " :: " <!> e
     where beb (Just eb') = " | " <!> eb'
           beb Nothing    = mempty
   build e = "//" <!> show e <!> build " should not be in emitted form!"

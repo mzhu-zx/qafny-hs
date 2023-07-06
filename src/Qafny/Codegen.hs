@@ -21,6 +21,7 @@ import           Control.Effect.Reader
 import qualified Control.Effect.Reader.Labelled as L
 import           Control.Effect.State           (State)
 import           Control.Effect.Trace
+import           Control.Effect.Writer          (Writer, tell)
 import           Effect.Gensym                  (Gensym, gensym)
 
 -- Handlers
@@ -29,7 +30,13 @@ import           Qafny.Gensym                   (resumeGensym)
 -- Utils
 import           Control.Lens                   (at, non, (%~), (?~), (^.))
 import           Control.Lens.Tuple
-import           Control.Monad                  (forM, forM_, unless, when, MonadPlus (mzero))
+import           Control.Monad
+    ( MonadPlus (mzero)
+    , forM
+    , forM_
+    , unless
+    , when
+    )
 import           Data.Functor                   ((<&>))
 import qualified Data.List                      as List
 import qualified Data.Map.Strict                as Map
@@ -81,6 +88,7 @@ import           Qafny.Utils
     , throwError'
     )
 import           Qafny.Variable                 (Variable (variable))
+import Control.Carrier.Writer.Strict (runWriter)
 
 --------------------------------------------------------------------------------
 -- * Codegen
@@ -128,9 +136,9 @@ codegenToplevel
   => Toplevel
   -> m Toplevel
 codegenToplevel q@(QMethod v bds rts rqs ens (Just block)) = do
-  (countMeta, (countEmit, (vsEmitR', vsEmitB), (rqsCG, blockCG))) <-
+  (countMeta, (countEmit, (vsEmitR', vsEmitB), ((vRs, rqsCG), blockCG))) <-
     local (appkEnvWithBds bds) $
-    codegenRequires rqs `resumeGensym` codegenBlock block
+    runWriter @[(String, Range)] (codegenRequires rqs) `resumeGensym` codegenBlock block
 
   -- Gensym symbols are in the reverse order!
   let vsEmitR = reverse vsEmitR'
@@ -142,9 +150,11 @@ codegenToplevel q@(QMethod v bds rts rqs ens (Just block)) = do
         bd@(Binding x ty) <- bds
         case ty of
           TQReg _ -> [ Binding vEmit tEmit
-                     | (Binding y tEmit, vEmit) <- vsEmitR, x == y ]
+                     | (Binding y tEmit, vEmit) <- vsEmitR
+                     , maybe False (\(Range x' _ _) -> x' == x) (lookup vEmit vRs) 
+                     ]
           _    -> return bd
-
+  trace $ printf "Generated method bindings: %s" (show vRs)
   let blockStmts =
         [ qComment "Forward Declaration" ]
         ++ stmtsDeclare
@@ -161,6 +171,7 @@ codegenRequires
      , Has (Error String) sig m
      , Has (Gensym String) sig m
      , Has (Gensym Binding) sig m
+     , Has (Writer [(String, Range)]) sig m
      )
   => Requires -> m Requires
 codegenRequires rqs = forM rqs $ \rq ->
@@ -171,9 +182,12 @@ codegenRequires rqs = forM rqs $ \rq ->
       sLoc <- gensymLoc "requires"
       sSt %= (at sLoc ?~ (s, qt))
       let xMap = [ (v, [(r, sLoc)]) | r@(Range v _ _) <- unpackPart s ]
-      vsEmit <- forM (unpackPart s) (`gensymEmitRangeQTy` qt)
+      vsREmit <- unpackPart s `forM` (\r -> (,r) <$> r `gensymEmitRangeQTy` qt)
+      tell vsREmit
+      let (vsEmit, _)  = unzip vsREmit
       xSt %= Map.unionWith (++) (Map.fromListWith (++) xMap)
       ands <$> codegenSpecExp (zip vsEmit (unpackPart s)) qt espec
+    _ -> return rq
 
 -- | Take in the emit variable corresponding to each range in the partition and the
 -- partition type; with which, generate expressions (predicates)
@@ -189,20 +203,26 @@ codegenSpecExp vrs p e =
       -- @
       --   forall idx | 0 <= idx < (r - l) :: xEmit[idx] == eBody
       -- @
-      return [ EForall (natB idx) eBound eBody
-             | ((v, Range _ el er), eBody) <- zip vrs es
-             , let eBound = Just (eIntv idx (ENum 0) (er `eSub` el)) ]
+      let eSelect x = EEmit (ESelect (EVar x) (EVar idx))
+      return . concat $
+        [ [ reduceExp (er `eSub` el) `eEq` EEmit (ECard (EVar v))
+          , EForall (natB idx) eBound (eSelect v `eEq` eBody)
+          ]
+        | ((v, Range _ el er), eBody) <- zip vrs es
+        , let eBound = Just (eIntv idx (ENum 0) (reduceExp (er `eSub` el))) ]
     (TEN, SESpecCH idx (Intv l r) eValues) -> do
       checkListCorr vrs eValues
-      -- In x[l .. r]
+      -- In x[? .. ?] where l and r bound the indicies of basis-kets
       -- @
       --   forall idx | l <= idx < r :: xEmit[idx] == eBody
       -- @
       let eBound = Just $ eIntv idx l r
       let eSelect x = EEmit (ESelect (EVar x) (EVar idx))
-      return [ EForall (natB idx) eBound (EOp2 OEq (eSelect vE) eV)
-             | ((vE, _), eV) <- zip vrs eValues
-             , eV /= EWildcard ]
+      return . concat $
+        [ [ r `eEq` EEmit (ECard (EVar vE))
+          , EForall (natB idx) eBound (EOp2 OEq (eSelect vE) eV) ]
+        | ((vE, _), eV) <- zip vrs eValues
+        , eV /= EWildcard ]
       -- In x[l .. r]
       -- @
       --   forall idxS | lS <= idxS < rS ::
@@ -210,6 +230,7 @@ codegenSpecExp vrs p e =
       --   xEmit[idxS][idxT] == eBody
       -- @
     (TEN01, SESpecCH01 idxSum (Intv lSum rSum) idxTen (Intv lTen rTen) eValues) -> do
+      -- todo: also emit bounds!
       checkListCorr vrs eValues
       return $ do
         ((vE, Range _ el er), eV) <- zip vrs eValues

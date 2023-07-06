@@ -1,11 +1,9 @@
-{-# LANGUAGE TupleSections #-}
+{-# LANGUAGE
+    TupleSections
+  #-}
 
 module Qafny.AInterp where
-import           Control.Algebra
-import           Control.Effect.State (State, modify, put)
-
-import           Control.Applicative  (Applicative (liftA2))
-import           Control.Arrow        (Arrow (first))
+import           Control.Arrow (Arrow (first))
 import           Qafny.AST
 -- | Arithemetic Expression Reduction
 -- reduce an airth expression as much as possible!
@@ -13,6 +11,7 @@ import           Qafny.AST
 flipOp :: Op2 -> Op2
 flipOp OAdd = OSub
 flipOp OSub = OAdd
+flipOp _    = undefined
 
 flipStack :: [(Op2, Var)] -> [(Op2, Var)]
 flipStack = fmap $ first flipOp
@@ -37,8 +36,8 @@ interpExp (EOp2 OSub e1 e2) =
   let (op1, i1) = interpExp e1
       (op2, i2) = interpExp e2
   in (op1 ++ flipStack op2, i1 - i2)
+interpExp _ = undefined
 
-
-interpExpEnv :: [(Var, Int)] -> Exp -> ([(Op2, Var)], Int)
+interpExpEnv :: [(Var, Exp)] -> Exp -> ([(Op2, Var)], Int)
 interpExpEnv env = interpExp . substE env
 

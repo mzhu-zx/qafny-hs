@@ -1,6 +1,5 @@
-method EN(q : qreg[10], n : nat, m : nat)
-  requires n < m < 10
-  requires { q[0 .. n], q[m .. 10] : en ↦ Σ i ∈ [0 .. 10] . ( 0, 1 ) }
+method EN(q : qreg[10])
+  requires { q[0 .. 5], q[5 .. 10] : en ↦ Σ i ∈ [0 .. 10] . ( 0, 1 ) }
 {
-
+  assert { q[0 .. 5], q[5 .. 10] : en ↦ Σ i ∈ [0 .. 10] . ( 0, 1 ) };
 }

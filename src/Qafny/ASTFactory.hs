@@ -35,5 +35,20 @@ ands :: [Exp] -> Exp
 ands [] = EBool True
 ands (x : xs) = EEmit (EOpChained x [ (OAnd, x') | x' <- xs ])
 
+-- | Make a chained, left-associated expression
+--
+-- This is done in different fashion from 'ands' because the constant fold
+-- doesn't work with the 'EmitExp's.
+--
+joinArith :: Op2 -> Exp -> [Exp] -> Exp
+joinArith _ e [] = e
+joinArith op _ (x : xs) = 
+  foldr inner id xs x
+  where
+    inner y f = f . (EOp2 op `flip` y)
+
 eAt :: Exp -> Exp -> Exp
 eAt e1 e2 = EEmit (ESelect e1 e2)
+
+eEq :: Exp -> Exp -> Exp
+eEq = EOp2 OEq

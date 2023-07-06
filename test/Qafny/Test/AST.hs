@@ -15,7 +15,7 @@ substTest :: TestTree
 substTest = testGroup "Subtitution Tests"
   [ testCase "(1 + x) [ 2 / x ]" $
     EOp2 OAdd (ENum 1) (ENum 2) @=?
-    substE [("x", 2)] (EOp2 OAdd (ENum 1) (EVar "x"))
+    substE [("x", ENum 2)] (EOp2 OAdd (ENum 1) (EVar "x"))
   ]
 
 interpTests :: TestTree

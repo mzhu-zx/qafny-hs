@@ -8,8 +8,8 @@ import opened QPreludeUntyped
 import opened Seq
 import opened Power2
 
-method Test ()
-  requires forall i : nat | 0 <= i < 10 :: q_0_10___seqL_nat_R___0__emit[i] == 0
+method Test (q_0_10___seqL_nat_R___0__emit : seq<nat>)
+  requires 10 == |q_0_10___seqL_nat_R___0__emit| && (forall i : nat | 0 <= i < 10 :: q_0_10___seqL_nat_R___0__emit[i] == 0)
 {
   // Forward Declaration
   var q_0_1___seqL_nat_R___3__emit : seq<nat>;

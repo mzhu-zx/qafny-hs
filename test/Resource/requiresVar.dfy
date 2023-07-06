@@ -8,13 +8,13 @@ import opened QPreludeUntyped
 import opened Seq
 import opened Power2
 
-method TestLambda (q_0_10___seqL_nat_R___0__emit : seq<nat>)
-  requires 2 == |q_0_10___seqL_nat_R___0__emit| && (forall i : nat | 0 <= i < 2 :: q_0_10___seqL_nat_R___0__emit[i] == i)
+method EN (q_0_n___seqL_nat_R___0__emit : seq<nat>, q_m_10___seqL_nat_R___1__emit : seq<nat>, n : nat, m : nat)
+  requires n < m < 10
+  requires 10 == |q_0_n___seqL_nat_R___0__emit| && (forall i : nat | 0 <= i < 10 :: q_0_n___seqL_nat_R___0__emit[i] == 0) && 10 == |q_m_10___seqL_nat_R___1__emit| && (forall i : nat | 0 <= i < 10 :: q_m_10___seqL_nat_R___1__emit[i] == 1)
 {
   // Forward Declaration
   
   // Method Definition
-  q_0_10___seqL_nat_R___0__emit := Map(x => 2 * x, q_0_10___seqL_nat_R___0__emit);
 }
 
 }

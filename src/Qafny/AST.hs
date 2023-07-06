@@ -11,6 +11,7 @@ module Qafny.AST where
 import           Data.Functor.Foldable    (Recursive (cata, project), Corecursive (embed))
 import           Data.Functor.Foldable.TH (makeBaseFunctor)
 import           Text.Printf              (printf)
+import Data.Maybe (fromMaybe)
 
 data AExp
   = ANat Int
@@ -251,9 +252,9 @@ fVars = cata go
 
 -- | Perform expression subtitution 
 --
-substE :: [(Var, Int)] -> Exp -> Exp
+substE :: [(Var, Exp)] -> Exp -> Exp
 substE env = go
   where
     go :: Exp -> Exp
-    go e@(EVar x) = maybe (EVar x) ENum $ lookup x env
+    go e@(EVar x) = EVar x `fromMaybe` lookup x env
     go e = embed $ go <$> project e

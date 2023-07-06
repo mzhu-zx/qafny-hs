@@ -8,13 +8,16 @@ import opened QPreludeUntyped
 import opened Seq
 import opened Power2
 
-method EN (n : nat, m : nat)
-  requires forall i : nat | 0 <= i < 10 :: q_0_n___seqL_nat_R___0__emit[i] == 0 && forall i : nat | 0 <= i < 10 :: q_m_10___seqL_nat_R___1__emit[i] == 1
-  requires n < m < 10
+method EN (q_0_5___seqL_nat_R___0__emit : seq<nat>, q_5_10___seqL_nat_R___1__emit : seq<nat>)
+  requires 10 == |q_0_5___seqL_nat_R___0__emit| && (forall i : nat | 0 <= i < 10 :: q_0_5___seqL_nat_R___0__emit[i] == 0) && 10 == |q_5_10___seqL_nat_R___1__emit| && (forall i : nat | 0 <= i < 10 :: q_5_10___seqL_nat_R___1__emit[i] == 1)
 {
   // Forward Declaration
   
   // Method Definition
+  assert 10 == |q_0_5___seqL_nat_R___0__emit|;
+  assert (forall i : nat | 0 <= i < 10 :: q_0_5___seqL_nat_R___0__emit[i] == 0);
+  assert 10 == |q_5_10___seqL_nat_R___1__emit|;
+  assert (forall i : nat | 0 <= i < 10 :: q_5_10___seqL_nat_R___1__emit[i] == 1);
 }
 
 }
