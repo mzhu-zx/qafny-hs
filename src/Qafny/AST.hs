@@ -4,10 +4,6 @@
   , DeriveTraversable
   , TemplateHaskell
   , TypeFamilies
-  , DataKinds
-  , GADTs
-  , RankNTypes
-  , StandaloneDeriving
   #-}
 
 module Qafny.AST where
@@ -149,21 +145,11 @@ type Separates = Partition
 newtype Block = Block { inBlock :: [Stmt] }
   deriving (Show, Eq)
 
-data KCtor
-  = KMethod
-  | KString 
-
-data Toplevel t where
-  QMethod :: Var
-          -> Bindings
-          -> Returns
-          -> Requires
-          -> Ensures
-          -> (Maybe Block)
-          -> Toplevel 'KMethod
-  QDafny :: String -> Toplevel 'KString
-
-deriving instance (Show (Toplevel f))
+data Toplevel
+  = QMethod Var Bindings Returns Requires Ensures (Maybe Block)
+  | QDafny String 
+  deriving (Eq, Show)
+  
 
 data Intv = Intv Exp Exp
   deriving (Eq, Show, Ord)
@@ -209,7 +195,7 @@ data EmitStmt
   | SForEmit Var Exp Exp [Exp] Block
   deriving (Show, Eq)
 
-type AST = forall s . [Toplevel s]
+type AST = [Toplevel]
 
 
 typeTag :: Ty -> String
