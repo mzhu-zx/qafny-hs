@@ -5,15 +5,10 @@
 module Qafny.Env where
 
 import           Control.Lens
-import           Control.Lens.TH
-import           Control.Monad.Except
-import           Control.Monad.RWS
-import           Data.Bifunctor
-import           Data.List            (intercalate)
-import qualified Data.Map.Strict      as Map
-import           GHC.Stack
+import           Data.List       (intercalate)
+import qualified Data.Map.Strict as Map
 import           Qafny.AST
-import           Text.Printf          (printf)
+import           Text.Printf     (printf)
 
 --------------------------------------------------------------------------------
 -- High-Order Types
@@ -74,11 +69,11 @@ initTState = TState
 
 
 data SplitScheme = SplitScheme
-  { schROrigin :: Range -- the original range
-  , schRTo     :: Range -- the range splitted _to_
-  , schRsRem   :: [Range] -- the remainder range
-  , schQty     :: QTy     -- entanglement types
-  , schSMain   :: STuple  -- the partition that was splitted _from_
+  { schROrigin     :: Range -- the original range
+  , schRTo         :: Range -- the range splitted _to_
+  , schRsRem       :: [Range] -- the remainder range
+  , schQty         :: QTy     -- entanglement types
+  , schSMain       :: STuple  -- the partition that was splitted _from_
   --  , schSAux    :: STuple  -- the partition that was splitted _to_
   , schVEmitOrigin :: Var   -- the emit variable of the original range
   , schVsEmitAll   :: [Var] -- the emit variables of new ranges
@@ -87,9 +82,9 @@ data SplitScheme = SplitScheme
 
 data CastScheme = CastScheme
   { schVsOldEmit :: [Var]
-  , schTOldEmit :: Ty
+  , schTOldEmit  :: Ty
   , schVsNewEmit :: [Var]
-  , schTNewEmit :: Ty
-  , schQtOld :: QTy
-  , schQtNew :: QTy
+  , schTNewEmit  :: Ty
+  , schQtOld     :: QTy
+  , schQtNew     :: QTy
   }

@@ -9,7 +9,7 @@ import opened Seq
 import opened Power2
 
 method SplitTest (q_0_10___seqL_nat_R___0__emit : seq<nat>) returns (q_0_2___seqL_nat_R___5__emit : seq<nat>, q_2_8___seqL_nat_R___4__emit : seq<nat>, q_8_10___seqL_nat_R___6__emit : seq<nat>)
-  requires true
+  requires 10 == |q_0_10___seqL_nat_R___0__emit| && (forall i : nat | 0 <= i < 10 :: q_0_10___seqL_nat_R___0__emit[i] == 0)
   ensures true
   ensures true
   ensures true

@@ -150,11 +150,11 @@ qspec ::  { SpecExp }
   : "⊗" id '.' tuple(expr)
                                       { SESpecNor $2 $4                   }
   | "Σ" id "∈" '[' expr ".." expr ']' '.' tuple(expr)
-                                      { SESpecCH $2 (Intv $5 $7) $10           }
+                                      { SESpecEN $2 (Intv $5 $7) $10           }
   | "Σ" id "∈" '[' expr ".." expr ']' '.'             {- 9  -}
     "⊗" id "∈" '[' expr ".." expr ']' '.'             {- 18 -}
     tuple(expr)
-                                      { SESpecCH01 $2 (Intv $5 $7) $11 (Intv $14 $16) $19           }
+                                      { SESpecEN01 $2 (Intv $5 $7) $11 (Intv $14 $16) $19           }
 
   | '_'                               { SEWildcard }
 

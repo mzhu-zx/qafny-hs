@@ -13,25 +13,25 @@ module Qafny.Typing where
 -- | Typing though Fused Effects
 
 -- Effects
+-- import           Control.Effect.Labelled
+-- import qualified Control.Effect.Reader.Labelled as L
 import           Control.Effect.Catch
-import           Control.Effect.Error           (Error, throwError)
-import           Control.Effect.Labelled
+import           Control.Effect.Error  (Error, throwError)
 import           Control.Effect.Lens
 import           Control.Effect.Reader
-import qualified Control.Effect.Reader.Labelled as L
-import           Control.Effect.State           (State)
-import           Effect.Gensym                  (Gensym)
+import           Control.Effect.State  (State)
+import           Effect.Gensym         (Gensym)
 
 -- Qafny
 import           Qafny.AST
 import           Qafny.Env
-import           Qafny.Error                    (QError (..))
+import           Qafny.Error           (QError (..))
 import           Qafny.Interval
     ( Interval (Interval)
     , Lattice (..)
     , NatInterval
     )
-import           Qafny.IntervalUtils            (rangeToNInt, γRange)
+import           Qafny.IntervalUtils   (rangeToNInt, γRange)
 import           Qafny.TypeUtils
 import           Qafny.Utils
     ( exp2AExp
@@ -44,16 +44,15 @@ import           Qafny.Utils
 
 -- Utils
 import           Control.Effect.Trace
-import           Control.Lens                   (at, non, (%~), (?~), (^.))
-import           Control.Monad                  (forM, unless, when)
-import           Data.Functor                   ((<&>))
-import           Data.IntMap                    (partition)
-import qualified Data.List                      as List
-import qualified Data.Map.Strict                as Map
-import           Data.Maybe                     (listToMaybe, maybeToList)
-import qualified Data.Set                       as Set
-import           GHC.Stack                      (HasCallStack)
-import           Text.Printf                    (printf)
+import           Control.Lens          (at, (%~), (?~), (^.))
+import           Control.Monad         (forM, unless, when)
+import           Data.Functor          ((<&>))
+import qualified Data.List             as List
+import qualified Data.Map.Strict       as Map
+import           Data.Maybe            (listToMaybe, maybeToList)
+import qualified Data.Set              as Set
+import           GHC.Stack             (HasCallStack)
+import           Text.Printf           (printf)
 
 -- | Compute the type of the given expression
 typingExp
@@ -153,7 +152,7 @@ resolvePartitions =
 -- part of the partition.
 --
 -- The returned 'STuple' is the partition covering the range
--- 
+--
 -- For the optional return value, return 'Nothing' if no split needs **on a specific
 -- range** needs to be performed, i.e. no codegen needs to be done.
 
@@ -233,7 +232,7 @@ splitScheme' s@(STuple (loc, p, qt)) rSplitTo@(Range to _ _) = do
       in trace ("rsMain: " ++ show rsMain) >>
          case rsMain of
            [] -> return (s, Nothing) -- no split at all!
-           _  -> do            
+           _  -> do
              -- ^ Split in partition or in both partition and a range
              -- 1. Allocate partitions, break ranges and move them around
              locAux <- gensymLoc to
@@ -244,24 +243,24 @@ splitScheme' s@(STuple (loc, p, qt)) rSplitTo@(Range to _ _) = do
              xRangeLocs <- use (xSt . at to) `rethrowMaybe` errXST
              let xrl =
                    -- "new range -> new loc"
-                   [ (rAux, locAux) | rAux <- rsAux ] ++ 
+                   [ (rAux, locAux) | rAux <- rsAux ] ++
                    -- "split ranges -> old loc"
-                   [ (rMainNew, loc) | rMainNew <- rsRem ] ++ 
+                   [ (rMainNew, loc) | rMainNew <- rsRem ] ++
                    -- "the rest with the old range removed"
                    List.filter ((/= rOrigin) . fst) xRangeLocs
              -- trace (printf "State Filtered by %s: %s" (show rSplitTo) (show xrl))
              xSt %= (at to ?~ xrl)
              -- 2. Generate emit symbols for split ranges
              case rsRem of
-               [] -> return (STuple sAux', Nothing) -- only split in partition but not in a range  
+               [] -> return (STuple sAux', Nothing) -- only split in partition but not in a range
                _  -> do
                  (vEmitR, rSyms) <- case qt of
                    t | t `elem` [ TNor, THad, TEN01 ] -> do
-                     -- locate the original range 
+                     -- locate the original range
                      vEmitR <- findEmitRangeQTy rOrigin qt
                      -- delete it from the record
-                     removeEmitRangeQTys [(rOrigin, qt)]  
-                     -- gensym for each split ranges 
+                     removeEmitRangeQTys [(rOrigin, qt)]
+                     -- gensym for each split ranges
                      rSyms <- (rSplitTo : rsRem) `forM` (`gensymEmitRangeQTy` qt)
                      return (vEmitR, rSyms)
                    _    -> throwError $ errUnsupprtedTy ++ "\n" ++ infoSS
@@ -311,16 +310,16 @@ splitThenCastScheme
   -> QTy
   -> Range
   -> m (STuple                               -- the latest state
-       , Maybe ( CastScheme         
+       , Maybe ( CastScheme
                , Maybe SplitScheme)          -- May split if cast or not
        )                                     -- May cast or not
 splitThenCastScheme s'@(STuple (loc, p, qt1)) qt2 rSplitTo =
-  case (qt1, qt2) of 
+  case (qt1, qt2) of
     (TEN, TEN) -> do
       (rOrigin, rsRem) <- getRangeSplits s' rSplitTo
       case rsRem of
         [] -> return (s', Nothing)
-        _  -> throwError $ errSplitEN rOrigin rsRem 
+        _  -> throwError $ errSplitEN rOrigin rsRem
     (_  , TEN) -> do
       (sSplit, maySchemeS) <- splitScheme s' rSplitTo
       schemeC <- castScheme sSplit qt2
@@ -329,8 +328,8 @@ splitThenCastScheme s'@(STuple (loc, p, qt1)) qt2 rSplitTo =
    where
      handleErr scheme =
        -- TODO: this actually implies a type mismatch. need to improve the error
-       -- message and use a unified type error interface/effect. 
-       trace (show scheme) >> 
+       -- message and use a unified type error interface/effect.
+       trace (show scheme) >>
        (throwError . errSplitEN) scheme
      errSplitEN :: Range -> [Range] -> String
      errSplitEN rO rsR = printf
@@ -449,7 +448,7 @@ castScheme st qtNow = do
                     , schQtNew=qtNow
                     }
 
--- | The same as 'castScheme', for compatibility 
+-- | The same as 'castScheme', for compatibility
 retypePartition
   :: ( Has (Error String) sig m
      , Has (State TState) sig m
@@ -487,7 +486,7 @@ mergeSTuples
       (at locMain ?~ (newPartition, TEN))          -- update main's state
     return ()
 
-  
+
 
 
 --------------------------------------------------------------------------------

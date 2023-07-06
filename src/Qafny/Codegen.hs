@@ -12,42 +12,38 @@ module Qafny.Codegen where
 
 -- | Code Generation through Fused Effects
 
+
 -- Effects
+-- import           Control.Effect.Labelled
+-- import qualified Control.Effect.Reader.Labelled as L
 import           Control.Effect.Catch
-import           Control.Effect.Error           (Error, throwError)
-import           Control.Effect.Labelled
+import           Control.Effect.Error  (Error, throwError)
 import           Control.Effect.Lens
 import           Control.Effect.Reader
-import qualified Control.Effect.Reader.Labelled as L
-import           Control.Effect.State           (State)
+import           Control.Effect.State  (State)
 import           Control.Effect.Trace
-import           Control.Effect.Writer          (Writer, tell)
-import           Effect.Gensym                  (Gensym, gensym)
+import           Effect.Gensym         (Gensym, gensym)
 
 -- Handlers
-import           Qafny.Gensym                   (resumeGensym)
+import           Qafny.Gensym          (resumeGensym)
 
 -- Utils
-import           Control.Lens                   (at, non, (%~), (?~), (^.))
+import           Control.Lens          (at, non, (%~), (?~), (^.))
 import           Control.Lens.Tuple
 import           Control.Monad
     ( MonadPlus (mzero)
     , forM
-    , forM_
     , unless
     , when
     )
-import           Data.Functor                   ((<&>))
-import qualified Data.List                      as List
-import qualified Data.Map.Strict                as Map
-import           Text.Printf                    (printf)
+import           Data.Functor          ((<&>))
+import qualified Data.List             as List
+import qualified Data.Map.Strict       as Map
+import           Text.Printf           (printf)
 
 
 -- Qafny
-import           Carrier.Gensym.Emit            (runGensymEmit)
-import           Data.Maybe                     (listToMaybe)
-import           GHC.Stack                      (HasCallStack)
-import           Qafny.AInterp                  (reduceExp)
+import           Qafny.AInterp         (reduceExp)
 import           Qafny.AST
 import           Qafny.ASTFactory
 import           Qafny.Config
@@ -57,11 +53,11 @@ import           Qafny.Env
     , SplitScheme (..)
     , TEnv (..)
     , TState
+    , emitSt
     , kEnv
     , sSt
-    , xSt, emitSt
+    , xSt
     )
-import           Qafny.TypeUtils
 import           Qafny.Typing
     ( appkEnvWithBds
     , checkSubtype
@@ -78,16 +74,13 @@ import           Qafny.Typing
     , typingGuard
     )
 import           Qafny.Utils
-    ( rbindingOfRangeQTy
-    , findEmitRangeQTy
+    ( findEmitRangeQTy
     , gensymEmitRangeQTy
     , gensymLoc
     , gensymRangeQTy
-    , removeEmitRangeQTys
+    , rbindingOfRangeQTy
     , throwError'
     )
-import           Qafny.Variable                 (Variable (variable))
-import Control.Carrier.Writer.Strict (runWriter)
 
 --------------------------------------------------------------------------------
 -- * Codegen
@@ -223,7 +216,7 @@ codegenSpecExp vrs p e =
           ]
         | ((v, Range _ el er), eBody) <- zip vrs es
         , let eBound = Just (eIntv idx (ENum 0) (reduceExp (er `eSub` el))) ]
-    (TEN, SESpecCH idx (Intv l r) eValues) -> do
+    (TEN, SESpecEN idx (Intv l r) eValues) -> do
       checkListCorr vrs eValues
       -- In x[? .. ?] where l and r bound the indicies of basis-kets
       -- @
@@ -242,7 +235,7 @@ codegenSpecExp vrs p e =
       --   forall idxT | 0 <= idxT < rT - lT ::
       --   xEmit[idxS][idxT] == eBody
       -- @
-    (TEN01, SESpecCH01 idxSum (Intv lSum rSum) idxTen (Intv lTen rTen) eValues) -> do
+    (TEN01, SESpecEN01 idxSum (Intv lSum rSum) idxTen (Intv lTen rTen) eValues) -> do
       -- todo: also emit bounds!
       checkListCorr vrs eValues
       return $ do

@@ -1,5 +1,5 @@
 method GHZ(q : qreg[10])
-  requires { q[0 .. 10] : nor ↦ Σ i ∈ [0 .. 1] . (0) }
+  requires { q[0 .. 10] : nor ↦ ⊗ i . (0) }
 {
   // induce superposition on the first qubit
   q[0..1] *= H;

@@ -1,5 +1,5 @@
 method SplitTest(q : qreg[10])
-  requires { q[0 .. 10] : nor ↦ _ }
+  requires { q[0 .. 10] : nor ↦ ⊗ i . ( 0 ) }
   ensures { q[2 .. 8] : had ↦ _ }
   ensures { q[0 .. 2] : had ↦ _ }
   ensures { q[8 .. 10] : had ↦ _ }

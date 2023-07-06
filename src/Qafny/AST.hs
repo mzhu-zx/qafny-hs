@@ -96,8 +96,8 @@ data Exp
 
 data SpecExp
   = SESpecNor  Var [Exp]
-  | SESpecCH   Var Intv [Exp]
-  | SESpecCH01 Var Intv Var Intv [Exp]
+  | SESpecEN   Var Intv [Exp]
+  | SESpecEN01 Var Intv Var Intv [Exp]
   | SEWildcard
   deriving (Show, Eq, Ord)
 
@@ -259,5 +259,19 @@ substE :: [(Var, Exp)] -> Exp -> Exp
 substE env = go
   where
     go :: Exp -> Exp
-    go e@(EVar x) = EVar x `fromMaybe` lookup x env
+    go (EVar x) = EVar x `fromMaybe` lookup x env
+    go (ESpec p q e) = ESpec (substP env p) q e
+    go (EPartition p) = EPartition (substP env p)
     go e = embed $ go <$> project e
+
+
+substP :: [(Var, Exp)] -> Partition -> Partition
+substP env (Partition rs) =
+  Partition (substR env <$> rs)
+
+
+substR :: [(Var, Exp)] -> Range -> Range
+substR env (Range x l r) =
+  Range x (go l) (go r)
+  where
+    go = substE env
