@@ -47,3 +47,8 @@ invariantSeperates conds = do
     err = printf "%s is not one of `invariant` or `separates`"
     errSep = printf "There should be exactly one `separates` condition, given %s."
 
+unchainExps :: Exp -> [(Op2, Exp)] -> Exp
+unchainExps eLeft [] = eLeft
+unchainExps eLeft [(op2, eLast)] = EOp2 op2 eLeft eLast
+unchainExps eLeft ((op2, eNow) : oes) = 
+  EOp2 OAnd (EOp2 op2 eLeft eNow) (unchainExps eNow oes)

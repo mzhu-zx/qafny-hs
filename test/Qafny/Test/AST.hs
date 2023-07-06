@@ -22,7 +22,7 @@ interpTests :: TestTree
 interpTests = testGroup "AInterp Tests"
   [ testCase "Interpret ((1 - 1) - 2)" $
     ([], -2) @=?
-    interpExpEnv [("y", 1), ("x", 2)] exp1
+    interpExpEnv [("y", e1), ("x", e2)] exp1
   , testCase "Interpret (1 - x)" $
     ([(OSub, "x")], 1) @=?
     interpExp exp2
@@ -39,7 +39,9 @@ interpTests = testGroup "AInterp Tests"
     ([(OAdd, "x"), (OSub, "y")], 1) @=?
     interpExp exp5
   ]
-  where exp1 = EOp2 OSub (EOp2 OSub (ENum 1) (EVar "y")) (EVar "x")
+  where e1 = ENum 1
+        e2 = ENum 2
+        exp1 = EOp2 OSub (EOp2 OSub (ENum 1) (EVar "y")) (EVar "x")
         exp2 = EOp2 OSub (ENum 1) (EVar "x")
         exp3 = EOp2 OSub (EVar "x") (ENum 1)
         exp4 = EOp2 OSub (EVar "x") (EOp2 OSub (ENum 1) (EVar "y"))

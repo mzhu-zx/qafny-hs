@@ -128,13 +128,14 @@ stmts
                                                                           
                                                                           
 stmt :: { Stmt }
-  : "assert" expr ';'                 { SAssert $2                           }
+  : dafny                             { SDafny $1                            }
+  | "assert" expr ';'                 { SAssert $2                           }
   | "var" binding ';'                 { SVar $2 Nothing                      }
   | "var" binding ":=" expr ';'       { SVar $2 (Just $4)                    }
   | id ":=" expr ';'                  { SAssign $1 $3                        }
   | partition "*=" expr ';'           { SApply $1 $3                         }
   | "if" '(' expr ')' cond block
-    {% do sep <- separatesOnly $5; return $ SIf $3 sep $6                     }
+    {% do sep <- separatesOnly $5; return $ SIf $3 sep $6                    }
   | "for" id "in" '[' expr ".." expr ']' "with" expr conds block
     {% do (invs, sep) <- invariantSeperates $11; return $ SFor $2 $5 $7 $10 invs sep $12 }
                                                                           
@@ -168,22 +169,32 @@ expr
   | '_'                               { EWildcard              }
   | spec                              { $1                     }
   | partition                         { EPartition $1          }
-  | "H"                               { EHad                   }
-  | "QFT"                             { EQFT                   }
-  | "RQFT"                            { ERQFT                  }
+  | qops                              { $1                     }
   | "meas" id                         { EMea $2                }
   | "not" atomic                      { EOp1 ONot $2           }
   | "nor" '(' atomic ',' digits ')'   { EOp2 ONor $3 (ENum $5) }
   | "λ" '(' id "=>" expr ')'          { EEmit $ ELambda $3 $5  }
   | id '(' atomic ')'                 { EApp $1 $3             }
-  | atomic "&&" atomic                { EOp2 OAnd $1 $3        }
-  | atomic "||" atomic                { EOp2 OOr $1 $3         }
-  | cmpExpr                           { $1                     }
-  | arithExpr                         { $1                     }
-  | '(' expr ')'                      { $2                     }
+  | logicOrExp                        { $1                     }
+
+qops
+  : "H"                               { EHad                   }
+  | "QFT"                             { EQFT                   }
+  | "RQFT"                            { ERQFT                  }
+
+logicOrExp :: { Exp } 
+  : logicAndExp "||" logicOrExp       { EOp2 OOr $1 $3         }
+  | logicAndExp                       { $1 } 
+
+logicAndExp :: { Exp } 
+  : cmpExpr "&&" logicAndExp          { EOp2 OAnd $1 $3        }
+  | cmpExpr                           { $1 }
+
+cmpPartial
+ : cmp arithExpr  { ($1, $2) }
 
 cmpExpr :: { Exp }
- : expr cmp expr            { EOp2 $2 $1 $3 }
+ : arithExpr many(cmpPartial)         { unchainExps $1 $2  }
 
 cmp :: { Op2 }
  : '>'                      { OGt }
@@ -192,7 +203,8 @@ cmp :: { Op2 }
  | "<="                     { OLe }
 
 arithExpr :: { Exp }
- : expr arith expr            { EOp2 $2 $1 $3 }
+ : atomic arith arithExpr   { EOp2 $2 $1 $3 }
+ | atomic                   { $1 }
 
 arith :: { Op2 }
  : '+'                      { OAdd }
@@ -201,8 +213,10 @@ arith :: { Op2 }
  | '\%'                     { OMod }
 
 atomic                                                                      
-  : digits                            { ENum $1                              }
-  | id                                { EVar $1                              }
+  : digits                            { ENum $1                }
+  | id                                { EVar $1                }
+  | '(' expr ')'                      { $2                     }
+
 
 -- | Combinators 
 many(p)                                                                  

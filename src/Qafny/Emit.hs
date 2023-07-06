@@ -115,7 +115,7 @@ instance DafnyPrinter Binding where
   build (Binding x t) = x <!>  " : " <!> t
 
 instance DafnyPrinter QDafny where
-  build (QDafny s) = build s
+  build (QDafny s) = indent <> build s
 
 instance DafnyPrinter QMethod where
   build (QMethod idt bds rets reqs ens blockHuh) =

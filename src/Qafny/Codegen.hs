@@ -155,6 +155,7 @@ codegenToplevel'Method
 -- TODO: to keep emitted symbols for the same __qreg__ variable in a unique
 -- order, sorting those variables should also be the part of the calling
 -- convention  
+codegenToplevel'Method q@(QMethod v bds rts rqs ens Nothing) = return q
 codegenToplevel'Method q@(QMethod v bds rts rqs ens (Just block)) = do
   (countMeta, (countEmit, (rbdvsEmitR', rbdvsEmitB), (rqsCG, blockCG))) <-
     local (appkEnvWithBds bds) $
