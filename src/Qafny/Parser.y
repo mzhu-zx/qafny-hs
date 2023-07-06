@@ -4,6 +4,7 @@ import qualified Qafny.Lexer as L
 import           Qafny.ParserUtils
 import           Qafny.AST
 import           Control.Monad
+import           Data.Sum
 }
 
 %name runParser
@@ -81,11 +82,12 @@ AST
 toplevels                                                                 
   : many(toplevel)                    { $1                                   }
                                                                           
-toplevel :: { Toplevel }
-  :  dafny                            { QDafny $1                            }
-  | "method" id '(' bindings ')' "returns" '(' bindings ')' conds opt(block)                           {% (\(rs, es) -> QMethod $2 $4 $8 rs es $11) `fmap` (requireEnsures $10) }
+toplevel  :: { Toplevel }
+  :  dafny                            { inj (QDafny $1) }
+  | "method" id '(' bindings ')' "returns" '(' bindings ')' conds opt(block)                           
+    {%  ((\(rs, es) -> inj (QMethod $2 $4 $8 rs es $11)) `fmap` (requireEnsures $10)) }
   | "method" id '(' bindings ')' conds opt(block)                                                  
-    {% (\(rs, es) -> QMethod $2 $4 [] rs es $7) `fmap` (requireEnsures $6) }
+    {%  ((\(rs, es) -> inj (QMethod $2 $4 [] rs es $7)) `fmap` (requireEnsures $6)) }
 
 conds :: { [ Conds ] }
   : many(cond)                        { $1                                   }

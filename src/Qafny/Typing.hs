@@ -53,6 +53,7 @@ import           Data.Maybe            (listToMaybe, maybeToList)
 import qualified Data.Set              as Set
 import           GHC.Stack             (HasCallStack)
 import           Text.Printf           (printf)
+import           Data.Sum
 
 -- | Compute the type of the given expression
 typingExp
@@ -491,7 +492,7 @@ mergeSTuples
 -- Compute types of methods from the toplevel
 collectMethodTypes :: AST -> [(Var, Ty)]
 collectMethodTypes a = [ (idt, TMethod (bdTypes ins) (bdTypes outs))
-                       | QMethod idt ins outs _ _ _ <- a]
+                       | Toplevel (Inl (QMethod idt ins outs _ _ _)) <- a]
 
 collectMethodTypesM :: AST -> Map.Map Var Ty
 collectMethodTypesM = Map.fromList . collectMethodTypes

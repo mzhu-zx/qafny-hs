@@ -47,4 +47,3 @@ invariantSeperates conds = do
     err = printf "%s is not one of `invariant` or `separates`"
     errSep = printf "There should be exactly one `separates` condition, given %s."
 
-

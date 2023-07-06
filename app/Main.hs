@@ -23,7 +23,7 @@ pipeline s =
   withAST <$> scanAndParse s
   where
     configs = Configs { stdlibPath = "../../external/" }
-    withAST :: AST -> IO (Production Txt.Text)
+    -- withAST :: AST -> IO (Production Txt.Text)
     withAST ast = do
       let prod = produceCodegen configs ast
       -- print trace

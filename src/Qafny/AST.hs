@@ -2,16 +2,25 @@
     DeriveFoldable
   , DeriveFunctor
   , DeriveTraversable
+  , FlexibleInstances
+  , FlexibleContexts
+  , UndecidableInstances
+  , MultiParamTypeClasses
   , TemplateHaskell
   , TypeFamilies
+  , TypeOperators
   #-}
 
 module Qafny.AST where
 
-import           Data.Functor.Foldable    (Recursive (cata, project), Corecursive (embed))
+import           Data.Functor.Foldable
+    ( Corecursive (embed)
+    , Recursive (cata, project)
+    )
 import           Data.Functor.Foldable.TH (makeBaseFunctor)
+import           Data.Maybe               (fromMaybe)
+import           Data.Sum
 import           Text.Printf              (printf)
-import Data.Maybe (fromMaybe)
 
 data AExp
   = ANat Int
@@ -145,11 +154,16 @@ type Separates = Partition
 newtype Block = Block { inBlock :: [Stmt] }
   deriving (Show, Eq)
 
-data Toplevel
-  = QMethod Var Bindings Returns Requires Ensures (Maybe Block)
-  | QDafny String 
-  deriving (Eq, Show)
-  
+data QMethod = QMethod Var Bindings Returns Requires Ensures (Maybe Block)
+  deriving (Show)
+newtype QDafny = QDafny String
+  deriving (Show)
+
+newtype Toplevel = Toplevel { unTop :: QMethod :+: QDafny }
+  deriving (Show)
+
+instance (Injection q (QMethod :+: QDafny)) =>Injection q Toplevel where
+  inj = Toplevel . inj
 
 data Intv = Intv Exp Exp
   deriving (Eq, Show, Ord)
@@ -254,16 +268,16 @@ fVars = cata go
     go fvs       = concat fvs
 
 
--- | Perform expression subtitution 
+-- | Perform expression subtitution
 --
 substE :: [(Var, Exp)] -> Exp -> Exp
 substE env = go
   where
     go :: Exp -> Exp
-    go (EVar x) = EVar x `fromMaybe` lookup x env
-    go (ESpec p q e) = ESpec (substP env p) q e
+    go (EVar x)       = EVar x `fromMaybe` lookup x env
+    go (ESpec p q e)  = ESpec (substP env p) q e
     go (EPartition p) = EPartition (substP env p)
-    go e = embed $ go <$> project e
+    go e              = embed $ go <$> project e
 
 
 substP :: [(Var, Exp)] -> Partition -> Partition

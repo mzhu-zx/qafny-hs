@@ -5,6 +5,7 @@ module Qafny.Emit where
 import           Qafny.AST
 
 import           Control.Monad.Reader
+import           Data.Sum
 import           Data.Maybe             (maybeToList)
 import           Data.Text.Lazy         (Text)
 import qualified Data.Text.Lazy.Builder as TB
@@ -113,8 +114,10 @@ instance DafnyPrinter QTy where
 instance DafnyPrinter Binding where
   build (Binding x t) = x <!>  " : " <!> t
 
-instance DafnyPrinter Toplevel where
+instance DafnyPrinter QDafny where
   build (QDafny s) = build s
+
+instance DafnyPrinter QMethod where
   build (QMethod idt bds rets reqs ens blockHuh) =
     "method " <!> idt <!> " " <!>
     withParen (byComma bds) <!> buildRets rets <!>
@@ -126,6 +129,12 @@ instance DafnyPrinter Toplevel where
 
 instance DafnyPrinter Block where
   build = withBrace . withIncr2 . byLine . inBlock
+
+instance DafnyPrinter Toplevel where
+  build t = case unTop t of
+    Inl q -> build q
+    Inr q -> build q
+    
 
 instance DafnyPrinter Stmt where
   build (SEmit (SBlock b)) = build b

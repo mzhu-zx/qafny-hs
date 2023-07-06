@@ -40,7 +40,7 @@ import           Data.Functor          ((<&>))
 import qualified Data.List             as List
 import qualified Data.Map.Strict       as Map
 import           Text.Printf           (printf)
-
+import           Data.Sum
 
 -- Qafny
 import           Qafny.AInterp         (reduceExp)
@@ -100,8 +100,9 @@ codegenAST ast = do
   let prelude = (mkIncludes path <$> includes) ++ imports
   let methods = collectMethodTypesM ast
   main <- local (kEnv %~ Map.union methods) $ mapM codegenToplevel ast
-  return $ prelude ++ main ++ finale
+  return $ injQDafny prelude ++ main ++ injQDafny finale
   where
+    injQDafny = (inj <$>)
     mkIncludes path s =
       QDafny $ "include \"" ++ path ++ "/" ++ s ++ "\""
     includes =
@@ -128,8 +129,9 @@ codegenToplevel
      )
   => Toplevel
   -> m Toplevel
-codegenToplevel q@(QMethod {}) = codegenToplevel'Method q
-codegenToplevel q = return q
+codegenToplevel t = case unTop t of
+  Inl q -> inj <$> codegenToplevel'Method q
+  Inr q -> return . inj $ q
 
 codegenToplevel'Method
   :: ( Has (Reader TEnv) sig m
@@ -137,8 +139,8 @@ codegenToplevel'Method
      , Has (Error String) sig m
      , Has Trace sig m
      )
-  => Toplevel
-  -> m Toplevel
+  => QMethod
+  -> m QMethod
 -- | The method calling convention is defined as followed.
 --
 -- [params] __qreg__ variables are replaced in place in the parameter list by
