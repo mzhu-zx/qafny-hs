@@ -59,7 +59,7 @@ import           Qafny.Env
     , TState
     , kEnv
     , sSt
-    , xSt
+    , xSt, emitSt
     )
 import           Qafny.TypeUtils
 import           Qafny.Typing
@@ -78,9 +78,8 @@ import           Qafny.Typing
     , typingGuard
     )
 import           Qafny.Utils
-    ( bindingOfRangeQTy
+    ( rbindingOfRangeQTy
     , findEmitRangeQTy
-    , gensymEmit
     , gensymEmitRangeQTy
     , gensymLoc
     , gensymRangeQTy
@@ -136,25 +135,31 @@ codegenToplevel
   => Toplevel
   -> m Toplevel
 codegenToplevel q@(QMethod v bds rts rqs ens (Just block)) = do
-  (countMeta, (countEmit, (vsEmitR', vsEmitB), ((vRs, rqsCG), blockCG))) <-
+  let vIns = [ vIn | Binding vIn (TQReg _) <- bds ]
+  (countMeta, (countEmit, (rbdvsEmitR', rbdvsEmitB), (rqsCG, blockCG))) <-
     local (appkEnvWithBds bds) $
-    runWriter @[(String, Range)] (codegenRequires rqs) `resumeGensym` codegenBlock block
-
+    codegenRequires rqs `resumeGensym` codegenBlock block
+  mapFinalEmits <- use emitSt
+  let bdRets =
+        [ Binding vEmit tEmit
+        | vMeta <- vIns
+        , (RBinding (Range vMetaE _ _, tEmit), vEmit) <- Map.toList mapFinalEmits
+        , vMetaE == vMeta]
+  ensCG <- codegenEnsures ens
   -- Gensym symbols are in the reverse order!
-  let vsEmitR = reverse vsEmitR'
-
+  let rbdvsEmitR = reverse rbdvsEmitR'
   -- todo: report on the gensym state with a report effect!
   let stmtsDeclare = [ SVar (Binding vEmit tEmit) Nothing
-                     | (Binding _ tEmit, vEmit) <- vsEmitB ]
+                     | (RBinding (Range vMeta _ _, tEmit), vEmit) <- rbdvsEmitB
+                     , vMeta `notElem` vIns ||
+                       vEmit `notElem` Map.elems mapFinalEmits ]
   let bdsCG = do
-        bd@(Binding x ty) <- bds
+        bd@(Binding vIn ty) <- bds
         case ty of
           TQReg _ -> [ Binding vEmit tEmit
-                     | (Binding y tEmit, vEmit) <- vsEmitR
-                     , maybe False (\(Range x' _ _) -> x' == x) (lookup vEmit vRs) 
-                     ]
+                     | (RBinding (Range vMeta _ _, tEmit), vEmit) <- rbdvsEmitR
+                     , vMeta == vIn ]
           _    -> return bd
-  trace $ printf "Generated method bindings: %s" (show vRs)
   let blockStmts =
         [ qComment "Forward Declaration" ]
         ++ stmtsDeclare
@@ -162,7 +167,7 @@ codegenToplevel q@(QMethod v bds rts rqs ens (Just block)) = do
            , qComment "Method Definition"
            ]
         ++ inBlock blockCG
-  return $ QMethod v bdsCG rts rqsCG ens (Just . Block $ blockStmts)
+  return $ QMethod v bdsCG (rts ++ bdRets) rqsCG ensCG (Just . Block $ blockStmts)
 codegenToplevel q = return q
 
 
@@ -170,8 +175,8 @@ codegenRequires
   :: ( Has (State TState)  sig m
      , Has (Error String) sig m
      , Has (Gensym String) sig m
-     , Has (Gensym Binding) sig m
-     , Has (Writer [(String, Range)]) sig m
+     , Has (Gensym RBinding) sig m
+     -- , Has (Writer [(String, Range)]) sig m
      )
   => Requires -> m Requires
 codegenRequires rqs = forM rqs $ \rq ->
@@ -183,11 +188,19 @@ codegenRequires rqs = forM rqs $ \rq ->
       sSt %= (at sLoc ?~ (s, qt))
       let xMap = [ (v, [(r, sLoc)]) | r@(Range v _ _) <- unpackPart s ]
       vsREmit <- unpackPart s `forM` (\r -> (,r) <$> r `gensymEmitRangeQTy` qt)
-      tell vsREmit
+      -- tell vsREmit
       let (vsEmit, _)  = unzip vsREmit
       xSt %= Map.unionWith (++) (Map.fromListWith (++) xMap)
       ands <$> codegenSpecExp (zip vsEmit (unpackPart s)) qt espec
     _ -> return rq
+
+codegenEnsures
+  :: ( Has (State TState)  sig m
+     , Has (Error String) sig m
+     )
+  => Ensures -> m Ensures
+codegenEnsures ens =
+  (ands <$>) <$> forM ens codegenAssertion
 
 -- | Take in the emit variable corresponding to each range in the partition and the
 -- partition type; with which, generate expressions (predicates)
@@ -262,7 +275,7 @@ codegenBlock
      , Has (State TState)  sig m
      , Has (Error String) sig m
      , Has (Gensym String) sig m
-     , Has (Gensym Binding) sig m
+     , Has (Gensym RBinding) sig m
      , Has Trace sig m
      )
   => Block
@@ -275,7 +288,7 @@ codegenStmts
      , Has (State TState)  sig m
      , Has (Error String) sig m
      , Has (Gensym String) sig m
-     , Has (Gensym Binding) sig m
+     , Has (Gensym RBinding) sig m
      , Has Trace sig m
      )
   => [Stmt]
@@ -295,7 +308,7 @@ codegenStmt
      , Has (State TState)  sig m
      , Has (Error String) sig m
      , Has (Gensym String) sig m
-     , Has (Gensym Binding) sig m
+     , Has (Gensym RBinding) sig m
      , Has Trace sig m
      )
   => Stmt
@@ -397,13 +410,27 @@ codegenStmt (SFor idx boundl boundr eG invs seps body) = do
   let innerFor = SEmit $ SForEmit idx boundl boundr [] $ Block stmtsBody
   return $ stmtsCastB ++ stmtsDupG ++ stmtsPrelude ++ [innerFor]
 
-codegenStmt (SAssert (ESpec s qt espec)) = do
+codegenStmt (SAssert e@(ESpec{})) = do
+  (SAssert <$>) <$> codegenAssertion e
+  -- check type or cast here
+
+codegenStmt s = error $ "Unimplemented:\n\t" ++ show s ++ "\n"
+
+-- | Take in a _assertional_ expression, perform type check and emit
+-- corresponding expressions
+--
+-- TODO: Would it be better named as _checkAndCodegen_?
+codegenAssertion
+  :: ( Has (State TState)  sig m
+     , Has (Error String) sig m )
+  => Exp -> m [Exp]
+codegenAssertion (ESpec s qt espec) = do
   st@(STuple(_, pResolved, qtResolved)) <- resolvePartition s
   when (qt /= qtResolved) $ throwError' (errTypeMismatch st)
   when (List.sort (unpackPart s) /= List.sort (unpackPart pResolved)) $
     throwError' $ errIncompletePartition st
   vsEmit <- unpackPart s `forM` (`findEmitRangeQTy` qt)
-  (SAssert <$>) <$> codegenSpecExp (zip vsEmit (unpackPart s)) qt espec
+  codegenSpecExp (zip vsEmit (unpackPart s)) qt espec
   where
     errTypeMismatch st =
       printf "The partition %s is not of type %s.\nResolved: %s"
@@ -411,10 +438,8 @@ codegenStmt (SAssert (ESpec s qt espec)) = do
     errIncompletePartition st@(STuple(_, p, _)) =
       printf "The partition %s is a sub-partition of %s.\nResolved: %s"
       (show s) (show p) (show st)
-  -- check type or cast here
+codegenAssertion e = return [e]
 
-
-codegenStmt s = error $ "Unimplemented:\n\t" ++ show s ++ "\n"
 
 --------------------------------------------------------------------------------
 -- * Conditional
@@ -426,7 +451,7 @@ codegenStmt'If'Had
      , Has (State TState)  sig m
      , Has (Error String) sig m
      , Has (Gensym String) sig m
-     , Has (Gensym Binding) sig m
+     , Has (Gensym RBinding) sig m
      , Has Trace sig m
      )
   => STuple -> STuple -> Block
@@ -455,7 +480,7 @@ codegenStmt'For'Had
      , Has (State TState)  sig m
      , Has (Error String) sig m
      , Has (Gensym String) sig m
-     , Has (Gensym Binding) sig m
+     , Has (Gensym RBinding) sig m
      , Has Trace sig m
      )
   => STuple -> STuple -> Var -> Var -> Block
@@ -493,7 +518,7 @@ codegenStmt'For'Had stB stG vEmitG vIdx b = do
 mergeHadGuard
   :: ( Has (State TState) sig m
      , Has (Error String) sig m
-     , Has (Gensym Binding) sig m
+     , Has (Gensym RBinding) sig m
      )
   => STuple -> STuple -> Exp -> Exp -> m [Stmt]
 mergeHadGuard = mergeHadGuardWith (ENum 0)
@@ -501,7 +526,7 @@ mergeHadGuard = mergeHadGuardWith (ENum 0)
 mergeHadGuardWith
   :: ( Has (State TState) sig m
      , Has (Error String) sig m
-     , Has (Gensym Binding) sig m
+     , Has (Gensym RBinding) sig m
      )
   => Exp -> STuple -> STuple -> Exp -> Exp -> m [Stmt]
 mergeHadGuardWith eBase stG' stB cardBody cardStashed = do
@@ -526,9 +551,9 @@ hadGuardMergeExp vEmit tEmit cardMain cardStash eBase =
 -- correspondence
 cardStatesCorr
   :: (Has (Error String) sig m)
-  => [(Binding, Var, Var)]
+  => [(Var, Var)]
   -> m (Exp, Exp)
-cardStatesCorr ((_, vStash ,vMain) : _) =
+cardStatesCorr ((vStash ,vMain) : _) =
   return ( EEmit . ECard . EVar $ vStash
          , EEmit . ECard . EVar $ vMain)
 cardStatesCorr a =
@@ -536,16 +561,16 @@ cardStatesCorr a =
 
 
 -- Merge the two partitions in correspondence
-mergeEmitted :: [(Binding, Var, Var)] -> [Stmt]
+mergeEmitted :: [(Var, Var)] -> [Stmt]
 mergeEmitted corr =
   [ SAssign vMain (EOp2 OAdd (EVar vMain) (EVar vStash))
-  | (_, vMain, vStash) <- corr ]
+  | (vMain, vStash) <- corr ]
 
 
 -- | Generate statements that allocate qubits if it's Nor; otherwise, keep the
 -- source statement as is.
 codegenAlloc
-  :: ( Has (Gensym Binding) sig m
+  :: ( Has (Gensym RBinding) sig m
      , Has (Gensym String) sig m
      , Has (State TState)  sig m
      , Has (Error String) sig m
@@ -594,7 +619,7 @@ codegenCastEmit
 castWithOp
   :: ( Has (Error String) sig m
      , Has (State TState) sig m
-     , Has (Gensym Binding) sig m
+     , Has (Gensym RBinding) sig m
      )
   => String -> STuple -> QTy -> m [Stmt]
 castWithOp op s newTy =
@@ -614,7 +639,7 @@ castWithOp op s newTy =
 castPartitionEN
   :: ( Has (Error String) sig m
      , Has (State TState) sig m
-     , Has (Gensym Binding) sig m
+     , Has (Gensym RBinding) sig m
      )
   => STuple -> m [Stmt]
 castPartitionEN st@(STuple (locS, s, qtS)) = do
@@ -635,21 +660,21 @@ castPartitionEN st@(STuple (locS, s, qtS)) = do
 dupState
   :: ( Has (Error String) sig m
      , Has (State TState) sig m
-     , Has (Gensym Binding) sig m
+     , Has (Gensym RBinding) sig m
      )
-  => Partition -> m ([Stmt], [(Binding, Var, Var)])
+  => Partition -> m ([Stmt], [(Var, Var)])
 dupState s' = do
   STuple (locS, s, qtS) <- resolvePartition s'
   -- let tEmit = typingQEmit qtS
   -- let bds = [ Binding x tEmit | x <- varFromPartition s]
   let rs = unpackPart s
-  let bds = [ bindingOfRangeQTy r qtS | r <- rs ]
+  let bds = [ rbindingOfRangeQTy r qtS | r <- rs ]
   -- generate a set of fresh emit variables as the stashed partition
-  vsEmitFresh <- bds `forM` gensym    -- do not manipulate the `emitSt` here
-  vsEmitPrev <- bds `forM` gensymEmit -- the only place where state is used!
+  vsEmitFresh <- rs `forM` (`gensymRangeQTy` qtS) -- do not manipulate the `emitSt` here
+  vsEmitPrev <- rs `forM` (`gensymEmitRangeQTy` qtS) -- the only place where state is used!
   let stmts = [ SAssign vEmitFresh (EVar vEmitPrev)
               | (vEmitFresh, vEmitPrev) <- zip vsEmitFresh vsEmitPrev ]
-  return (stmts, zip3 bds vsEmitPrev vsEmitFresh)
+  return (stmts, zip vsEmitPrev vsEmitFresh)
 
 -- | Assemble a partition collected from the guard with bounds and emit a check.
 --

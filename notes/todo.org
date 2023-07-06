@@ -2,10 +2,13 @@
 
 * Parsing
 
-** =separates= and =invariants=
+** DONE =separates= and =invariants=
 Hack the parser to support =separates= and =invariant=s directives supplied in
 any order 
 
+*** Solution
+Parse all "side-conditions" at the same time and then check if conditions parsed
+is well-formed.
 
 
 * Codegen

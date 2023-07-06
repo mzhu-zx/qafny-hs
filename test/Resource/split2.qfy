@@ -1,5 +1,8 @@
 method SplitTest()
 {
   var q : qreg[10] := nor(10, 0);
+  assert { q[0 .. 10] : nor ↦ _ };
   q[2..8] *= H;
+  assert { q[2 .. 8] : had ↦ _ };
+  assert { q[0 .. 2], q[8 .. 10] : nor ↦ _ };
 }

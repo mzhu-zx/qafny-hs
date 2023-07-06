@@ -155,7 +155,8 @@ qspec ::  { SpecExp }
     "⊗" id "∈" '[' expr ".." expr ']' '.'             {- 18 -}
     tuple(expr)
                                       { SESpecCH01 $2 (Intv $5 $7) $11 (Intv $14 $16) $19           }
-  | {- empty -}                       { SEWildcard }
+
+  | '_'                               { SEWildcard }
 
 tuple(p)
   : '(' manyComma(p) ')'              { $2 }

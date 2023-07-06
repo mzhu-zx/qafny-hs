@@ -51,40 +51,40 @@ gensymLoc
 gensymLoc = (Loc <$>) . gensym . variable . Loc
 
 -- | Generate a new symbol for emit variable and add it to emitSt
-gensymEmit
-  :: ( Has (Gensym Binding) sig m
-     , Has (State TState) sig m
-     )
-  => Binding -> m String
-gensymEmit b = do
-  name <- gensym b
-  emitSt %= (at b ?~ name)
-  return name
+-- gensymEmit
+--   :: ( Has (Gensym RBinding) sig m
+--      , Has (State TState) sig m
+--      )
+--   => Binding -> m String
+-- gensymEmit b = do
+--   name <- gensym b
+--   emitSt %= (at b ?~ name)
+--   return name
 
 
 
 -- TODO: Binding can cause aliasing, Var is not sufficient, I need to define
 -- `RBinding = (Range, Ty)` to avoid aliasing!
 -- | Lookup for emitted symbols in emitSt
-findEmitSym
-  :: ( Has (State TState) sig m
-     , Has (Error String) sig m
-     )
-  => Binding -> m String
-findEmitSym b = do
-  st <- use emitSt
-  rethrowMaybe
-    (return (st ^. at b)) $
-    printf "the binding `%s` cannot be found in the renaming state.\n%s"
-      (show b)
-      (show st)
+-- findEmitSym
+--   :: ( Has (State TState) sig m
+--      , Has (Error String) sig m
+--      )
+--   => Binding -> m String
+-- findEmitSym b = do
+--   st <- use emitSt
+--   rethrowMaybe
+--     (return (st ^. at b)) $
+--     printf "the binding `%s` cannot be found in the renaming state.\n%s"
+--       (show b)
+--       (show st)
 
--- | Remove bindings from emitSt
-removeEmitBindings
-  :: ( Has (State TState) sig m)
-  => [Binding] -> m ()
-removeEmitBindings bs = do
-  emitSt %= (`Map.withoutKeys` Set.fromList bs)
+-- -- | Remove bindings from emitSt
+-- removeEmitBindings
+--   :: ( Has (State TState) sig m)
+--   => [Binding] -> m ()
+-- removeEmitBindings bs = do
+--   emitSt %= (`Map.withoutKeys` Set.fromList bs)
 
 --------------------------------------------------------------------------------
 -- * Gensym Utils
@@ -92,29 +92,32 @@ removeEmitBindings bs = do
 -- $doc
 -- The following functions operate on a 'Range' and a 'QTy', form a `Binding` to
 -- be normalized to a variable name, perform modification and query to the emit
--- symbol state and the __Gensym Binding__ effect.
+-- symbol state and the __Gensym RBinding__ effect.
 -- $doc
 --------------------------------------------------------------------------------
-bindingOfRangeQTy :: Range -> QTy -> Binding
-bindingOfRangeQTy r qty = Binding (variable r) (typingQEmit qty)
+rbindingOfRangeQTy :: Range -> QTy -> RBinding
+rbindingOfRangeQTy r qty = RBinding (r, typingQEmit qty)
 
 -- | Generate a varaible from a 'Range' and its 'QTy' and add the corresponding
 -- 'Binding' into 'emitSt'   
 gensymEmitRangeQTy
-  :: ( Has (Gensym Binding) sig m
+  :: ( Has (Gensym RBinding) sig m
      , Has (State TState) sig m
      )
-  => Range -> QTy-> m String
-gensymEmitRangeQTy r qty =
-  gensymEmit $ bindingOfRangeQTy r qty
+  => Range -> QTy-> m Var
+gensymEmitRangeQTy r qty = do
+  let rb = rbindingOfRangeQTy r qty
+  name <- gensym rb
+  emitSt %= (at rb ?~ name)
+  return name
 
 -- | Similar to 'gensymEmitRangeQTy' but gensym without adding it the 'emitSt'
 gensymRangeQTy
-  :: ( Has (Gensym Binding) sig m
+  :: ( Has (Gensym RBinding) sig m
      )
-  => Range -> QTy-> m String
+  => Range -> QTy -> m Var
 gensymRangeQTy r qty =
-  gensym $ bindingOfRangeQTy r qty
+  gensym $ rbindingOfRangeQTy r qty
 
 findEmitRangeQTy
   :: ( Has (State TState) sig m
@@ -122,14 +125,22 @@ findEmitRangeQTy
      )
   => Range -> QTy -> m String
 findEmitRangeQTy r qty = do
-  findEmitSym $ bindingOfRangeQTy r qty
+  let rb = rbindingOfRangeQTy r qty
+  st <- use emitSt
+  rethrowMaybe
+    (return (st ^. at rb)) $
+    printf "the binding `%s` cannot be found in the renaming state.\n%s"
+      (show rb)
+      (show st)
+
+  -- findEmitSym $ rbindingOfRangeQTy r qty
 
 removeEmitRangeQTys
   :: ( Has (State TState) sig m)
   => [(Range, QTy)] -> m ()
-removeEmitRangeQTys rqts =
-  removeEmitBindings $ uncurry bindingOfRangeQTy <$> rqts
-
+removeEmitRangeQTys rqts = do
+  let bs = uncurry rbindingOfRangeQTy <$> rqts
+  emitSt %= (`Map.withoutKeys` Set.fromList bs)
 
 --------------------------------------------------------------------------------
 

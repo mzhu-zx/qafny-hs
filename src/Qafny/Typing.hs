@@ -36,11 +36,8 @@ import           Qafny.TypeUtils
 import           Qafny.Utils
     ( exp2AExp
     , findEmitRangeQTy
-    , findEmitSym
-    , gensymEmit
     , gensymEmitRangeQTy
     , gensymLoc
-    , removeEmitBindings
     , removeEmitRangeQTys
     , rethrowMaybe
     )
@@ -164,7 +161,7 @@ splitScheme
   :: ( Has (Error String) sig m
      , Has (Gensym String) sig m
      , Has (State TState) sig m
-     , Has (Gensym Binding) sig m
+     , Has (Gensym RBinding) sig m
      , Has Trace sig m
      )
   => STuple
@@ -214,7 +211,7 @@ splitScheme'
   :: ( Has (Error String) sig m
      , Has (Gensym String) sig m
      , Has (State TState) sig m
-     , Has (Gensym Binding) sig m
+     , Has (Gensym RBinding) sig m
      , Has Trace sig m
      )
   => STuple
@@ -305,7 +302,7 @@ splitScheme' s@(STuple (loc, p, qt)) rSplitTo@(Range to _ _) = do
 -- casting if needed.  return 'Nothing' if no cast is required.
 splitThenCastScheme
   :: ( Has (Gensym String) sig m
-     , Has (Gensym Binding) sig m
+     , Has (Gensym RBinding) sig m
      , Has (State TState) sig m
      , Has Trace sig m
      , Has (Error String) sig m
@@ -403,7 +400,7 @@ checkSubtypeQ t1 t2 =
 retypePartition1
   :: ( Has (Error String) sig m
      , Has (State TState) sig m
-     , Has (Gensym Binding) sig m
+     , Has (Gensym RBinding) sig m
      )
   => STuple -> QTy -> m (Var, Ty, Var, Ty)
 retypePartition1 st qtNow = do
@@ -427,7 +424,7 @@ retypePartition1 st qtNow = do
 castScheme
   :: ( Has (Error String) sig m
      , Has (State TState) sig m
-     , Has (Gensym Binding) sig m
+     , Has (Gensym RBinding) sig m
      )
   => STuple -> QTy -> m CastScheme
 castScheme st qtNow = do
@@ -456,7 +453,7 @@ castScheme st qtNow = do
 retypePartition
   :: ( Has (Error String) sig m
      , Has (State TState) sig m
-     , Has (Gensym Binding) sig m
+     , Has (Gensym RBinding) sig m
      )
   => STuple -> QTy -> m CastScheme
 retypePartition = castScheme

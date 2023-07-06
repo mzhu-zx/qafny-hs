@@ -44,7 +44,7 @@ data TEnv = TEnv
 data TState = TState
   { _sSt    :: Map.Map Loc (Partition, QTy) -- partition type state
   , _xSt    :: Map.Map Var [(Range, Loc)] -- range reference state
-  , _emitSt :: Map.Map Binding Var
+  , _emitSt :: Map.Map RBinding Var
   }
 
 $(makeLenses ''TState)

@@ -8,13 +8,16 @@ import opened QPreludeUntyped
 import opened Seq
 import opened Power2
 
-method Test (q_0_10___seqL_nat_R___0__emit : seq<nat>) returns (q_0_1___seqL_nat_R___3__emit : seq<nat>, q_1_10___seqL_nat_R___2__emit : seq<nat>)
-  requires 10 == |q_0_10___seqL_nat_R___0__emit| && (forall i : nat | 0 <= i < 10 :: q_0_10___seqL_nat_R___0__emit[i] == 0)
+method SplitTest ()
 {
   // Forward Declaration
+  var q_0_1___seqL_nat_R___3__emit : seq<nat>;
+  var q_1_10___seqL_nat_R___2__emit : seq<nat>;
   var q_0_1___seqL_nat_R___1__emit : seq<nat>;
+  var q_0_10___seqL_nat_R___0__emit : seq<nat>;
   
   // Method Definition
+  q_0_10___seqL_nat_R___0__emit := seq<nat>(10, _ => 0);
   q_0_1___seqL_nat_R___1__emit := q_0_10___seqL_nat_R___0__emit[0..1];
   q_1_10___seqL_nat_R___2__emit := q_0_10___seqL_nat_R___0__emit[1..10];
   // Cast TNor ==> THad

@@ -155,6 +155,7 @@ instance DafnyPrinter Stmt where
 instance DafnyPrinter Exp where
   build (ENum n) = build $ show n
   build (EVar v) = build v
+  build (EBool b) = build $ if b then "true" else "false"
   build (EEmit e) = build e
   build (EOp2 op e1 e2) = buildOp2 op (build e1) (build e2)
   -- parentheses are critical to forall expressions!

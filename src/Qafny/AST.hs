@@ -48,6 +48,9 @@ data Binding
 
 type Bindings = [Binding]
 
+newtype RBinding = RBinding { unRBinding :: (Range, Ty) }
+  deriving (Show, Eq, Ord)
+
 data Op2
   = OAnd
   | OOr

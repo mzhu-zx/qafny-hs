@@ -6,14 +6,6 @@
 module Qafny.Variable where
 
 import           Qafny.AST
-    ( Binding (..)
-    , Exp (..)
-    , Loc (..)
-    , Op2 (..)
-    , Range (..)
-    , Ty (..)
-    , typeTag
-    )
 import           Text.Printf (printf)
 
 class Variable s where
@@ -44,9 +36,11 @@ instance Variable Range where
   variable (Range x l r) =
     printf "%s_%s_%s" (variable x) (variable l) (variable r)
 
-
 instance Variable Binding where
   variable (Binding s t) = variable (s, t)
+
+instance Variable RBinding where
+  variable = variable . unRBinding
 
 instance Variable Loc where
   variable = ("loc__" ++) . deref
