@@ -97,27 +97,28 @@ codegenAST
   -> m AST
 codegenAST ast = do
   path <- asks stdlibPath
-  let mkRequires s = QDafny $ "include \"" ++ path ++ "/" ++ s ++ "\""
-  let requires =
-        [ "QPreludeUntyped.dfy"
-        , "libraries/src/Collections/Sequences/Seq.dfy"
-        , "libraries/src/NonlinearArithmetic/Power2.dfy"
-        ]
-  let prelude =
-        (mkRequires <$> requires)
-          ++ [ QDafny ""
-             , QDafny "// target Dafny version: 3.12.0"
-             , QDafny "abstract module QafnyDefault {"
-             , QDafny "import opened QPreludeUntyped"
-             , QDafny "import opened Seq"
-             , QDafny "import opened Power2"
-             , QDafny ""
-             ]
-  let finale =
-        [QDafny "}"]
+  let prelude = (mkIncludes path <$> includes) ++ imports
   let methods = collectMethodTypesM ast
   main <- local (kEnv %~ Map.union methods) $ mapM codegenToplevel ast
   return $ prelude ++ main ++ finale
+  where
+    mkIncludes path s =
+      QDafny $ "include \"" ++ path ++ "/" ++ s ++ "\""
+    includes =
+      [ "QPreludeUntyped.dfy"
+      , "libraries/src/Collections/Sequences/Seq.dfy"
+      , "libraries/src/NonlinearArithmetic/Power2.dfy"
+      ]
+    imports =
+      [ QDafny ""
+      , QDafny "// target Dafny version: 3.12.0"
+      , QDafny "abstract module QafnyDefault {"
+      , QDafny "import opened QPreludeUntyped"
+      , QDafny "import opened Seq"
+      , QDafny "import opened Power2"
+      , QDafny ""
+      ]
+    finale = [ QDafny "}" ]
 
 codegenToplevel
   :: ( Has (Reader TEnv) sig m
@@ -128,140 +129,75 @@ codegenToplevel
   => Toplevel
   -> m Toplevel
 codegenToplevel q@(QMethod v bds rts rqs ens (Just block)) = do
-  let vIns = [ vIn | Binding vIn (TQReg _) <- bds ]
+  -- |^ The method calling convention is defined as followed.
+  --
+  -- [params] __qreg__ variables are replaced in place in the parameter list by
+  -- the ranges
+  --
+  -- [returns] all emitted symbols present in the final emit state will be
+  -- appended to the original __returns__ list in the order the same as the
+  -- presence of those in the parameter list
+  -- 
+  -- [rest] do forward declarations in the method body
+  --
+  -- TODO: to keep emitted symbols for the same __qreg__ variable in a unique
+  -- order, sorting those variables should also be the part of the calling
+  -- convention  
+
   (countMeta, (countEmit, (rbdvsEmitR', rbdvsEmitB), (rqsCG, blockCG))) <-
     local (appkEnvWithBds bds) $
     codegenRequires rqs `resumeGensym` codegenBlock block
+
   mapFinalEmits <- use emitSt
-  let bdRets =
-        [ Binding vEmit tEmit
-        | vMeta <- vIns
-        , (RBinding (Range vMetaE _ _, tEmit), vEmit) <- Map.toList mapFinalEmits
-        , vMetaE == vMeta]
   ensCG <- codegenEnsures ens
+
   -- Gensym symbols are in the reverse order!
   let rbdvsEmitR = reverse rbdvsEmitR'
-  -- todo: report on the gensym state with a report effect!
-  let stmtsDeclare = [ SVar (Binding vEmit tEmit) Nothing
-                     | (RBinding (Range vMeta _ _, tEmit), vEmit) <- rbdvsEmitB
-                     , vMeta `notElem` vIns ||
-                       vEmit `notElem` Map.elems mapFinalEmits ]
-  let bdsCG = do
+  let bdsCG = genBdsReqs rbdvsEmitR
+      bdRets = genBdsRets $ Map.toList mapFinalEmits
+      stmtsDeclare = fDecls rbdvsEmitB mapFinalEmits
+  let blockStmts = concat
+        [ return $ qComment "Forward Declaration"
+        , stmtsDeclare
+        , [ SDafny "" , qComment "Method Definition"]
+        , inBlock blockCG
+        ]
+  return $ QMethod v bdsCG (rts ++ bdRets) rqsCG ensCG (Just . Block $ blockStmts)
+  where
+    -- | All __qreg__ parameters
+    vIns = [ vIn | Binding vIn (TQReg _) <- bds ]
+
+    -- | Forward declare all symbols emitted during Codegen except for those to
+    -- be put in the __returns__ clause
+    fDecls rbdvsEmitB mapFinalEmits =
+       [ SVar (Binding vEmit tEmit) Nothing
+       | (RBinding (Range vMeta _ _, tEmit), vEmit) <- rbdvsEmitB
+       , vMeta `notElem` vIns ||
+         vEmit `notElem` Map.elems mapFinalEmits ]
+
+    -- | For each qreg variable passed into the method, filter its corresponding
+    -- symbols emitted during 'codegenRequires' and replace the meta variable in
+    -- the method parameter list with the emited variables
+    genBdsReqs rbdvsEmitR = do
         bd@(Binding vIn ty) <- bds
         case ty of
-          TQReg _ -> [ Binding vEmit tEmit
-                     | (RBinding (Range vMeta _ _, tEmit), vEmit) <- rbdvsEmitR
-                     , vMeta == vIn ]
+          TQReg _ ->
+            [ Binding vEmit tEmit
+            | (RBinding (Range vMeta _ _, tEmit), vEmit) <- rbdvsEmitR
+            , vMeta == vIn ]
           _    -> return bd
-  let blockStmts =
-        [ qComment "Forward Declaration" ]
-        ++ stmtsDeclare
-        ++ [ SDafny ""
-           , qComment "Method Definition"
-           ]
-        ++ inBlock blockCG
-  return $ QMethod v bdsCG (rts ++ bdRets) rqsCG ensCG (Just . Block $ blockStmts)
+          
+    -- | For each qreg variable passed into the method, we need to look it up in
+    -- the final 'emitSt', filter their emit symbols out and add to the
+    -- __returns__ clause 
+    genBdsRets finalEmits =
+        [ Binding vEmit tEmit
+        | vMeta <- vIns
+        , (RBinding (Range vMetaE _ _, tEmit), vEmit) <- finalEmits
+        , vMetaE == vMeta]
+
 codegenToplevel q = return q
 
-
-codegenRequires
-  :: ( Has (State TState)  sig m
-     , Has (Error String) sig m
-     , Has (Gensym String) sig m
-     , Has (Gensym RBinding) sig m
-     -- , Has (Writer [(String, Range)]) sig m
-     )
-  => Requires -> m Requires
-codegenRequires rqs = forM rqs $ \rq ->
-  -- TODO: I need to check if partitions from different `requires` clauses are
-  -- indeed disjoint!
-  case rq of
-    ESpec s qt espec -> do
-      sLoc <- gensymLoc "requires"
-      sSt %= (at sLoc ?~ (s, qt))
-      let xMap = [ (v, [(r, sLoc)]) | r@(Range v _ _) <- unpackPart s ]
-      vsREmit <- unpackPart s `forM` (\r -> (,r) <$> r `gensymEmitRangeQTy` qt)
-      -- tell vsREmit
-      let (vsEmit, _)  = unzip vsREmit
-      xSt %= Map.unionWith (++) (Map.fromListWith (++) xMap)
-      ands <$> codegenSpecExp (zip vsEmit (unpackPart s)) qt espec
-    _ -> return rq
-
-codegenEnsures
-  :: ( Has (State TState)  sig m
-     , Has (Error String) sig m
-     )
-  => Ensures -> m Ensures
-codegenEnsures ens =
-  (ands <$>) <$> forM ens codegenAssertion
-
--- | Take in the emit variable corresponding to each range in the partition and the
--- partition type; with which, generate expressions (predicates)
-codegenSpecExp
-  :: ( Has (Error String) sig m )
-  => [(Var, Range)] -> QTy -> SpecExp -> m [Exp]
-codegenSpecExp vrs p e =
-  case (p, e) of
-    (_, SEWildcard) -> return []
-    (TNor, SESpecNor idx es) -> do
-      checkListCorr vrs es
-      -- In x[l .. r]
-      -- @
-      --   forall idx | 0 <= idx < (r - l) :: xEmit[idx] == eBody
-      -- @
-      let eSelect x = EEmit (ESelect (EVar x) (EVar idx))
-      return . concat $
-        [ [ reduceExp (er `eSub` el) `eEq` EEmit (ECard (EVar v))
-          , EForall (natB idx) eBound (eSelect v `eEq` eBody)
-          ]
-        | ((v, Range _ el er), eBody) <- zip vrs es
-        , let eBound = Just (eIntv idx (ENum 0) (reduceExp (er `eSub` el))) ]
-    (TEN, SESpecEN idx (Intv l r) eValues) -> do
-      checkListCorr vrs eValues
-      -- In x[? .. ?] where l and r bound the indicies of basis-kets
-      -- @
-      --   forall idx | l <= idx < r :: xEmit[idx] == eBody
-      -- @
-      let eBound = Just $ eIntv idx l r
-      let eSelect x = EEmit (ESelect (EVar x) (EVar idx))
-      return . concat $
-        [ [ r `eEq` EEmit (ECard (EVar vE))
-          , EForall (natB idx) eBound (EOp2 OEq (eSelect vE) eV) ]
-        | ((vE, _), eV) <- zip vrs eValues
-        , eV /= EWildcard ]
-      -- In x[l .. r]
-      -- @
-      --   forall idxS | lS <= idxS < rS ::
-      --   forall idxT | 0 <= idxT < rT - lT ::
-      --   xEmit[idxS][idxT] == eBody
-      -- @
-    (TEN01, SESpecEN01 idxSum (Intv lSum rSum) idxTen (Intv lTen rTen) eValues) -> do
-      -- todo: also emit bounds!
-      checkListCorr vrs eValues
-      return $ do
-        ((vE, Range _ el er), eV) <- zip vrs eValues
-        when (eV == EWildcard) mzero
-        let eBoundSum = Just $ eIntv idxSum lSum rSum
-        let eBoundTen = Just $ eIntv idxTen (ENum 0) (er `eSub` el)
-        let eForallSum = EForall (natB idxSum) eBoundSum
-        let eForallTen = EForall (natB idxTen) eBoundTen
-        let eSel = (EVar vE `eAt` EVar idxSum) `eAt` EVar idxTen
-        let eBody = EOp2 OEq eSel eV
-        return . eForallSum . eForallTen $ eBody
-    _ -> throwError' $ printf "%s is not compatible with the specification %s"
-         (show p) (show e)
-
-checkListCorr
-  :: ( Has (Error String) sig m
-     , Show a
-     , Show b
-     )
-  => [a] -> [b] -> m ()
-checkListCorr vsEmit eValues =
-  unless (length vsEmit == length eValues) $
-    throwError' $ printf
-      "The number of elements doesn't agree with each other: %s %s"
-      (show vsEmit) (show eValues)
 
 codegenBlock
   :: ( Has (Reader TEnv) sig m
@@ -408,30 +344,6 @@ codegenStmt (SAssert e@(ESpec{})) = do
   -- check type or cast here
 
 codegenStmt s = error $ "Unimplemented:\n\t" ++ show s ++ "\n"
-
--- | Take in a _assertional_ expression, perform type check and emit
--- corresponding expressions
---
--- TODO: Would it be better named as _checkAndCodegen_?
-codegenAssertion
-  :: ( Has (State TState)  sig m
-     , Has (Error String) sig m )
-  => Exp -> m [Exp]
-codegenAssertion (ESpec s qt espec) = do
-  st@(STuple(_, pResolved, qtResolved)) <- resolvePartition s
-  when (qt /= qtResolved) $ throwError' (errTypeMismatch st)
-  when (List.sort (unpackPart s) /= List.sort (unpackPart pResolved)) $
-    throwError' $ errIncompletePartition st
-  vsEmit <- unpackPart s `forM` (`findEmitRangeQTy` qt)
-  codegenSpecExp (zip vsEmit (unpackPart s)) qt espec
-  where
-    errTypeMismatch st =
-      printf "The partition %s is not of type %s.\nResolved: %s"
-      (show s) (show qt) (show st)
-    errIncompletePartition st@(STuple(_, p, _)) =
-      printf "The partition %s is a sub-partition of %s.\nResolved: %s"
-      (show s) (show p) (show st)
-codegenAssertion e = return [e]
 
 
 --------------------------------------------------------------------------------
@@ -764,3 +676,131 @@ doubleHadCounter vCounter =
   SAssign vCounter $ EOp2 OMul (ENum 2) (EVar vCounter)
 
 
+--------------------------------------------------------------------------------
+-- * Specification Related
+--------------------------------------------------------------------------------
+
+codegenRequires
+  :: ( Has (State TState)  sig m
+     , Has (Error String) sig m
+     , Has (Gensym String) sig m
+     , Has (Gensym RBinding) sig m
+     -- , Has (Writer [(String, Range)]) sig m
+     )
+  => Requires -> m Requires
+codegenRequires rqs = forM rqs $ \rq ->
+  -- TODO: I need to check if partitions from different `requires` clauses are
+  -- indeed disjoint!
+  case rq of
+    ESpec s qt espec -> do
+      sLoc <- gensymLoc "requires"
+      sSt %= (at sLoc ?~ (s, qt))
+      let xMap = [ (v, [(r, sLoc)]) | r@(Range v _ _) <- unpackPart s ]
+      vsREmit <- unpackPart s `forM` (\r -> (,r) <$> r `gensymEmitRangeQTy` qt)
+      -- tell vsREmit
+      let (vsEmit, _)  = unzip vsREmit
+      xSt %= Map.unionWith (++) (Map.fromListWith (++) xMap)
+      ands <$> codegenSpecExp (zip vsEmit (unpackPart s)) qt espec
+    _ -> return rq
+
+codegenEnsures
+  :: ( Has (State TState)  sig m
+     , Has (Error String) sig m
+     )
+  => Ensures -> m Ensures
+codegenEnsures ens =
+  (ands <$>) <$> forM ens codegenAssertion
+
+
+-- | Take in an /assertional/ expression, perform type check and emit
+-- corresponding expressions
+--
+-- TODO: Would it be better named as _checkAndCodegen_?
+codegenAssertion
+  :: ( Has (State TState)  sig m
+     , Has (Error String) sig m )
+  => Exp -> m [Exp]
+codegenAssertion (ESpec s qt espec) = do
+  st@(STuple(_, pResolved, qtResolved)) <- resolvePartition s
+  when (qt /= qtResolved) $ throwError' (errTypeMismatch st)
+  when (List.sort (unpackPart s) /= List.sort (unpackPart pResolved)) $
+    throwError' $ errIncompletePartition st
+  vsEmit <- unpackPart s `forM` (`findEmitRangeQTy` qt)
+  codegenSpecExp (zip vsEmit (unpackPart s)) qt espec
+  where
+    errTypeMismatch st =
+      printf "The partition %s is not of type %s.\nResolved: %s"
+      (show s) (show qt) (show st)
+    errIncompletePartition st@(STuple(_, p, _)) =
+      printf "The partition %s is a sub-partition of %s.\nResolved: %s"
+      (show s) (show p) (show st)
+codegenAssertion e = return [e]
+
+
+-- | Take in the emit variable corresponding to each range in the partition and the
+-- partition type; with which, generate expressions (predicates)
+codegenSpecExp
+  :: ( Has (Error String) sig m )
+  => [(Var, Range)] -> QTy -> SpecExp -> m [Exp]
+codegenSpecExp vrs p e =
+  case (p, e) of
+    (_, SEWildcard) -> return []
+    (TNor, SESpecNor idx es) -> do
+      checkListCorr vrs es
+      -- In x[l .. r]
+      -- @
+      --   forall idx | 0 <= idx < (r - l) :: xEmit[idx] == eBody
+      -- @
+      let eSelect x = EEmit (ESelect (EVar x) (EVar idx))
+      return . concat $
+        [ [ reduceExp (er `eSub` el) `eEq` EEmit (ECard (EVar v))
+          , EForall (natB idx) eBound (eSelect v `eEq` eBody)
+          ]
+        | ((v, Range _ el er), eBody) <- zip vrs es
+        , let eBound = Just (eIntv idx (ENum 0) (reduceExp (er `eSub` el))) ]
+    (TEN, SESpecEN idx (Intv l r) eValues) -> do
+      checkListCorr vrs eValues
+      -- In x[? .. ?] where l and r bound the indicies of basis-kets
+      -- @
+      --   forall idx | l <= idx < r :: xEmit[idx] == eBody
+      -- @
+      let eBound = Just $ eIntv idx l r
+      let eSelect x = EEmit (ESelect (EVar x) (EVar idx))
+      return . concat $
+        [ [ r `eEq` EEmit (ECard (EVar vE))
+          , EForall (natB idx) eBound (EOp2 OEq (eSelect vE) eV) ]
+        | ((vE, _), eV) <- zip vrs eValues
+        , eV /= EWildcard ]
+      -- In x[l .. r]
+      -- @
+      --   forall idxS | lS <= idxS < rS ::
+      --   forall idxT | 0 <= idxT < rT - lT ::
+      --   xEmit[idxS][idxT] == eBody
+      -- @
+    (TEN01, SESpecEN01 idxSum (Intv lSum rSum) idxTen (Intv lTen rTen) eValues) -> do
+      -- todo: also emit bounds!
+      checkListCorr vrs eValues
+      return $ do
+        ((vE, Range _ el er), eV) <- zip vrs eValues
+        when (eV == EWildcard) mzero
+        let eBoundSum = Just $ eIntv idxSum lSum rSum
+        let eBoundTen = Just $ eIntv idxTen (ENum 0) (er `eSub` el)
+        let eForallSum = EForall (natB idxSum) eBoundSum
+        let eForallTen = EForall (natB idxTen) eBoundTen
+        let eSel = (EVar vE `eAt` EVar idxSum) `eAt` EVar idxTen
+        let eBody = EOp2 OEq eSel eV
+        return . eForallSum . eForallTen $ eBody
+    _ -> throwError' $ printf "%s is not compatible with the specification %s"
+         (show p) (show e)
+
+checkListCorr
+  :: ( Has (Error String) sig m
+     , Show a
+     , Show b
+     )
+  => [a] -> [b] -> m ()
+checkListCorr vsEmit eValues =
+  unless (length vsEmit == length eValues) $
+    throwError' $ printf
+      "The number of elements doesn't agree with each other: %s %s"
+      (show vsEmit) (show eValues)

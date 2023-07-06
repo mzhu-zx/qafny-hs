@@ -29,8 +29,6 @@ dependencies:
 - fused-effects
 - fused-effects-lens
 - recursion-schemes
-- tasty
-- tasty-hunit
 
 ghc-options:
 - -Wall
@@ -74,3 +72,5 @@ tests:
     - -with-rtsopts=-N
     dependencies:
     - qafny-hs
+    - tasty
+    - tasty-hunit
