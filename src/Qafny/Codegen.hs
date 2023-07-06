@@ -128,22 +128,32 @@ codegenToplevel
      )
   => Toplevel
   -> m Toplevel
-codegenToplevel q@(QMethod v bds rts rqs ens (Just block)) = do
-  -- |^ The method calling convention is defined as followed.
-  --
-  -- [params] __qreg__ variables are replaced in place in the parameter list by
-  -- the ranges
-  --
-  -- [returns] all emitted symbols present in the final emit state will be
-  -- appended to the original __returns__ list in the order the same as the
-  -- presence of those in the parameter list
-  -- 
-  -- [rest] do forward declarations in the method body
-  --
-  -- TODO: to keep emitted symbols for the same __qreg__ variable in a unique
-  -- order, sorting those variables should also be the part of the calling
-  -- convention  
+codegenToplevel q@(QMethod {}) = codegenToplevel'Method q
+codegenToplevel q = return q
 
+codegenToplevel'Method
+  :: ( Has (Reader TEnv) sig m
+     , Has (State TState)  sig m
+     , Has (Error String) sig m
+     , Has Trace sig m
+     )
+  => Toplevel
+  -> m Toplevel
+-- | The method calling convention is defined as followed.
+--
+-- [params] __qreg__ variables are replaced in place in the parameter list by
+-- the ranges
+--
+-- [returns] all emitted symbols present in the final emit state will be
+-- appended to the original __returns__ list in the order the same as the
+-- presence of those in the parameter list
+-- 
+-- [rest] do forward declarations in the method body
+--
+-- TODO: to keep emitted symbols for the same __qreg__ variable in a unique
+-- order, sorting those variables should also be the part of the calling
+-- convention  
+codegenToplevel'Method q@(QMethod v bds rts rqs ens (Just block)) = do
   (countMeta, (countEmit, (rbdvsEmitR', rbdvsEmitB), (rqsCG, blockCG))) <-
     local (appkEnvWithBds bds) $
     codegenRequires rqs `resumeGensym` codegenBlock block
@@ -195,8 +205,6 @@ codegenToplevel q@(QMethod v bds rts rqs ens (Just block)) = do
         | vMeta <- vIns
         , (RBinding (Range vMetaE _ _, tEmit), vEmit) <- finalEmits
         , vMetaE == vMeta]
-
-codegenToplevel q = return q
 
 
 codegenBlock
