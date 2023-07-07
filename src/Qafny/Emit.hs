@@ -7,7 +7,7 @@ import           Qafny.AST
 import           Control.Monad.Reader
 import           Data.Sum
 import           Data.Maybe             (maybeToList)
-import           Data.Text.Lazy         (Text)
+import           Data.Text.Lazy         (Text, unpack)
 import qualified Data.Text.Lazy.Builder as TB
 import qualified GHC.Num as TB
 import qualified GHC.Enum as TB
@@ -77,6 +77,11 @@ class DafnyPrinter a where
 a <!> b = build a <> build b
 {-# INLINE (<!>) #-}
 
+(<+>) :: (DafnyPrinter a, DafnyPrinter b) => a -> b -> Builder
+a <+> b = a <!> " " <!> b
+{-# INLINE (<+>) #-}
+
+
 instance DafnyPrinter Builder where
   build = id
   {-# INLINE build #-}
@@ -97,7 +102,7 @@ instance DafnyPrinter Ty where
   build TNat     = build "nat"
   build TInt     = build "int"
   build TBool    = build "bool"
-  build (TQReg n) = "qreg" <!> " " <!> n
+  build (TQReg n) = "qreg" <+> n
   build (TSeq t)  = "seq<" <!> t <!> ">"
   build _        = undefined
 
@@ -112,19 +117,19 @@ instance DafnyPrinter QTy where
   build TEN01  = build "ch01"
 
 instance DafnyPrinter Binding where
-  build (Binding x t) = x <!>  " : " <!> t
+  build (Binding x t) = x <+>  ":" <+> t
 
 instance DafnyPrinter QDafny where
   build (QDafny s) = indent <> build s
 
 instance DafnyPrinter QMethod where
   build (QMethod idt bds rets reqs ens blockHuh) =
-    "method " <!> idt <!> " " <!>
-    withParen (byComma bds) <!> buildRets rets <!>
+    "method " <!> idt <+>
+    withParen (byComma bds) <> buildRets rets <!>
     (withIncr2 . byLine' $ (indent <!>) <$> reqEns) <!>
     byLine' (maybeToList blockHuh)
     where buildRets [] = mempty
-          buildRets r  = build " returns " <> withParen (byComma r)
+          buildRets r  = " returns" <+> withParen (byComma r)
           reqEns = buildConds "requires" reqs ++ buildConds "ensures" ens
 
 instance DafnyPrinter Block where
@@ -212,3 +217,6 @@ buildConds s = map ((s <!> " ") <!>)
 
 texify :: DafnyPrinter a => a -> Text
 texify = TB.toLazyText . flip runReader 0 . doBuild . build
+
+showEmit :: DafnyPrinter a => a -> String
+showEmit = unpack . texify 

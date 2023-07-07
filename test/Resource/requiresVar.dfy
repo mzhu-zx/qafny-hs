@@ -9,7 +9,7 @@ import opened Seq
 import opened Power2
 
 method EN (q_0_n___seqL_nat_R___0__emit : seq<nat>, q_m_10___seqL_nat_R___1__emit : seq<nat>, n : nat, m : nat) returns (q_0_n___seqL_nat_R___0__emit : seq<nat>, q_m_10___seqL_nat_R___1__emit : seq<nat>)
-  requires n < m < 10
+  requires n < m && m < 10
   requires 10 == |q_0_n___seqL_nat_R___0__emit| && (forall i : nat | 0 <= i < 10 :: q_0_n___seqL_nat_R___0__emit[i] == 0) && 10 == |q_m_10___seqL_nat_R___1__emit| && (forall i : nat | 0 <= i < 10 :: q_m_10___seqL_nat_R___1__emit[i] == 1)
 {
   // Forward Declaration

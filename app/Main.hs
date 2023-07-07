@@ -1,6 +1,5 @@
 module Main (main) where
 
-import           Qafny.AST          (AST)
 import           Qafny.Config
 import           Qafny.Emit         (texify)
 import           Qafny.Parser       (scanAndParse)

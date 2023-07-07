@@ -246,6 +246,10 @@ leftPartitions =
     -- TODO: query If and For recursively
     perStmt _            = []
 
+-- | Collect all partitions with their types from spec expressions
+specPartitionQTys :: [Exp] -> [(Partition, QTy)]
+specPartitionQTys es = [ (p, qty) | (ESpec p qty _) <- es ]
+
 
 (.:) :: (c -> d) -> (a -> b -> c) -> a -> b -> d
 (.:) g f2 x y = g (f2 x y)
@@ -271,6 +275,7 @@ fVars = cata go
 -- | Perform expression subtitution
 --
 substE :: [(Var, Exp)] -> Exp -> Exp
+substE [] = id
 substE env = go
   where
     go :: Exp -> Exp
@@ -281,11 +286,13 @@ substE env = go
 
 
 substP :: [(Var, Exp)] -> Partition -> Partition
-substP env (Partition rs) =
-  Partition (substR env <$> rs)
+substP [] = id
+substP env =
+  Partition . (substR env <$> ) . unpackPart
 
 
 substR :: [(Var, Exp)] -> Range -> Range
+substR [] r = r
 substR env (Range x l r) =
   Range x (go l) (go r)
   where

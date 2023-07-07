@@ -1,13 +1,12 @@
 module Qafny.Runner where
 import           Control.Algebra                 (run)
-import qualified Control.Carrier.Error.Church    as ErrC (runError)
 import qualified Control.Carrier.Error.Either    as ErrE (runError)
 
 import           Control.Carrier.Reader          (runReader)
 import           Control.Carrier.State.Strict    (runState)
 import           Control.Carrier.Trace.Returning (runTrace)
-import           Qafny.AST                       (AST, Ty)
-import           Qafny.Codegen                  (codegenAST)
+import           Qafny.AST                       (AST)
+import           Qafny.Codegen                   (codegenAST)
 import           Qafny.Config                    (Configs)
 import           Qafny.Env
 

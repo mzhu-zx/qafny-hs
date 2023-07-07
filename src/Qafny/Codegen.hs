@@ -7,9 +7,6 @@
   #-}
 
 module Qafny.Codegen where
-
-
-
 -- | Code Generation through Fused Effects
 
 
@@ -40,10 +37,10 @@ import           Data.Functor          ((<&>))
 import qualified Data.List             as List
 import qualified Data.Map.Strict       as Map
 import           Text.Printf           (printf)
-import           Data.Sum
+import qualified Data.Sum              as Sum
 
 -- Qafny
-import           Qafny.AInterp         (reduceExp)
+import           Qafny.Partial         (reduceExp, pevalP)
 import           Qafny.AST
 import           Qafny.ASTFactory
 import           Qafny.Config
@@ -81,6 +78,21 @@ import           Qafny.Utils
     , rbindingOfRangeQTy
     , throwError'
     )
+import Qafny.AST (specPartitionQTys)
+import Control.Arrow (Arrow(first))
+
+--------------------------------------------------------------------------------
+-- * Introduction
+-- $doc
+-- Qafny-to-Dafny translation is organized into two stages:
+--
+--   * Type Inference/Checking 
+--   * Code Generation
+--
+-- The 'Qafny.Codegen' module implements the translation and is responsible of
+-- calling typing functions to provide hints and perform type checkings.
+-- $doc
+--------------------------------------------------------------------------------
 
 --------------------------------------------------------------------------------
 -- * Codegen
@@ -102,7 +114,7 @@ codegenAST ast = do
   main <- local (kEnv %~ Map.union methods) $ mapM codegenToplevel ast
   return $ injQDafny prelude ++ main ++ injQDafny finale
   where
-    injQDafny = (inj <$>)
+    injQDafny = (Sum.inj <$>)
     mkIncludes path s =
       QDafny $ "include \"" ++ path ++ "/" ++ s ++ "\""
     includes =
@@ -130,8 +142,8 @@ codegenToplevel
   => Toplevel
   -> m Toplevel
 codegenToplevel t = case unTop t of
-  Inl q -> inj <$> codegenToplevel'Method q
-  Inr q -> return . inj $ q
+  Sum.Inl q -> Sum.inj <$> codegenToplevel'Method q
+  Sum.Inr q -> return . Sum.inj $ q
 
 codegenToplevel'Method
   :: ( Has (Reader TEnv) sig m
@@ -181,7 +193,7 @@ codegenToplevel'Method q@(QMethod v bds rts rqs ens (Just block)) = do
     vIns = [ vIn | Binding vIn (TQReg _) <- bds ]
 
     -- | Forward declare all symbols emitted during Codegen except for those to
-    -- be put in the __returns__ clause
+    -- be put in the __returns__ clause.
     fDecls rbdvsEmitB mapFinalEmits =
        [ SVar (Binding vEmit tEmit) Nothing
        | (RBinding (Range vMeta _ _, tEmit), vEmit) <- rbdvsEmitB
@@ -190,7 +202,7 @@ codegenToplevel'Method q@(QMethod v bds rts rqs ens (Just block)) = do
 
     -- | For each qreg variable passed into the method, filter its corresponding
     -- symbols emitted during 'codegenRequires' and replace the meta variable in
-    -- the method parameter list with the emited variables
+    -- the method parameter list with the emited variables.
     genBdsReqs rbdvsEmitR = do
         bd@(Binding vIn ty) <- bds
         case ty of
@@ -200,9 +212,9 @@ codegenToplevel'Method q@(QMethod v bds rts rqs ens (Just block)) = do
             , vMeta == vIn ]
           _    -> return bd
           
-    -- | For each qreg variable passed into the method, we need to look it up in
-    -- the final 'emitSt', filter their emit symbols out and add to the
-    -- __returns__ clause 
+    -- | For each qreg variable passed into the method, look it up in the final
+    -- 'emitSt', filter their emit symbols out and add to the __returns__
+    -- clause.
     genBdsRets finalEmits =
         [ Binding vEmit tEmit
         | vMeta <- vIns
@@ -270,22 +282,28 @@ codegenStmt (SApply s EHad) = do
     Nothing -> return []
     Just ss -> codegenSplitEmit ss
   -- use sSt >>= \s' -> trace $ printf "[precast] sSt: %s" (show s')
-  ret <- (stmtsSplit ++) <$> castWithOp opCast stSplit THad
-  -- use sSt >>= \s' -> trace $ printf "[codegen] sSt: %s" (show s')
-  return ret
+  (stmtsSplit ++) <$> castWithOp opCast stSplit THad
   where
     opCastHad TNor = return "CastNorHad"
     opCastHad t = throwError $ "type `" ++ show t ++ "` cannot be casted to Had type"
 
--- | The semantics of a 'SApply' is tricky because of the timing to do the split
--- and cast. Here's the current strategy:
+-- | The semantics of a 'SApply' is tricky because of timing to do
+-- split-then-cast. Here's the current strategy:
 --
--- If the current session is not in EN or EN10 type, compute the
+-- If the current session is not in 'TEN' or 'TEN10' type, compute the
 -- 'splitThenCastScheme' and apply the scheme to the codegen.
 --
 -- If however, the current session is in EN or EN10 type, perform no split at
--- all! (Although applying a lambda to a range that requires tearing a range
--- apart is not advised and is undefined. )
+-- all! There are two reasons for that
+--
+--   1. It's not advised and therefore undefined to apply a lambda to a part of
+-- range that requires tearing apart the range itself.
+--
+--   2. 'EN' partitions are inseprable. 
+--
+-- TODO: However, apply the lambda to any part of a range in a 'EN10' partition
+-- is defined, while this is not implemented yet.
+-- 
 codegenStmt (SApply s@(Partition ranges) e@(EEmit (ELambda {}))) = do
   st'@(STuple (_, _, qt)) <- resolvePartition s
   checkSubtypeQ qt TEN
@@ -295,8 +313,8 @@ codegenStmt (SApply s@(Partition ranges) e@(EEmit (ELambda {}))) = do
     _   -> throwError errRangeGt1
   (_, maybeScheme) <- splitThenCastScheme st' TEN r
   stmts <- codegenSplitThenCastEmit maybeScheme
-  -- it's important not to use the fully resolved `s` here, because the OP should
-  -- only be applied to the sub-partition specified in the annotation.
+  -- | It's important not to use the fully resolved `s` here because the OP
+  -- should only be applied to the sub-partition specified in the annotation.
   vsEmit <- unpackPart s `forM` (`findEmitRangeQTy` qt)
   return $ mkMapCall `map` vsEmit
   where
@@ -320,6 +338,8 @@ codegenStmt (SIf e seps b) = do
   return $ stmtsCastB ++ stmts
 
 codegenStmt (SFor idx boundl boundr eG invs seps body) = do
+  let invPQts = first (pevalP [(idx, boundl)]) <$> specPartitionQTys invs
+  trace $ printf "[invariants] partial-ed partitions: %s" (show invPQts)
   -- resolve the type of the guard
   stG@(STuple (_, sG, qtG)) <- typingGuard eG
   stB'@(STuple (_, sB, qtB)) <- resolvePartitions . leftPartitions . inBlock $ body
@@ -329,7 +349,6 @@ codegenStmt (SFor idx boundl boundr eG invs seps body) = do
   -- what to do with the guard partition is unsure...
   (stmtsDupG, gCorr) <- dupState sG
   (rL, eConstraint) <- makeLoopRange sG boundl boundr
-
   (stmtsPrelude, stmtsBody) <- case qtG of
     THad ->
       do (stGSplited, schemeSMaybe) <- splitScheme stG rL
@@ -461,7 +480,6 @@ hadGuardMergeExp vEmit tEmit cardMain cardStash eBase =
           constExp $ EOp2 OAdd eBase (ENum 1))
         (EEmit $ EMakeSeq tInSeq cardStash $ constExp eBase)
      ]
-
 
 -- Emit two expressions representing the number of kets in two states in
 -- correspondence
