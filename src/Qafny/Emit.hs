@@ -44,25 +44,23 @@ withParen b = build '(' <> b <> build ')'
 withBrace :: Builder -> Builder
 withBrace b = indent <> build "{\n" <> b <> indent <> build "}\n"
 
+
+-- | Build and separate by 'op' but without leading or trailing separator
+by :: (DafnyPrinter b, DafnyPrinter a) => b -> [a] -> Builder
+by op []     = mempty
+by op (x:xs) = foldl (\ys y -> ys <!> op <!> build y) (build x) xs
+
 byComma :: DafnyPrinter a => [a] -> Builder
-byComma []     = mempty
-byComma (x:xs) = foldl (\ys y -> ys  <> build ", " <> build y) (build x) xs
+byComma = by ", "
 
-byLine :: DafnyPrinter a => [a] -> Builder
-byLine = foldr (\y ys -> y <!> line <!> ys) mempty
-
--- | Build each element and separate them by a newline and produce any newline
--- in the end
-byLine'' :: DafnyPrinter a => [a] -> Builder
-byLine'' (x : xs) = foldl (\ys y -> ys <!> line <!> y) (build x) xs
-byLine'' []       = mempty
+-- | Build and separate by line but with a trailing newline 
+byLineT :: DafnyPrinter a => [a] -> Builder
+byLineT = foldr (\y ys -> y <!> line <!> ys) mempty
 
 -- | Build each element and separate them by a newline without producing any
 -- newline in the end but with a leading newline if the list is nonempty
 byLine' :: DafnyPrinter a => [a] -> Builder
-byLine' = foldr (\y ys -> line <!> y <!> ys) mempty
-
-
+byLine' a = (if null a then mempty else line) <> by line a
 
 lineHuh :: [a] -> Builder
 lineHuh [] = mempty
@@ -96,7 +94,7 @@ instance DafnyPrinter String where
   build = return . TB.fromString
 
 instance DafnyPrinter AST where
-  build = byLine
+  build = by line
 
 instance DafnyPrinter Ty where
   build TNat     = build "nat"
@@ -133,7 +131,7 @@ instance DafnyPrinter QMethod where
           reqEns = buildConds "requires" reqs ++ buildConds "ensures" ens
 
 instance DafnyPrinter Block where
-  build = withBrace . withIncr2 . byLine . inBlock
+  build = withBrace . withIncr2 . byLineT . inBlock
 
 instance DafnyPrinter Toplevel where
   build t = case unTop t of
