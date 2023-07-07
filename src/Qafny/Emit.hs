@@ -59,12 +59,11 @@ byLineT = foldr (\y ys -> y <!> line <!> ys) mempty
 
 -- | Build each element and separate them by a newline without producing any
 -- newline in the end but with a leading newline if the list is nonempty
-byLine' :: DafnyPrinter a => [a] -> Builder
-byLine' a = (if null a then mempty else line) <> by line a
+byLineL :: DafnyPrinter a => [a] -> Builder
+byLineL a = lineHuh a <> by line a
 
-lineHuh :: [a] -> Builder
-lineHuh [] = mempty
-lineHuh _  = line
+lineHuh :: Foldable t => t a -> Builder
+lineHuh a = if null a then mempty else line
 
 infixr 6 <!>
 
@@ -122,10 +121,13 @@ instance DafnyPrinter QDafny where
 
 instance DafnyPrinter QMethod where
   build (QMethod idt bds rets reqs ens blockHuh) =
-    "method " <!> idt <+>
-    withParen (byComma bds) <> buildRets rets <!>
-    (withIncr2 . byLine' $ (indent <!>) <$> reqEns) <!>
-    byLine' (maybeToList blockHuh)
+    "method " <!> idt
+    <+> withParen (byComma bds) <> buildRets rets
+    <!> lineHuh reqEns
+    <!> (withIncr2 . by line $ (indent <!>) <$> reqEns)
+    -- add a tailing newline if we have conds and blocks
+    <!> lineHuh blockHuh
+    <!> by line (maybeToList blockHuh)
     where buildRets [] = mempty
           buildRets r  = " returns" <+> withParen (byComma r)
           reqEns = buildConds "requires" reqs ++ buildConds "ensures" ens
