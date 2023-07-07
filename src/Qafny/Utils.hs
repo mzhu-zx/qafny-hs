@@ -13,10 +13,11 @@ import           Control.Lens                 (at, (?~), (^.))
 import           Effect.Gensym                (Gensym, gensym)
 
 --
+import           Control.Effect.Trace
 import qualified Data.Map.Strict              as Map
 import qualified Data.Set                     as Set
 import           Qafny.AST
-import           Qafny.Env                    (TState, emitSt)
+import           Qafny.Env                    (TState, emitSt, sSt)
 import           Qafny.TypeUtils              (typingQEmit)
 import           Qafny.Variable               (Variable (variable))
 import           Text.Printf                  (printf)
@@ -99,7 +100,7 @@ rbindingOfRangeQTy :: Range -> QTy -> RBinding
 rbindingOfRangeQTy r qty = RBinding (r, typingQEmit qty)
 
 -- | Generate a varaible from a 'Range' and its 'QTy' and add the corresponding
--- 'Binding' into 'emitSt'   
+-- 'Binding' into 'emitSt'
 gensymEmitRangeQTy
   :: ( Has (Gensym RBinding) sig m
      , Has (State TState) sig m
@@ -143,7 +144,6 @@ removeEmitRangeQTys rqts = do
   emitSt %= (`Map.withoutKeys` Set.fromList bs)
 
 --------------------------------------------------------------------------------
-
 exp2AExp
   :: (Has (Error String) sig m)
   => Exp -> m AExp
@@ -152,3 +152,13 @@ exp2AExp (ENum n) = return $ ANat n
 exp2AExp e = throwError @String $
   printf "%s cannot be projected to an AExp." (show e)
 
+
+
+dumpSSt
+  :: ( Has (State TState) sig m
+     , Has Trace sig m
+     )
+  => m ()
+dumpSSt = do
+  s <- use sSt
+  trace $ printf "[info] Dumped sSt:\n%s" (show s)

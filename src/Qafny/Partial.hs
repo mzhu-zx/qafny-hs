@@ -7,6 +7,7 @@ module Qafny.Partial where
 import           Control.Applicative (Applicative (liftA2))
 import           Control.Arrow       (Arrow (first))
 import           Qafny.AST
+import           Qafny.ASTFactory
 
 --------------------------------------------------------------------------------
 -- $doc
@@ -30,6 +31,11 @@ instance Monad PEval where
   (PEval (l1, a1)) >>= f =
     let (l2, a2) = pEval $ f a1
     in PEval (l1 ++ l2, a2)  
+
+pEvalToMaybe :: PEval a -> Maybe a
+pEvalToMaybe p = case pEval p of
+  ([], a) -> Just a
+  _       -> Nothing
 
 flipSign :: PEval a -> PEval a
 flipSign = PEval . first flipStack . pEval
@@ -73,3 +79,6 @@ reduceR (Range x el er) = Range x (reduceExp el) (reduceExp er)
 
 pevalP :: [(Var, Exp)] -> Partition -> Partition
 pevalP env = reduceP . substP env
+
+sizeOfRangeP :: Range -> Maybe Int
+sizeOfRangeP (Range x el er) = pEvalToMaybe . interpExp $ er `eSub` el

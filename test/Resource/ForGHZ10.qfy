@@ -3,7 +3,7 @@ method GHZ(q : qreg[10])
 {
   // induce superposition on the first qubit
   q[0..1] *= H;
-
+  assert { q [0..1] : had ↦ _ };
   // always take the ith qubit as the controller 
   for i in [0 .. 9] with q[i .. (i + 1)]
     // provide hints on how to perform separation

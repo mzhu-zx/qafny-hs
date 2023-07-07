@@ -264,8 +264,9 @@ splitScheme' s@(STuple (loc, p, qt)) rSplitTo@(Range to _ _) = do
 
 
 
--- | Get the original range splitting from and a list of quotient ranges to be
--- split into.
+-- | Compute, in order to split the given range from a resolved partition, which
+-- range in the partition needs to be split as well as the resulting quotient
+-- ranges.     
 getRangeSplits
   :: ( Has (Error String) sig m
      , Has Trace sig m
@@ -317,15 +318,15 @@ splitThenCastScheme
        )                                     -- May cast or not
 splitThenCastScheme s'@(STuple (loc, p, qt1)) qt2 rSplitTo =
   case (qt1, qt2) of
-    (TEN, TEN) -> do
+    (_, _) | isEN qt1 && qt1 == qt2 -> do
       (rOrigin, rsRem) <- getRangeSplits s' rSplitTo
       case rsRem of
         [] -> return (s', Nothing)
         _  -> throwError $ errSplitEN rOrigin rsRem
-    (_  , TEN) -> do
+    (_ , _) | isEN qt2 -> do
       (sSplit, maySchemeS) <- splitScheme s' rSplitTo
-      schemeC <- castScheme sSplit qt2
-      return (sSplit, Just (schemeC, maySchemeS))
+      (sCast, schemeC) <- castScheme sSplit qt2
+      return (sCast, Just (schemeC, maySchemeS))
     _ -> undefined
    where
      errSplitEN :: Range -> [Range] -> String
@@ -422,7 +423,7 @@ castScheme
      , Has (State TState) sig m
      , Has (Gensym RBinding) sig m
      )
-  => STuple -> QTy -> m CastScheme
+  => STuple -> QTy -> m (STuple, CastScheme)
 castScheme st qtNow = do
   let STuple(locS, sResolved, qtPrev) = st
   when (qtNow == qtPrev) $
@@ -437,13 +438,15 @@ castScheme st qtNow = do
   let tNewEmit = typingQEmit qtNow
   sSt %= (at locS ?~ (sResolved, qtNow))
   vsNewEmit <- unpackPart sResolved `forM` (`gensymEmitRangeQTy` qtNow)
-  return CastScheme { schVsOldEmit=vsOldEmit
-                    , schTOldEmit=tOldEmit
-                    , schVsNewEmit=vsNewEmit
-                    , schTNewEmit=tNewEmit
-                    , schQtOld=qtPrev
-                    , schQtNew=qtNow
-                    }
+  return ( STuple (locS, sResolved, qtNow)
+         , CastScheme { schVsOldEmit=vsOldEmit
+                      , schTOldEmit=tOldEmit
+                      , schVsNewEmit=vsNewEmit
+                      , schTNewEmit=tNewEmit
+                      , schQtOld=qtPrev
+                      , schQtNew=qtNow
+                      , schRsCast=unpackPart sResolved
+                      })
 
 -- | The same as 'castScheme', for compatibility
 retypePartition
@@ -452,7 +455,7 @@ retypePartition
      , Has (Gensym RBinding) sig m
      )
   => STuple -> QTy -> m CastScheme
-retypePartition = castScheme
+retypePartition = (snd <$>) .: castScheme
 
 -- Merge two given partition tuples if both of them are of EN type.
 mergeSTuples

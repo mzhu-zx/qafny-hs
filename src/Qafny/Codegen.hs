@@ -40,7 +40,7 @@ import           Text.Printf           (printf)
 import qualified Data.Sum              as Sum
 
 -- Qafny
-import           Qafny.Partial         (reduceExp, pevalP)
+import           Qafny.Partial         (reduceExp, pevalP, sizeOfRangeP)
 import           Qafny.AST
 import           Qafny.ASTFactory
 import           Qafny.Config
@@ -76,10 +76,12 @@ import           Qafny.Utils
     , gensymLoc
     , gensymRangeQTy
     , rbindingOfRangeQTy
-    , throwError'
+    , throwError', rethrowMaybe, dumpSSt
     )
 import Qafny.AST (specPartitionQTys)
 import Control.Arrow (Arrow(first))
+import Data.Maybe (listToMaybe)
+import Qafny.Emit (showEmit, DafnyPrinter (build))
 
 --------------------------------------------------------------------------------
 -- * Introduction
@@ -337,11 +339,44 @@ codegenStmt (SIf e seps b) = do
     _    -> undefined
   return $ stmtsCastB ++ stmts
 
+
 codegenStmt (SFor idx boundl boundr eG invs seps body) = do
+  -- | Partially evaluate the loop invariant with the lower bound of the loop
+  -- statement.
+  --
+  -- Our syntax restriction guarantees there should only be one partition
+  -- mentioned in the "invariant" clause of a 'for' statement. If the typing
+  -- state prior the entry doesn't satisfy this requirement, either reject the
+  -- program or infer and insert merge semantics.
+  -- 
+  --  
+  -- 
+  --   1. A GHZ-like guard where the guard partition exists in the pre-loop
+  -- invariant. e.g.
+  -- @
+  --   q [0 .. (i + 1)] : en01
+  -- @'
+  --
+  --   2. A Shor-like guard where that doesn't really exists
+  -- @
+  --   q [0..i] p [0..i] : en01
+  -- @'
+  -- 
   let invPQts = first (pevalP [(idx, boundl)]) <$> specPartitionQTys invs
-  trace $ printf "[invariants] partial-ed partitions: %s" (show invPQts)
+  (sInv, qtInv) <- case invPQts of
+    [] -> throwError' errInvMtPart
+    [x] -> return x
+    _  -> throwError' (errInvPolypart invPQts)
+  stmtsPreGuard <- case sInv of
+    Partition [rInv] -> do
+      stInv <- resolvePartition sInv
+      (sInvSplit, sScheme) <- splitThenCastScheme stInv qtInv rInv 
+      codegenSplitThenCastEmit sScheme
+    _                -> throwError' $ printf "More than 1 range %s" (show sInv)
+  trace $ "Emitted:\n" ++ showEmit (build $ Block stmtsPreGuard) 
   -- resolve the type of the guard
   stG@(STuple (_, sG, qtG)) <- typingGuard eG
+
   stB'@(STuple (_, sB, qtB)) <- resolvePartitions . leftPartitions . inBlock $ body
   (stmtsCastB, stB) <- case qtB of
     TEN -> return ([], stB')
@@ -367,7 +402,11 @@ codegenStmt (SFor idx boundl boundr eG invs seps body) = do
                   , stmtsSplitG ++ stmtsCGHad)
     _    -> undefined
   let innerFor = SEmit $ SForEmit idx boundl boundr [] $ Block stmtsBody
-  return $ stmtsCastB ++ stmtsDupG ++ stmtsPrelude ++ [innerFor]
+  return $ stmtsPreGuard ++ stmtsCastB ++ stmtsDupG ++ stmtsPrelude ++ [innerFor]
+  where
+    errInvMtPart = "The invariants contains no partition."
+    errInvPolypart p = printf
+      "The loop invariants contains more than 1 partition.\n%s" (show p)
 
 codegenStmt (SAssert e@(ESpec{})) = do
   (SAssert <$>) <$> codegenAssertion e
@@ -534,17 +573,24 @@ codegenCastEmit
             , schVsNewEmit=vsNewEmit
             , schQtNew=qtNew
             , schQtOld=qtOld
+            , schRsCast=rsCast
             } = do
   op <- mkOp qtOld qtNew
   return . concat $
       [ [ qComment $ "Cast " ++ show qtOld ++ " ==> " ++ show qtNew
-        , SAssign vNew $ EEmit (op `ECall` [EEmit $ EDafnyVar vOld])
+        , SAssign vNew $ EEmit (op rCast  `ECall` [EEmit $ EDafnyVar vOld])
         ]
-      | (vOld, vNew) <- zip vsOldEmits vsNewEmit ]
+      | (vOld, vNew, rCast) <- zip3 vsOldEmits vsNewEmit rsCast ]
   where
-    mkOp TNor TEN   = return "CastNorEN"
-    mkOp TNor TEN01 = return "CastNorEN01"
-    mkOp TNor THad  = return "CastNorHad"
+    -- | Consume /from/ and /to/ types and return a function that consumes a
+    -- range and emit a specialized cast operator based on the property of the
+    -- range passed in
+    mkOp TNor TEN   = return $ const "CastNorEN"
+    mkOp TNor TEN01 = return $ const "CastNorEN01"
+    mkOp TNor THad  = return $ const "CastNorHad"
+    mkOp THad TEN01 = return $ \r -> case sizeOfRangeP r of
+      Just 1 -> "CastHadEN01'1"
+      _      -> "CastHadEN01"
     mkOp _    _     = throwError err
     err :: String = printf "Unsupport cast from %s to %s." (show qtOld) (show qtNew)
 
