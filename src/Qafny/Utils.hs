@@ -152,8 +152,6 @@ exp2AExp (ENum n) = return $ ANat n
 exp2AExp e = throwError @String $
   printf "%s cannot be projected to an AExp." (show e)
 
-
-
 dumpSSt
   :: ( Has (State TState) sig m
      , Has Trace sig m
@@ -162,3 +160,5 @@ dumpSSt
 dumpSSt = do
   s <- use sSt
   trace $ printf "[info] Dumped sSt:\n%s" (show s)
+
+--------------------------------------------------------------------------------

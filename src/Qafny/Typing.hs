@@ -15,23 +15,25 @@ module Qafny.Typing where
 -- Effects
 -- import           Control.Effect.Labelled
 -- import qualified Control.Effect.Reader.Labelled as L
+import qualified Control.Carrier.State.Strict as State
 import           Control.Effect.Catch
-import           Control.Effect.Error  (Error, throwError)
+import           Control.Effect.Error         (Error, throwError)
 import           Control.Effect.Lens
 import           Control.Effect.Reader
-import           Control.Effect.State  (State)
-import           Effect.Gensym         (Gensym)
+import           Control.Effect.State         (State)
+import           Effect.Gensym                (Gensym)
+
 
 -- Qafny
 import           Qafny.AST
 import           Qafny.Env
-import           Qafny.Error           (QError (..))
+import           Qafny.Error                  (QError (..))
 import           Qafny.Interval
     ( Interval (Interval)
     , Lattice (..)
     , NatInterval
     )
-import           Qafny.IntervalUtils   (rangeToNInt, γRange)
+import           Qafny.IntervalUtils          (rangeToNInt, γRange)
 import           Qafny.TypeUtils
 import           Qafny.Utils
     ( exp2AExp
@@ -43,17 +45,19 @@ import           Qafny.Utils
     )
 
 -- Utils
+import qualified Control.Carrier.State.Strict as State
 import           Control.Effect.Trace
-import           Control.Lens          (at, (%~), (?~), (^.))
-import           Control.Monad         (forM, unless, when)
-import           Data.Functor          ((<&>))
-import qualified Data.List             as List
-import qualified Data.Map.Strict       as Map
-import           Data.Maybe            (listToMaybe, maybeToList)
-import qualified Data.Set              as Set
-import           GHC.Stack             (HasCallStack)
-import           Text.Printf           (printf)
+import           Control.Lens                 (at, (%~), (.~), (?~), (^.))
+import           Control.Monad                (forM, forM_, unless, when)
+import           Data.Function                ((&))
+import           Data.Functor                 ((<&>))
+import qualified Data.List                    as List
+import qualified Data.Map.Strict              as Map
+import           Data.Maybe                   (listToMaybe, maybeToList)
+import qualified Data.Set                     as Set
 import           Data.Sum
+import           GHC.Stack                    (HasCallStack)
+import           Text.Printf                  (printf)
 
 -- | Compute the type of the given expression
 typingExp
@@ -266,7 +270,7 @@ splitScheme' s@(STuple (loc, p, qt)) rSplitTo@(Range to _ _) = do
 
 -- | Compute, in order to split the given range from a resolved partition, which
 -- range in the partition needs to be split as well as the resulting quotient
--- ranges.     
+-- ranges.
 getRangeSplits
   :: ( Has (Error String) sig m
      , Has Trace sig m
@@ -312,26 +316,37 @@ splitThenCastScheme
   => STuple
   -> QTy
   -> Range
-  -> m (STuple                               -- the latest state
-       , Maybe ( CastScheme
-               , Maybe SplitScheme)          -- May split if cast or not
-       )                                     -- May cast or not
+  -> m ( STuple             -- the finally resolved partition
+       , Maybe SplitScheme  -- May split if cast or not
+       , Maybe CastScheme   -- May cast or not
+       )
 splitThenCastScheme s'@(STuple (loc, p, qt1)) qt2 rSplitTo =
   case (qt1, qt2) of
     (_, _) | isEN qt1 && qt1 == qt2 -> do
+      -- same type therefore no cast needed,
+      -- do check to see if split is also not needed
       (rOrigin, rsRem) <- getRangeSplits s' rSplitTo
       case rsRem of
-        [] -> return (s', Nothing)
+        [] -> return (s', Nothing, Nothing)
         _  -> throwError $ errSplitEN rOrigin rsRem
-    (_ , _) | isEN qt2 -> do
+    (_ , _) | not (isEN qt1) && isEN qt2 -> do
+      -- casting a smaller type to a larger type
       (sSplit, maySchemeS) <- splitScheme s' rSplitTo
       (sCast, schemeC) <- castScheme sSplit qt2
-      return (sCast, Just (schemeC, maySchemeS))
-    _ -> undefined
+      return (sCast, maySchemeS, Just schemeC)
+    (_, _) | qt1 == qt2 -> do
+      -- the same type, therefore, only try to compute a split scheme
+      (sSplit, maySchemeS) <- splitScheme s' rSplitTo
+      return (sSplit, maySchemeS, Nothing)
+    _ ->
+      throwError errUndef
    where
+     errUndef :: String = printf
+       "split-then-cast-scheme is undefined for %s to %s type"
+       (show qt1) (show qt2)
      errSplitEN :: Range -> [Range] -> String
      errSplitEN rO rsR = printf
-       "Attempting to split a 'EN' partition (%s) from (%s) into (%s) which is not advised."
+       "Splitting a 'EN' partition (%s) from (%s) into (%s) which is not advised."
        (show s') (show rO) (show (rSplitTo : rsR))
 
 
@@ -506,3 +521,31 @@ appkEnvWithBds bds = kEnv %~ appBds
 
 bdTypes :: Bindings -> [Ty]
 bdTypes b = [t | Binding _ t <- b]
+
+
+
+-- | Construct from ascratch a new TState containing the given partitons.
+tStateFromPartitionQTys
+  :: ( Has (Gensym RBinding) sig m
+     , Has (Gensym Var) sig m
+     )
+  => [(Partition, QTy)] -> m TState
+tStateFromPartitionQTys pqts = State.execState initTState $ do
+  forM_ pqts $ uncurry extendTState
+
+-- | Extend the typing state with a partition and its type, generate emit
+-- symbols for every range in the partition and return all emitted symbols in
+-- the same order as those ranges.
+extendTState
+  :: ( Has (Gensym RBinding) sig m
+     , Has (Gensym Var) sig m
+     , Has (State TState) sig m
+     )
+  => Partition -> QTy -> m [Var]
+extendTState p  qt = do
+  sLoc <- gensymLoc "requires"
+  sSt %= (at sLoc ?~ (p, qt))
+  let xMap = [ (v, [(r, sLoc)]) | r@(Range v _ _) <- unpackPart p ]
+  vsREmit <- unpackPart p `forM` (\r -> (,r) <$> r `gensymEmitRangeQTy` qt)
+  xSt %= Map.unionWith (++) (Map.fromListWith (++) xMap)
+  return $ fst <$> vsREmit

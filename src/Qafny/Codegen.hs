@@ -17,7 +17,7 @@ import           Control.Effect.Catch
 import           Control.Effect.Error  (Error, throwError)
 import           Control.Effect.Lens
 import           Control.Effect.Reader
-import           Control.Effect.State  (State)
+import           Control.Effect.State  (State, get, put)
 import           Control.Effect.Trace
 import           Effect.Gensym         (Gensym, gensym)
 
@@ -27,39 +27,39 @@ import           Qafny.Gensym          (resumeGensym)
 -- Utils
 import           Control.Lens          (at, non, (%~), (?~), (^.))
 import           Control.Lens.Tuple
-import           Control.Monad
-    ( MonadPlus (mzero)
-    , forM
-    , unless
-    , when
-    )
+import           Control.Monad         (MonadPlus (mzero), forM, unless, when)
 import           Data.Functor          ((<&>))
 import qualified Data.List             as List
 import qualified Data.Map.Strict       as Map
-import           Text.Printf           (printf)
 import qualified Data.Sum              as Sum
+import           Text.Printf           (printf)
 
 -- Qafny
-import           Qafny.Partial         (reduceExp, pevalP, sizeOfRangeP)
+import           Control.Arrow         (Arrow (first))
+import           Data.Maybe            (listToMaybe, maybeToList)
 import           Qafny.AST
+import           Qafny.AST             (specPartitionQTys)
 import           Qafny.ASTFactory
 import           Qafny.Config
+import           Qafny.Emit            (DafnyPrinter (build), showEmit)
 import           Qafny.Env
     ( CastScheme (..)
     , STuple (..)
     , SplitScheme (..)
     , TEnv (..)
-    , TState
+    , TState (TState)
     , emitSt
     , kEnv
     , sSt
     , xSt
     )
+import           Qafny.Partial         (pevalP, reduceExp, sizeOfRangeP)
 import           Qafny.Typing
     ( appkEnvWithBds
     , checkSubtype
     , checkSubtypeQ
     , collectMethodTypesM
+    , extendTState
     , mergeSTuples
     , resolvePartition
     , resolvePartitions
@@ -67,28 +67,27 @@ import           Qafny.Typing
     , retypePartition1
     , splitScheme
     , splitThenCastScheme
+    , tStateFromPartitionQTys
     , typingExp
     , typingGuard
     )
 import           Qafny.Utils
-    ( findEmitRangeQTy
+    ( dumpSSt
+    , findEmitRangeQTy
     , gensymEmitRangeQTy
     , gensymLoc
     , gensymRangeQTy
     , rbindingOfRangeQTy
-    , throwError', rethrowMaybe, dumpSSt
+    , rethrowMaybe
+    , throwError'
     )
-import Qafny.AST (specPartitionQTys)
-import Control.Arrow (Arrow(first))
-import Data.Maybe (listToMaybe)
-import Qafny.Emit (showEmit, DafnyPrinter (build))
 
 --------------------------------------------------------------------------------
 -- * Introduction
 -- $doc
 -- Qafny-to-Dafny translation is organized into two stages:
 --
---   * Type Inference/Checking 
+--   * Type Inference/Checking
 --   * Code Generation
 --
 -- The 'Qafny.Codegen' module implements the translation and is responsible of
@@ -163,12 +162,12 @@ codegenToplevel'Method
 -- [returns] all emitted symbols present in the final emit state will be
 -- appended to the original __returns__ list in the order the same as the
 -- presence of those in the parameter list
--- 
+--
 -- [rest] do forward declarations in the method body
 --
 -- TODO: to keep emitted symbols for the same __qreg__ variable in a unique
 -- order, sorting those variables should also be the part of the calling
--- convention  
+-- convention
 codegenToplevel'Method q@(QMethod v bds rts rqs ens Nothing) = return q
 codegenToplevel'Method q@(QMethod v bds rts rqs ens (Just block)) = do
   (countMeta, (countEmit, (rbdvsEmitR', rbdvsEmitB), (rqsCG, blockCG))) <-
@@ -213,7 +212,7 @@ codegenToplevel'Method q@(QMethod v bds rts rqs ens (Just block)) = do
             | (RBinding (Range vMeta _ _, tEmit), vEmit) <- rbdvsEmitR
             , vMeta == vIn ]
           _    -> return bd
-          
+
     -- | For each qreg variable passed into the method, look it up in the final
     -- 'emitSt', filter their emit symbols out and add to the __returns__
     -- clause.
@@ -301,11 +300,11 @@ codegenStmt (SApply s EHad) = do
 --   1. It's not advised and therefore undefined to apply a lambda to a part of
 -- range that requires tearing apart the range itself.
 --
---   2. 'EN' partitions are inseprable. 
+--   2. 'EN' partitions are inseprable.
 --
 -- TODO: However, apply the lambda to any part of a range in a 'EN10' partition
 -- is defined, while this is not implemented yet.
--- 
+--
 codegenStmt (SApply s@(Partition ranges) e@(EEmit (ELambda {}))) = do
   st'@(STuple (_, _, qt)) <- resolvePartition s
   checkSubtypeQ qt TEN
@@ -313,8 +312,8 @@ codegenStmt (SApply s@(Partition ranges) e@(EEmit (ELambda {}))) = do
     []  -> throwError "Parser says no!"
     [x] -> return x
     _   -> throwError errRangeGt1
-  (_, maybeScheme) <- splitThenCastScheme st' TEN r
-  stmts <- codegenSplitThenCastEmit maybeScheme
+  (_, maySplit, mayCast) <- splitThenCastScheme st' TEN r
+  stmts <- codegenSplitThenCastEmit maySplit mayCast
   -- | It's important not to use the fully resolved `s` here because the OP
   -- should only be applied to the sub-partition specified in the annotation.
   vsEmit <- unpackPart s `forM` (`findEmitRangeQTy` qt)
@@ -348,32 +347,38 @@ codegenStmt (SFor idx boundl boundr eG invs seps body) = do
   -- mentioned in the "invariant" clause of a 'for' statement. If the typing
   -- state prior the entry doesn't satisfy this requirement, either reject the
   -- program or infer and insert merge semantics.
-  -- 
-  --  
-  -- 
+  --
+  --
   --   1. A GHZ-like guard where the guard partition exists in the pre-loop
   -- invariant. e.g.
   -- @
   --   q [0 .. (i + 1)] : en01
-  -- @'
+  -- @
   --
   --   2. A Shor-like guard where that doesn't really exists
   -- @
   --   q [0..i] p [0..i] : en01
-  -- @'
-  -- 
-  let invPQts = first (pevalP [(idx, boundl)]) <$> specPartitionQTys invs
-  (sInv, qtInv) <- case invPQts of
-    [] -> throwError' errInvMtPart
-    [x] -> return x
-    _  -> throwError' (errInvPolypart invPQts)
-  stmtsPreGuard <- case sInv of
+  -- @
+  --
+  let invPQts = specPartitionQTys invs
+  let invPQtsPre = first (pevalP [(idx, boundl)]) <$> invPQts
+  stmtsPreGuard <- invPQtsPre `forM` \(sInv, qtInv) -> case sInv of
     Partition [rInv] -> do
       stInv <- resolvePartition sInv
-      (sInvSplit, sScheme) <- splitThenCastScheme stInv qtInv rInv 
-      codegenSplitThenCastEmit sScheme
+      (sInvSplit, maySplit, mayCast) <- splitThenCastScheme stInv qtInv rInv
+      codegenSplitThenCastEmit maySplit mayCast
     _                -> throwError' $ printf "More than 1 range %s" (show sInv)
-  trace $ "Emitted:\n" ++ showEmit (build $ Block stmtsPreGuard) 
+  trace $ "Emitted:\n" ++ showEmit (build $ Block (concat stmtsPreGuard))
+  -- | This is important because we will generate a new state from the loop
+  -- invariant and perform both typing and codegen in the new state!
+  statePreLoop <- get @TState
+
+  -- | Do type inference with the loop invariant typing state
+  stateLoop <- tStateFromPartitionQTys invPQts
+  put stateLoop
+
+  trace $ printf "Loop Typing State: %s." (show stateLoop)
+
   -- resolve the type of the guard
   stG@(STuple (_, sG, qtG)) <- typingGuard eG
 
@@ -402,7 +407,11 @@ codegenStmt (SFor idx boundl boundr eG invs seps body) = do
                   , stmtsSplitG ++ stmtsCGHad)
     _    -> undefined
   let innerFor = SEmit $ SForEmit idx boundl boundr [] $ Block stmtsBody
-  return $ stmtsPreGuard ++ stmtsCastB ++ stmtsDupG ++ stmtsPrelude ++ [innerFor]
+
+  -- | Restore the state we have stashed before
+  put statePreLoop
+
+  return $ (concat stmtsPreGuard) ++ stmtsCastB ++ stmtsDupG ++ stmtsPrelude ++ [innerFor]
   where
     errInvMtPart = "The invariants contains no partition."
     errInvPolypart p = printf
@@ -565,6 +574,13 @@ codegenAlloc v e _ = return $ SAssign v e
 --------------------------------------------------------------------------------
 -- * Cast Semantics
 --------------------------------------------------------------------------------
+codegenCastEmitMaybe
+  :: ( Has (Error String) sig m)
+  => Maybe CastScheme -> m [Stmt]
+codegenCastEmitMaybe =
+  maybe (return []) codegenCastEmit
+
+
 codegenCastEmit
   :: ( Has (Error String) sig m)
   => CastScheme -> m [Stmt]
@@ -628,7 +644,8 @@ castPartitionEN st@(STuple (locS, s, qtS)) = do
     THad -> castWithOp "CastHadEN" st TEN
     TEN -> throwError' $
       printf "Partition `%s` is already of EN type." (show st)
-
+    TEN01 -> throwError' $
+      printf "Casting %s to TEN01 is expensive therefore not advised!" (show qtS)
 
 -- | Duplicate the data, i.e. sequences to be emitted, by generating statement
 -- duplicating the data as well as the correspondence between the range
@@ -718,16 +735,11 @@ codegenSplitThenCastEmit
   :: ( Has (Error String) sig m
      , Has Trace sig m
      )
-  => Maybe(CastScheme, Maybe SplitScheme)
+  => Maybe SplitScheme
+  -> Maybe CastScheme
   -> m [Stmt]
-codegenSplitThenCastEmit =
-  maybe (return []) inner
-  where
-    inner (schemeC, maybeSchemeS) =
-      (++)
-      <$> codegenSplitEmitMaybe maybeSchemeS
-      <*> codegenCastEmit schemeC
-
+codegenSplitThenCastEmit sS sC =
+  (++) <$> codegenSplitEmitMaybe sS <*> codegenCastEmitMaybe sC
 
 --------------------------------------------------------------------------------
 -- * Merge Semantics
@@ -768,13 +780,7 @@ codegenRequires rqs = forM rqs $ \rq ->
   -- indeed disjoint!
   case rq of
     ESpec s qt espec -> do
-      sLoc <- gensymLoc "requires"
-      sSt %= (at sLoc ?~ (s, qt))
-      let xMap = [ (v, [(r, sLoc)]) | r@(Range v _ _) <- unpackPart s ]
-      vsREmit <- unpackPart s `forM` (\r -> (,r) <$> r `gensymEmitRangeQTy` qt)
-      -- tell vsREmit
-      let (vsEmit, _)  = unzip vsREmit
-      xSt %= Map.unionWith (++) (Map.fromListWith (++) xMap)
+      vsEmit <- extendTState s qt
       ands <$> codegenSpecExp (zip vsEmit (unpackPart s)) qt espec
     _ -> return rq
 

@@ -1,5 +1,6 @@
 method GHZ(q : qreg[10])
-  requires { q[0 .. 10] : nor ↦ ⊗ i . (0) }
+  requires { q[0 .. 15] : nor ↦ ⊗ i . (0) }
+  ensures  { q[10 .. 15] : nor ↦ ⊗ i . (0) }
 {
   // induce superposition on the first qubit
   q[0..1] *= H;
@@ -10,6 +11,9 @@ method GHZ(q : qreg[10])
     separates q[0 .. i]
     invariant {
       q [0 .. (i + 1)] : en01 ↦ Σ j ∈ [0 .. 2] . ⊗ k ∈ [0 .. j] . ( _ , j)
+    }
+    invariant {
+      q [(i + 1) .. 10] : nor ↦ ⊗ k . (0)
     }
   {
     q[(i + 1) .. (i + 2)] *= λ (x => (x + 1) % 2);
