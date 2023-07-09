@@ -46,10 +46,10 @@ rangeToNInt r@(Range _ n m) =
             (x, y)     -> Interval x y
   in trace (printf "[rangeToNInt]: %s ← %s " (show i) (show r)) i
 
--- γRange :: String -> NatInterval -> Maybe Range
--- γRange x intv@(Interval (Nat i) (Nat j)) =
---   isBot intv >>= bool Nothing (Just $ Range x (ENum i) (ENum (j + 1)))
--- γRange _ _                          = Nothing
+γRange :: String -> NatInterval -> Maybe Range
+γRange x intv@(Interval (Nat i) (Nat j)) =
+  isBot intv >>= bool (Just $ Range x (ENum i) (ENum (j + 1))) Nothing
+γRange _ _                          = Nothing
 
 
 -- TODO: Implement an OnePoint analysis to conclude that

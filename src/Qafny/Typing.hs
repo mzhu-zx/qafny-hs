@@ -188,6 +188,9 @@ contractRange r =
   where
     err = throwError' $ printf "Cannot decide if %s is empty." (show r)
 
+-- TODO1: Pass in an environment and perform substitution before doing value
+-- checking
+-- TODO2: Use 'NonDeterm' effects instead.
 splitScheme'
   :: ( Has (Error String) sig m
      , Has (Gensym String) sig m
@@ -200,9 +203,9 @@ splitScheme'
   -> m (STuple, Maybe SplitScheme)
 splitScheme' s@(STuple (loc, p, qt)) rSplitTo@(Range to rstL rstR) = do
   case isBot rSplitTo of
-    Just False -> throwError errBotRx
-    Nothing    -> throwError' $ printf "Cannot decide if %s is empty." (show rSplitTo)
-    _          -> return ()
+    Just True -> throwError errBotRx
+    Nothing   -> throwError' $ printf "Cannot decide if %s is empty." (show rSplitTo)
+    _         -> return ()
   -- trace infoSS
   case matched of
     Nothing -> throwError errImproperRx

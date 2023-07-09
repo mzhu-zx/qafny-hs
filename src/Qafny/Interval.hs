@@ -46,11 +46,7 @@ instance Show a => Show (Interval a) where
   show (Interval l r) = printf "[%s, %s]" (show l) (show r)
 
 instance PartialOrd a => PartialOrd (Interval a) where
-  (Interval a1 b1) ⊑ (Interval a2 b2) = -- (&&) <$> a2 ⊑ a1 <*> b1 ⊑ b2
-    do trace "122" (return 1)
-       r1 <- traceShowId $ a2 ⊑ a1
-       r2 <- traceShowId $ b1 ⊑ b2
-       return $ r1 && r2
+  (Interval a1 b1) ⊑ (Interval a2 b2) = (&&) <$> a2 ⊑ a1 <*> b1 ⊑ b2
 
 instance SemiLattice a => SemiLattice (Interval a) where
   i1@(Interval a1 b1) ⊔ i2@(Interval a2 b2) =
