@@ -81,6 +81,7 @@ import           Qafny.Utils
     , rethrowMaybe
     , throwError'
     )
+import Qafny.TypeUtils (isEN)
 
 --------------------------------------------------------------------------------
 -- * Introduction
@@ -256,6 +257,7 @@ codegenStmts (stmt : stmts) = do
       _ -> do
         codegenStmts stmts
 
+
 codegenStmt
   :: ( Has (Reader TEnv) sig m
      , Has (State TState)  sig m
@@ -288,23 +290,7 @@ codegenStmt (SApply s EHad) = do
     opCastHad TNor = return "CastNorHad"
     opCastHad t = throwError $ "type `" ++ show t ++ "` cannot be casted to Had type"
 
--- | The semantics of a 'SApply' is tricky because of timing to do
--- split-then-cast. Here's the current strategy:
---
--- If the current session is not in 'TEN' or 'TEN10' type, compute the
--- 'splitThenCastScheme' and apply the scheme to the codegen.
---
--- If however, the current session is in EN or EN10 type, perform no split at
--- all! There are two reasons for that
---
---   1. It's not advised and therefore undefined to apply a lambda to a part of
--- range that requires tearing apart the range itself.
---
---   2. 'EN' partitions are inseprable.
---
--- TODO: However, apply the lambda to any part of a range in a 'EN10' partition
--- is defined, while this is not implemented yet.
---
+
 codegenStmt (SApply s@(Partition ranges) e@(EEmit (ELambda {}))) = do
   st'@(STuple (_, _, qt)) <- resolvePartition s
   checkSubtypeQ qt TEN
@@ -338,28 +324,7 @@ codegenStmt (SIf e seps b) = do
     _    -> undefined
   return $ stmtsCastB ++ stmts
 
-
 codegenStmt (SFor idx boundl boundr eG invs seps body) = do
-  -- | Partially evaluate the loop invariant with the lower bound of the loop
-  -- statement.
-  --
-  -- Our syntax restriction guarantees there should only be one partition
-  -- mentioned in the "invariant" clause of a 'for' statement. If the typing
-  -- state prior the entry doesn't satisfy this requirement, either reject the
-  -- program or infer and insert merge semantics.
-  --
-  --
-  --   1. A GHZ-like guard where the guard partition exists in the pre-loop
-  -- invariant. e.g.
-  -- @
-  --   q [0 .. (i + 1)] : en01
-  -- @
-  --
-  --   2. A Shor-like guard where that doesn't really exists
-  -- @
-  --   q [0..i] p [0..i] : en01
-  -- @
-  --
   let invPQts = specPartitionQTys invs
   let invPQtsPre = first (pevalP [(idx, boundl)]) <$> invPQts
   stmtsPreGuard <- invPQtsPre `forM` \(sInv, qtInv) -> case sInv of
@@ -384,8 +349,8 @@ codegenStmt (SFor idx boundl boundr eG invs seps body) = do
 
   stB'@(STuple (_, sB, qtB)) <- resolvePartitions . leftPartitions . inBlock $ body
   (stmtsCastB, stB) <- case qtB of
-    TEN -> return ([], stB')
-    _   -> (,) <$> castPartitionEN stB' <*> resolvePartition (unSTup stB' ^. _2)
+    _ | isEN qtB -> return ([], stB')
+    _            -> (,) <$> castPartitionEN stB' <*> resolvePartition (unSTup stB' ^. _2)
   -- what to do with the guard partition is unsure...
   (stmtsDupG, gCorr) <- dupState sG
   (rL, eConstraint) <- makeLoopRange sG boundl boundr
@@ -405,7 +370,7 @@ codegenStmt (SFor idx boundl boundr eG invs seps body) = do
            codegenStmt'For'Had stB stG' vEmitG idx body
          return $ ( stmtsInitG
                   , stmtsSplitG ++ stmtsCGHad)
-    _    -> undefined
+    _    -> throwError' $ printf "%s is not a supported guard type!" (show qtG)
   let innerFor = SEmit $ SForEmit idx boundl boundr [] $ Block stmtsBody
 
   -- | Restore the state we have stashed before
@@ -645,7 +610,7 @@ castPartitionEN st@(STuple (locS, s, qtS)) = do
     TEN -> throwError' $
       printf "Partition `%s` is already of EN type." (show st)
     TEN01 -> throwError' $
-      printf "Casting %s to TEN01 is expensive therefore not advised!" (show qtS)
+      printf "Casting %s to TEN is expensive therefore not advised!" (show qtS)
 
 -- | Duplicate the data, i.e. sequences to be emitted, by generating statement
 -- duplicating the data as well as the correspondence between the range

@@ -1,0 +1,110 @@
+#+TITLE: =Qafny.Codegen=
+
+This is accompanying documentation of =Qafny.Codegen= module.
+
+* Code Generation
+
+
+
+** Statements
+
+*** =*== Statement
+The semantics of a 'SApply' is tricky because of timing to do
+split-then-cast. Here's the current strategy:
+
+If the current session is not in =EN= or =EN01=, compute the
+'splitThenCastScheme' and apply the scheme to the codegen.
+
+If however, the current session is in =EN= or =EN10=, perform no split at all!
+There are two reasons for that
+
+1. It's not advised and therefore undefined to apply a lambda to a part of range
+   that requires tearing apart the range itself.
+2. 'EN' partitions are inseprable.
+
+TODO: However, apply the lambda to any part of a range in a 'EN10' partition is
+defined, while this is not implemented yet.
+
+*** =for= Statement
+
+** Statements
+Perform type inference and code generation for statements
+
+*** 'For' statement
+Here's the strategy to perform type inference and codegen for 'For' statements.
+
+**** Loop State Separation
+The generator first plug in the lower bound expression into the partitions
+collected from invariants in order to compute the typing state immediately prior
+to the loop entry.
+
+At this stage, we perform splits that separates invariant partitions from the
+context.
+# 
+For example, consider a partition in the context =q[0..15] : nor= and an invariant partition
+=q[i..10] : nor= where =i ∈ [0..10]=.
+# 
+Performing substitution, we have =q[0..15]= to be broken into =q[0..10]= though
+the split semantics.
+# 
+
+# 
+Besides splitting, casting is also performed here. Consider another example
+where from the context =q[0..1] : had= but in the invariant typing
+=q[0..1] : en01=.
+# 
+This requires one to bridge the difference in types between the context and
+the loop through casting.
+# 
+
+**** Loop Body Code Generation
+With invariant states separated from the context of the =for= statement, the
+rest code generation only concerns those partitions introduced by the loop
+invariants. 
+#
+This is where type specific merge strategy comes into play.
+#
+Currently, we have the following knowing strategy.
+
+- Qubit-wise moving and merge semantics when the guard is drawn from a =Had=
+  typed session. 
+
+  #+begin_src csharp
+    for i ∈ [0 .. n] with q[i]
+      invariants { q[0..i], p [0..n] : en ↦ _ }
+      invariants { q[i..n] : had ↦ _ }
+    {
+      ... p[0..n] ...
+    }
+  #+end_src
+
+  This amounts to
+
+  1. Duplicate the representation of the partition =κ = q[0..i], p [0..n]= into
+     two.
+  2. Execute the body in the "main" partition.
+  3. Add =Pow2(i)= to all kets in the range where the guard is moved to.
+  4. Merge the "main" partition with the "shaddow" partition we duplicated.
+
+- =EN01= typed state
+
+However, what is non-trivial to solve generally is the presence of the index
+variable =i= which complicates interval inclusion problem. One easy solution is
+to plug in both the lower bound and the upper bound of =i= and require both
+holds for =i=. But, this only works if the usage of =i= is linear.
+
+
+**** Examples 
+1. A GHZ-like guard where the guard partition exists in the pre-loop
+   invariant where the guard partiton is initially non-empty. e.g.
+   #+begin_src csharp
+     q[0 .. (i + 1)] : en01
+     q[(i + 1) .. 10] : nor 
+   #+end_src
+
+2. A Shor-like guard where that doesn't really exists where the guard partiton
+   is initially empty., (i in [0..n])
+   #+begin_src csharp
+     q[0..i] p [0..n] : en01
+     q[i..m] : had
+   #+end_src
