@@ -26,13 +26,10 @@ import           Effect.Gensym                (Gensym)
 
 -- Qafny
 import           Qafny.AST
+import           Qafny.Domain                 (NatInterval)
 import           Qafny.Env
 import           Qafny.Error                  (QError (..))
 import           Qafny.Interval
-    ( Interval (Interval)
-    , Lattice (..)
-    , NatInterval
-    )
 import           Qafny.IntervalUtils          (rangeToNInt, γRange)
 import           Qafny.TypeUtils
 import           Qafny.Utils
@@ -42,13 +39,14 @@ import           Qafny.Utils
     , gensymLoc
     , removeEmitRangeQTys
     , rethrowMaybe
+    , throwError'
     )
 
 -- Utils
-import qualified Control.Carrier.State.Strict as State
 import           Control.Effect.Trace
 import           Control.Lens                 (at, (%~), (.~), (?~), (^.))
 import           Control.Monad                (forM, forM_, unless, when)
+import           Data.Bool                    (bool)
 import           Data.Function                ((&))
 import           Data.Functor                 ((<&>))
 import qualified Data.List                    as List
@@ -103,14 +101,16 @@ typingExp (EOp2 op2 e1 e2) =
 resolvePartition
   :: ( Has (State TState) sig m
      , Has (Error String) sig m
+     , Has Trace sig m
      )
   => Partition -> m STuple
 resolvePartition se@(Partition rs) = do
   rsResolved <- rs `forM` resolveRange
-  let locs = [ loc | (_, _, True, loc) <- concat rsResolved ]
+  let locs = [ loc | (_, _, Just True, loc) <- concat rsResolved ]
   let related = printf "Related:%s" $
         concatMap (("\n\t" ++) . showRel)
         [ (r1, r2, b) | (r1, r2, b, _) <- concat rsResolved ]
+  trace $ "[resolvePartition] " ++ related
   case List.nub locs of
     [] ->  throwError $ errInternal related
     [x] -> (use (sSt . at x) `rethrowMaybe` (show . UnknownLocError) x)
@@ -128,24 +128,26 @@ resolvePartition se@(Partition rs) = do
       ("Type Error: " ++
        "The partition `%s` is not a sub-partition of any existing ones!\n%s")
       (show se)
-    showRel :: (Range, Range, Bool) -> String
-    showRel (r1, r2, True)  = printf "%s ⊑ %s" (show r1) (show r2)
-    showRel (r1, r2, False) = printf "%s ⋢ %s" (show r1) (show r2)
+    showRel :: (Range, Range, Maybe Bool) -> String
+    showRel (r1, r2, Just True)  = printf "%s ⊑ %s" (show r1) (show r2)
+    showRel (r1, r2, Just False) = printf "%s ⋢ %s" (show r1) (show r2)
+    showRel (r1, r2, Nothing)    = printf "%s ?⊑? %s" (show r1) (show r2)
 
 -- | Query all ranges related to the given range.
 resolveRange
   :: ( Has (State TState) sig m
      , Has (Error String) sig m
      )
-  => Range -> m [(Range, Range, Bool, Loc)]
+  => Range -> m [(Range, Range, Maybe Bool, Loc)]
 resolveRange r@(Range name _ _) = do
   rlocs <- use (xSt . at name) `rethrowMaybe` (show . UnknownRangeError) r
-  return [ (r, r', rangeToNInt r ⊑ rangeToNInt r', loc) |  (r', loc) <- rlocs ]
+  return [ (r, r', r ⊑ r', loc) |  (r', loc) <- rlocs ]
 
 
 resolvePartitions
   :: ( Has (State TState) sig m
      , Has (Error String) sig m
+     , Has Trace sig m
      )
   => [Partition] -> m STuple
 resolvePartitions =
@@ -173,9 +175,18 @@ splitScheme
   -> m (STuple, Maybe SplitScheme)
 splitScheme s r = do
   ans <- splitScheme' s r
-  trace $ printf "[splitScheme]\n\tIn: %s %s\n\tOut: %s"
-    (show s) (show r) (show ans)
+  -- trace $ printf "[splitScheme]\n\tIn: %s %s\n\tOut: %s"
+  --   (show s) (show r) (show ans)
   return ans
+
+-- | Remove range if it is equivalent to the bottom
+contractRange
+  :: ( Has (Error String) sig m )
+  => Range -> m [Range]
+contractRange r =
+  maybe err (return . bool [r] []) $ isBot r
+  where
+    err = throwError' $ printf "Cannot decide if %s is empty." (show r)
 
 splitScheme'
   :: ( Has (Error String) sig m
@@ -187,65 +198,67 @@ splitScheme'
   => STuple
   -> Range
   -> m (STuple, Maybe SplitScheme)
-splitScheme' s@(STuple (loc, p, qt)) rSplitTo@(Range to _ _) = do
-  when (isBot intvTo) $ throwError errBotRx
-  trace infoSS
+splitScheme' s@(STuple (loc, p, qt)) rSplitTo@(Range to rstL rstR) = do
+  case isBot rSplitTo of
+    Just False -> throwError errBotRx
+    Nothing    -> throwError' $ printf "Cannot decide if %s is empty." (show rSplitTo)
+    _          -> return ()
+  -- trace infoSS
   case matched of
     Nothing -> throwError errImproperRx
-    Just (intL, _, intR, rOrigin)  ->
-      let rsRem = γ intL ++ γ intR -- the "quotient" ranges
-          rsRest = List.delete rOrigin $ unpackPart p
+    Just (rRemL, _, rRemR, rOrigin)  -> do
+      rsRem <- (++) <$> contractRange rRemL <*> contractRange rRemR
+      let rsRest = List.delete rOrigin $ unpackPart p
           -- the ranges except the chosen one + the quotient ranges
           rsMain = rsRem ++ rsRest
           rsAux  = [rSplitTo]
           pMain  = Partition rsMain
           pAux   = Partition rsAux
-      in trace ("rsMain: " ++ show rsMain) >>
-         case rsMain of
-           [] -> return (s, Nothing) -- no split at all!
-           _  -> do
-             -- ^ Split in partition or in both partition and a range
-             -- 1. Allocate partitions, break ranges and move them around
-             locAux <- gensymLoc to
-             let sMain' = (loc, pMain, qt)   -- the part that's splited _from_
-             let sAux'  = (locAux, pAux, qt) -- the part that's splited _to_
-             sSt %= (at loc ?~ (pMain, qt)) . (at locAux ?~ (pAux, qt))
-             -- use sSt >>= \s' -> trace $ printf "sSt: %s" (show s')
-             xRangeLocs <- use (xSt . at to) `rethrowMaybe` errXST
-             let xrl =
-                   -- "new range -> new loc"
-                   [ (rAux, locAux) | rAux <- rsAux ] ++
-                   -- "split ranges -> old loc"
-                   [ (rMainNew, loc) | rMainNew <- rsRem ] ++
-                   -- "the rest with the old range removed"
-                   List.filter ((/= rOrigin) . fst) xRangeLocs
-             -- trace (printf "State Filtered by %s: %s" (show rSplitTo) (show xrl))
-             xSt %= (at to ?~ xrl)
-             -- 2. Generate emit symbols for split ranges
-             case rsRem of
-               [] -> return (STuple sAux', Nothing) -- only split in partition but not in a range
-               _  -> do
-                 (vEmitR, rSyms) <- case qt of
-                   t | t `elem` [ TNor, THad, TEN01 ] -> do
-                     -- locate the original range
-                     vEmitR <- findEmitRangeQTy rOrigin qt
-                     -- delete it from the record
-                     removeEmitRangeQTys [(rOrigin, qt)]
-                     -- gensym for each split ranges
-                     rSyms <- (rSplitTo : rsRem) `forM` (`gensymEmitRangeQTy` qt)
-                     return (vEmitR, rSyms)
-                   _    -> throwError $ errUnsupprtedTy ++ "\n" ++ infoSS
-                 let ans = SplitScheme
-                       { schROrigin = rOrigin
-                       , schRTo = rSplitTo
-                       , schRsRem = rsRem
-                       , schQty = qt
-                       , schSMain = STuple sMain'
-                       , schVEmitOrigin = vEmitR
-                       , schVsEmitAll = rSyms
-                       }
-                 trace $ printf "[splitScheme (post)] %s" (show ans)
-                 return (STuple sAux', Just ans)
+      case rsMain of
+        [] -> return (s, Nothing) -- no split at all!
+        _  -> do
+          -- ^ Split in partition or in both partition and a range
+          -- 1. Allocate partitions, break ranges and move them around
+          locAux <- gensymLoc to
+          let sMain' = (loc, pMain, qt)   -- the part that's splited _from_
+          let sAux'  = (locAux, pAux, qt) -- the part that's splited _to_
+          sSt %= (at loc ?~ (pMain, qt)) . (at locAux ?~ (pAux, qt))
+          -- use sSt >>= \s' -> trace $ printf "sSt: %s" (show s')
+          xRangeLocs <- use (xSt . at to) `rethrowMaybe` errXST
+          let xrl =
+                -- "new range -> new loc"
+                [ (rAux, locAux) | rAux <- rsAux ] ++
+                -- "split ranges -> old loc"
+                [ (rMainNew, loc) | rMainNew <- rsRem ] ++
+                -- "the rest with the old range removed"
+                List.filter ((/= rOrigin) . fst) xRangeLocs
+          -- trace (printf "State Filtered by %s: %s" (show rSplitTo) (show xrl))
+          xSt %= (at to ?~ xrl)
+          -- 2. Generate emit symbols for split ranges
+          case rsRem of
+            [] -> return (STuple sAux', Nothing) -- only split in partition but not in a range
+            _  -> do
+              (vEmitR, rSyms) <- case qt of
+                t | t `elem` [ TNor, THad, TEN01 ] -> do
+                  -- locate the original range
+                  vEmitR <- findEmitRangeQTy rOrigin qt
+                  -- delete it from the record
+                  removeEmitRangeQTys [(rOrigin, qt)]
+                  -- gensym for each split ranges
+                  rSyms <- (rSplitTo : rsRem) `forM` (`gensymEmitRangeQTy` qt)
+                  return (vEmitR, rSyms)
+                _    -> throwError $ errUnsupprtedTy ++ "\n" ++ infoSS
+              let ans = SplitScheme
+                    { schROrigin = rOrigin
+                    , schRTo = rSplitTo
+                    , schRsRem = rsRem
+                    , schQty = qt
+                    , schSMain = STuple sMain'
+                    , schVEmitOrigin = vEmitR
+                    , schVsEmitAll = rSyms
+                    }
+              -- trace $ printf "[splitScheme (post)] %s" (show ans)
+              return (STuple sAux', Just ans)
   where
     infoSS :: String = printf "[splitScheme] from (%s) to (%s)" (show s) (show rSplitTo)
     errUnsupprtedTy :: String
@@ -256,15 +269,13 @@ splitScheme' s@(STuple (loc, p, qt)) rSplitTo@(Range to _ _) = do
     errImproperRx :: String
     errImproperRx = printf
       "The range %s is not a part of the partition %s!" (show rSplitTo) (show s)
-    intvTo@(Interval tol tor) = rangeToNInt rSplitTo
     matched = listToMaybe -- logically, there should be at most one partition!
-      [ (Interval yl (tol - 1), intvTo, Interval (tor + 1) yr, ry)
-      | ry@(Range y _ _) <- unpackPart p
-      , to == y                -- must be in the same register file!
-      , intvTo ⊑ rangeToNInt ry -- must be a sub-interval
-      , let (Interval yl yr) = rangeToNInt ry
+      [ (Range y yl rstL, rSplitTo, Range y rstR yr, rRef)
+      | rRef@(Range y yl yr) <- unpackPart p  -- choose a range in the environment
+      , to == y                               -- must be in the same register file!
+      , True <- maybeToList $ rSplitTo ⊑ rRef -- must be a sub-interval
       ]
-    γ :: NatInterval -> [Range]  = (maybeToList .: γRange) to
+    -- γ :: NatInterval -> [Range]  = (maybeToList .: γRange) to
 
 
 
@@ -278,14 +289,17 @@ getRangeSplits
   => STuple
   -> Range
   -> m (Range, [Range])
-getRangeSplits s@(STuple (loc, p, qt)) rSplitTo@(Range to _ _) = do
-  when (isBot intvTo) $ throwError errBotRx
+getRangeSplits s@(STuple (loc, p, qt)) rSplitTo@(Range to rstL rstR) = do
+  case isBot rSplitTo of
+    Just False -> throwError errBotRx
+    Nothing    -> throwError' $ printf "Cannot decide if %s is empty." (show rSplitTo)
+    _          -> return ()
   trace infoSS
   case matched of
     Nothing -> throwError errImproperRx
-    Just (intL, _, intR, rOrigin)  ->
-      let rsRem = γ intL ++ γ intR -- the "quotient" ranges
-      in return (rOrigin, rsRem)
+    Just (rRemL, _, rRemR, rOrigin)  -> do
+      rsRem <- (++) <$> contractRange rRemL <*> contractRange rRemR
+      return (rOrigin, rsRem)
   where
     infoSS :: String = printf "[checkScheme] from (%s) to (%s)" (show s) (show rSplitTo)
     errBotRx :: String
@@ -293,15 +307,12 @@ getRangeSplits s@(STuple (loc, p, qt)) rSplitTo@(Range to _ _) = do
     errImproperRx :: String
     errImproperRx = printf
       "The range %s is not a part of the partition %s!" (show rSplitTo) (show s)
-    intvTo@(Interval tol tor) = rangeToNInt rSplitTo
     matched = listToMaybe -- logically, there should be at most one partition!
-      [ (Interval yl (tol - 1), intvTo, Interval (tor + 1) yr, ry)
-      | ry@(Range y _ _) <- unpackPart p
-      , to == y                -- must be in the same register file!
-      , intvTo ⊑ rangeToNInt ry -- must be a sub-interval
-      , let (Interval yl yr) = rangeToNInt ry
+      [ (Range y yl rstL, rSplitTo, Range y rstR yr, rRef)
+      | rRef@(Range y yl yr) <- unpackPart p  -- choose a range in the environment
+      , to == y                               -- must be in the same register file!
+      , True <- maybeToList $ rSplitTo ⊑ rRef -- must be a sub-interval
       ]
-    γ :: NatInterval -> [Range]  = (maybeToList .: γRange) to
 
 
 -- | Cast a partition of type 'qt1' to 'qt2' and perform a split before the
@@ -355,9 +366,11 @@ splitThenCastScheme s'@(STuple (loc, p, qt1)) qt2 rSplitTo =
 -- * Aux Typing
 --------------------------------------------------------------------------------
 
+-- | Extract relevant partitions from guard expression and resolve its type.
 typingGuard
   :: ( Has (State TState) sig m
      , Has (Error String) sig m
+     , Has Trace sig m
      )
   => Exp -> m STuple
 typingGuard (EPartition s') = resolvePartition s'

@@ -1,11 +1,13 @@
 {-# LANGUAGE
-    GeneralizedNewtypeDeriving
+    FlexibleInstances
+  , GeneralizedNewtypeDeriving
   , TupleSections
   #-}
 
 module Qafny.Partial where
-import           Control.Applicative (Applicative (liftA2))
-import           Control.Arrow       (Arrow (first))
+import           Data.Bool        (bool)
+import qualified Data.Map.Strict  as Map
+import           Data.Maybe       (isJust, isNothing)
 import           Qafny.AST
 import           Qafny.ASTFactory
 
@@ -20,65 +22,71 @@ import           Qafny.ASTFactory
 -- $doc
 --------------------------------------------------------------------------------
 
-newtype PEval a = PEval { pEval :: ([(Op2, Var)], a) }
-  deriving (Functor)
+-- | Result of performing partial evaluation
+type PResult = (Map.Map Var Int, Int)
 
-instance Applicative PEval where
-  pure = PEval . ([], )
-  liftA2 f (PEval (l1, a1)) (PEval (l2, a2)) = PEval (l1 ++ l2, f a1 a2)
+class PEval a where
+  evalP :: a -> PResult
+  reflectP :: PResult -> a
 
-instance Monad PEval where
-  (PEval (l1, a1)) >>= f =
-    let (l2, a2) = pEval $ f a1
-    in PEval (l1 ++ l2, a2)  
+instance PEval Exp where
+  evalP (ENum i) = (Map.empty, i)
+  evalP (EVar v) = (Map.singleton v 1, 0)
+  evalP (EOp2 op e1 e2) =
+    let (m1, v1) = evalP e1
+        (m2, v2) = evalP e2
+    in case op of
+      OAdd -> (evalResidue (+) m1 m2, v1 + v2)
+      OSub -> (evalResidue (+) m1 (Map.map (0 -) m2), v1 - v2)
+      _    -> undefined
 
-pEvalToMaybe :: PEval a -> Maybe a
-pEvalToMaybe p = case pEval p of
-  ([], a) -> Just a
-  _       -> Nothing
+  reflectP (m, i) =
+    Map.foldrWithKey go (ENum i) m
+    where
+      go v cnt =
+        let fs = if cnt >= 0
+                 then replicate cnt (EOp2 OAdd `flip` EVar v)
+                 else replicate (negate cnt) (EOp2 OSub `flip` EVar v)
+        in foldr (.) id fs
 
-flipSign :: PEval a -> PEval a
-flipSign = PEval . first flipStack . pEval
+class Reducible a where
+  reduce :: a -> a
 
-flipStack :: [(Op2, Var)] -> [(Op2, Var)]
-flipStack = fmap $ first flipOp
+instance Reducible a => Reducible [a] where
+  reduce = fmap reduce
 
-flipOp :: Op2 -> Op2
-flipOp OAdd = OSub
-flipOp OSub = OAdd
-flipOp _    = undefined
+instance Reducible Exp where
+  reduce = reflectP . evalP
 
-pushVar :: Var -> PEval Int
-pushVar v = PEval ([(OAdd, v)], 0)
+instance Reducible Range where
+  reduce (Range x l r) = Range x (reduce l) (reduce r)
 
-interpExpEnv :: [(Var, Exp)] -> Exp -> PEval Int
-interpExpEnv env = interpExp . substE env
+instance Reducible Partition where
+  reduce = Partition . reduce . unpackPart
 
-reduceExp :: Exp -> Exp
-reduceExp e =
-  let (ops, i) = pEval $ interpExp e
-  in foldr (\(op, v) ys -> EOp2 op ys (EVar v)) (ENum i) ops
+-- | Union two residual maps with the given operator and remove zero-coefficient
+-- variables
+evalResidue
+  :: (Int -> Int -> Int)
+  -> Map.Map Var Int
+  -> Map.Map Var Int
+  -> Map.Map Var Int
+evalResidue f s1 s2 = Map.filter (/= 0) $ Map.unionWith f s1 s2
 
--- | Compute a (linear) arithmatic expression by reducing it as the combination of
--- one single constant and several pair of uninterpreted variables and their
--- symbols.
-interpExp :: Exp -> PEval Int
-interpExp (ENum i) = return i
-interpExp (EVar v) = pushVar v
-interpExp (EOp2 OAdd e1 e2) =
-  liftA2 (+) (interpExp e1) (interpExp e2)
-interpExp (EOp2 OSub e1 e2) =
-  liftA2 (-) (interpExp e1) (flipSign $ interpExp e2)
-interpExp _ = undefined
+staticValue :: PResult -> Maybe Int
+staticValue (s, i) = bool Nothing (Just i) $ Map.null s
 
-reduceP :: Partition -> Partition
-reduceP = Partition . (reduceR <$>) . unpackPart 
+evalPStatic :: PEval a => a -> Maybe Int
+evalPStatic = staticValue . evalP
 
-reduceR :: Range -> Range
-reduceR (Range x el er) = Range x (reduceExp el) (reduceExp er)
+hasResidue :: PEval a => a -> Bool
+hasResidue = isJust . staticValue . evalP
 
-pevalP :: [(Var, Exp)] -> Partition -> Partition
-pevalP env = reduceP . substP env
+
+--------------------------------------------------------------------------------
+-- * Misc Evaluation
+--------------------------------------------------------------------------------
+-- newtype PExp = PExp { unPExp :: Exp }
 
 sizeOfRangeP :: Range -> Maybe Int
-sizeOfRangeP (Range x el er) = pEvalToMaybe . interpExp $ er `eSub` el
+sizeOfRangeP (Range _ el er) = evalPStatic (er `eSub` el)

@@ -1,117 +1,96 @@
-{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 module Qafny.Interval where
-import           Text.Printf (printf)
 
--- Interval Interpreter
-
--- Nat Domain
-data Nat
-  = Inf
-  | Mt
-  | Nat Int
-
-instance Show Nat where
-  show Inf     = "∞"
-  show Mt   = "⊥"
-  show (Nat i) = show i
-
-instance Num Nat where
-  a + b =
-    case a of
-      Mt -> Mt
-      Inf   -> Inf
-      Nat n -> case b of
-        Mt -> Mt
-        Inf   -> Inf
-        Nat m -> Nat (n + m)
-
-  a - b =
-    case a of
-      Mt -> Mt
-      Inf   -> Inf
-      Nat n -> case b of
-        Mt -> Mt
-        Inf   -> Inf
-        Nat m -> if n - m >= 0 then Nat (n - m) else Mt
-  a * b =
-    case a of
-      Mt -> Mt
-      Inf   -> case b of
-        Mt -> Mt
-        Nat 0 -> Mt
-        _     -> Inf
-      Nat n -> case b of
-        Mt -> Mt
-        Inf   -> if n == 0 then Mt else Inf
-        Nat m -> Nat $ n * m
-  negate = undefined
-  abs = undefined
-  signum = undefined
-  fromInteger a = Nat (fromInteger a)
-
-
--- One Point Int Domain
-type PointInt = (String, Int)
+import           Control.Applicative (Applicative (liftA2))
+import           Data.Bool           (bool)
+import           Qafny.AST           (Exp, Range (..), Var)
+import           Qafny.ASTFactory    (eSub)
+import           Qafny.Partial       (evalPStatic, hasResidue)
+import           Text.Printf         (printf)
+import Debug.Trace (traceShowId, trace)
 
 --------------------------------------------------------------------------------
 -- * Partial Ordering
 --------------------------------------------------------------------------------
 class PartialOrd a where
-  (≤) :: a -> a -> Bool
-  -- (≤) :: a -> a -> Maybe Bool
+  (⊑) :: a -> a -> Maybe Bool
 
-instance PartialOrd Nat where
-  _       ≤ Inf     = True
-  Inf     ≤ _       = False
-  Mt      ≤ _       = True
-  _       ≤ Mt      = False
-  (Nat n) ≤ (Nat m) = n <= m
+-- | Anti-symmetry
+(≡) :: PartialOrd a => a -> a -> Maybe Bool
+a ≡ b = (&&) <$> a ⊑ b <*> b ⊑ a
 
--- | anti-symmetry
-(≡) :: PartialOrd a => a -> a -> Bool
-a ≡ b = a ≤ b && b ≤ a
+--------------------------------------------------------------------------------
+-- * Lattice
+--------------------------------------------------------------------------------
+class PartialOrd a => SemiLattice a where
+  (⊔) :: a -> a -> Maybe a
+  (⊓) :: a -> a -> Maybe a
 
+simpleLub :: PartialOrd a => a -> a -> Maybe a
+simpleLub a b = bool a b <$> a ⊑ b
 
+simpleGlb :: PartialOrd a => a -> a -> Maybe a
+simpleGlb a b = bool b a <$> a ⊑ b
 
+class SemiLattice a => Lattice a where
+  isTop :: a -> Maybe Bool
+  isBot :: a -> Maybe Bool
+
+--------------------------------------------------------------------------------
+-- * Interval
+--------------------------------------------------------------------------------
 data Interval a = Interval a a
 
 instance Show a => Show (Interval a) where
   show (Interval l r) = printf "[%s, %s]" (show l) (show r)
 
---------------------------------------------------------------------------------
--- * Lattice
---------------------------------------------------------------------------------
-class Lattice a where
-  isTop :: a -> Bool
-  isBot :: a -> Bool
-  (⊑) :: a -> a -> Bool
-  (⊔) :: a -> a -> a
-  (⊓) :: a -> a -> a
+instance PartialOrd a => PartialOrd (Interval a) where
+  (Interval a1 b1) ⊑ (Interval a2 b2) = -- (&&) <$> a2 ⊑ a1 <*> b1 ⊑ b2
+    do trace "122" (return 1)
+       r1 <- traceShowId $ a2 ⊑ a1
+       r2 <- traceShowId $ b1 ⊑ b2
+       return $ r1 && r2
 
-
-instance Lattice Nat where
-  isTop = (≡ Inf)
-  isBot = (≡ Mt)
-  (⊑) = (≤)
-  (⊔) a b = if a ≤ b then b else a
-  (⊓) a b = if a ≤ b then a else b
-
--- Lattice Interpretation of Concrete Nat Domain
-type NatInterval = Interval Nat
-
-instance Lattice (Interval Nat) where
-  isTop (Interval (Nat 0) Inf) = True
-  isTop (Interval a b)         = False
-
-  isBot (Interval a b) = not (a ≤ b)
-
-  (Interval a1 b1) ⊑ (Interval a2 b2) = a2 ⊑ a1 && b1 ⊑ b2
-
+instance SemiLattice a => SemiLattice (Interval a) where
   i1@(Interval a1 b1) ⊔ i2@(Interval a2 b2) =
-    Interval (a1 ⊓ a2) (b1 ⊔ b2)
+    liftA2 Interval (a1 ⊓ a2) (b1 ⊔ b2)
 
   i1@(Interval a1 b1) ⊓ i2@(Interval a2 b2) =
-    Interval (a1 ⊔ a2) (b1 ⊓ b2)
+    liftA2 Interval (a1 ⊔ a2) (b1 ⊓ b2)
 
+--------------------------------------------------------------------------------
+-- * Partial Evaluation Related
+--------------------------------------------------------------------------------
+instance PartialOrd Exp where
+  e1 ⊑ e2 = (>= 0) <$> evalPStatic (e2 `eSub` e1)
 
+instance SemiLattice Exp where
+  (⊔) = simpleLub
+  (⊓) = simpleGlb
+
+-- newtype PRange = PRange { unPRange :: Range }
+
+instance PartialOrd Range where
+  (⊑) = fRangeInterval (const (⊑))
+
+instance SemiLattice Range where
+  (⊓) = fRangeInterval (\x i1 i2 -> interval2Range x <$> (i1 ⊔ i2))
+  (⊔) = fRangeInterval (\x i1 i2 -> interval2Range x <$> (i1 ⊓ i2))
+
+fRangeInterval
+  :: (Var -> Interval Exp -> Interval Exp -> Maybe c)
+  -> Range
+  -> Range
+  -> Maybe c
+fRangeInterval f (Range x xl xr) (Range y yl yr) =
+  bool Nothing yes (x == y)
+  where
+    yes = f x (Interval xl xr)  (Interval yl yr)
+
+interval2Range :: Var -> Interval Exp -> Range
+interval2Range x (Interval i1 i2) = Range x i1 i2
+
+instance Lattice Range where
+  isTop r@(Range _ _ e) = if hasResidue e then Nothing else Just False
+  isBot r@(Range _ el er) = er ⊑ el

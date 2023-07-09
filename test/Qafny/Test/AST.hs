@@ -1,7 +1,8 @@
 module Qafny.Test.AST where
 
-import           Qafny.AInterp    (interpExp, interpExpEnv)
+import           Qafny.Partial    (evalP, PEval (evalP))
 import           Qafny.AST
+import qualified Data.Map.Strict  as Map
 import           Test.Tasty
 import           Test.Tasty.HUnit
 
@@ -21,23 +22,23 @@ substTest = testGroup "Subtitution Tests"
 interpTests :: TestTree
 interpTests = testGroup "AInterp Tests"
   [ testCase "Interpret ((1 - 1) - 2)" $
-    ([], -2) @=?
-    interpExpEnv [("y", e1), ("x", e2)] exp1
+    (Map.empty, -2) @=?
+     evalP (substE [("y", e1), ("x", e2)] exp1)
   , testCase "Interpret (1 - x)" $
-    ([(OSub, "x")], 1) @=?
-    interpExp exp2
+    (Map.fromList [("x", -1)], 1) @=?
+    evalP exp2
   , testCase "Interpret (x - 1)" $
-    ([(OAdd, "x")], -1) @=?
-    interpExp exp3
+    (Map.fromList [("x", 1)], -1) @=?
+    evalP exp3
   , testCase "interpExp ((1 - y) - x)" $
-    ([(OSub, "y"), (OSub, "x")], 1) @=?
-    interpExp exp1
-  , testCase "interpExp (x - (1 - y))" $
-    ([(OAdd, "x"), (OAdd, "y")], -1) @=?
-    interpExp exp4
-  , testCase "interpExp (x - (y - 1))" $
-    ([(OAdd, "x"), (OSub, "y")], 1) @=?
-    interpExp exp5
+    (Map.fromList [("y", -1), ("x", -1)], 1) @=?
+    evalP exp1
+  , testCase "evalP (x - (1 - y))" $
+    (Map.fromList [("x", 1), ("y", 1)], -1) @=?
+    evalP exp4
+  , testCase "evalP (x - (y - 1))" $
+    (Map.fromList [("x", 1), ("y", -1)], 1) @=?
+    evalP exp5
   ]
   where e1 = ENum 1
         e2 = ENum 2
