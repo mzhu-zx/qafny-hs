@@ -2,22 +2,25 @@
     DeriveFoldable
   , DeriveFunctor
   , DeriveTraversable
-  , FlexibleInstances
   , FlexibleContexts
-  , UndecidableInstances
+  , FlexibleInstances
   , MultiParamTypeClasses
   , TemplateHaskell
   , TypeFamilies
   , TypeOperators
+  , TupleSections
+  , UndecidableInstances
   #-}
 
 module Qafny.AST where
 
+import           Control.Monad            (forM)
 import           Data.Functor.Foldable
     ( Corecursive (embed)
     , Recursive (cata, project)
     )
 import           Data.Functor.Foldable.TH (makeBaseFunctor)
+import           Data.List.NonEmpty (NonEmpty (..))
 import           Data.Maybe               (fromMaybe)
 import           Data.Sum
 import           Text.Printf              (printf)
@@ -271,9 +274,22 @@ fVars = cata go
     go fvs       = concat fvs
 
 
+type AEnv = [(Var, Exp)]
+type IEnv = [(Var, NonEmpty Exp)]
+
+nondetIEnv :: IEnv -> NonEmpty AEnv
+nondetIEnv = traverse (\(v, ne) -> (v,) <$> ne) 
+
+initAEnv :: AEnv
+initAEnv = []
+
+initIEnv :: IEnv
+initIEnv = []
+
+
 -- | Perform expression subtitution
 --
-substE :: [(Var, Exp)] -> Exp -> Exp
+substE :: AEnv -> Exp -> Exp
 substE [] = id
 substE env = go
   where
@@ -284,13 +300,13 @@ substE env = go
     go e              = embed $ go <$> project e
 
 
-substP :: [(Var, Exp)] -> Partition -> Partition
+substP :: AEnv -> Partition -> Partition
 substP [] = id
 substP env =
   Partition . (substR env <$> ) . unpackPart
 
 
-substR :: [(Var, Exp)] -> Range -> Range
+substR :: AEnv -> Range -> Range
 substR [] r = r
 substR env (Range x l r) =
   Range x (go l) (go r)

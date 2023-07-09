@@ -44,6 +44,6 @@ All samples/tests (=<testname>.qfy=) are located in =external/Resources=.
   #+end_src
 
   
-* What's New with Qafny 2?
-- `fused-effects`
-
+* Something Interesting
+- =fused-effects=
+x

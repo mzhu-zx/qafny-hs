@@ -13,8 +13,6 @@ module Qafny.Typing where
 -- | Typing though Fused Effects
 
 -- Effects
--- import           Control.Effect.Labelled
--- import qualified Control.Effect.Reader.Labelled as L
 import qualified Control.Carrier.State.Strict as State
 import           Control.Effect.Catch
 import           Control.Effect.Error         (Error, throwError)
@@ -22,7 +20,6 @@ import           Control.Effect.Lens
 import           Control.Effect.Reader
 import           Control.Effect.State         (State)
 import           Effect.Gensym                (Gensym)
-
 
 -- Qafny
 import           Qafny.AST
@@ -50,12 +47,15 @@ import           Data.Bool                    (bool)
 import           Data.Function                ((&))
 import           Data.Functor                 ((<&>))
 import qualified Data.List                    as List
+import qualified Data.List.NonEmpty           as NE
+import           Data.List.NonEmpty           (NonEmpty(..))
 import qualified Data.Map.Strict              as Map
-import           Data.Maybe                   (listToMaybe, maybeToList)
+import           Data.Maybe                   (listToMaybe, maybeToList, fromMaybe)
 import qualified Data.Set                     as Set
 import           Data.Sum
 import           GHC.Stack                    (HasCallStack)
 import           Text.Printf                  (printf)
+import Control.Carrier.Reader (runReader)
 
 -- | Compute the type of the given expression
 typingExp
@@ -101,22 +101,27 @@ typingExp (EOp2 op2 e1 e2) =
 resolvePartition
   :: ( Has (State TState) sig m
      , Has (Error String) sig m
+     , Has (Reader IEnv) sig m
      , Has Trace sig m
      )
   => Partition -> m STuple
 resolvePartition se@(Partition rs) = do
   rsResolved <- rs `forM` resolveRange
-  let locs = [ loc | (_, _, Just True, loc) <- concat rsResolved ]
-  let related = printf "Related:%s" $
-        concatMap (("\n\t" ++) . showRel)
-        [ (r1, r2, b) | (r1, r2, b, _) <- concat rsResolved ]
-  trace $ "[resolvePartition] " ++ related
+  let locs = [ loc | (_, _, ans, loc) <- concat rsResolved, included ans ]
+  constraints <- ask @IEnv
+  let related = concatMap ("\n\t" ++) . concat $
+                [ showRel r1 r2 b | (r1, r2, b, _) <- concat rsResolved ]
+  trace $ printf "[resolvePartition] (%s) with %s %s" (show se) (show constraints) related
   case List.nub locs of
     [] ->  throwError $ errInternal related
-    [x] -> (use (sSt . at x) `rethrowMaybe` (show . UnknownLocError) x)
-      <&> STuple . uncurry (x,,)
+    [x] -> do
+      (p, qt) <- use (sSt . at x) `rethrowMaybe` (show . UnknownLocError) x
+      trace (printf "Resolved: %s ∈ %s" (show se) (show p))
+      return $ STuple (x, p, qt)
     ss -> throwError $ errNonunique ss related
   where
+    included :: NonEmpty (Maybe Bool, AEnv) -> Bool
+    included = all ((== Just True) . fst)
     errNonunique :: [Loc] -> String -> String
     errNonunique ss = printf
       ("Type Error: " ++
@@ -128,25 +133,40 @@ resolvePartition se@(Partition rs) = do
       ("Type Error: " ++
        "The partition `%s` is not a sub-partition of any existing ones!\n%s")
       (show se)
-    showRel :: (Range, Range, Maybe Bool) -> String
-    showRel (r1, r2, Just True)  = printf "%s ⊑ %s" (show r1) (show r2)
-    showRel (r1, r2, Just False) = printf "%s ⋢ %s" (show r1) (show r2)
-    showRel (r1, r2, Nothing)    = printf "%s ?⊑? %s" (show r1) (show r2)
+    mkRelOp :: Maybe Bool -> String
+    mkRelOp (Just True)  = "⊑"
+    mkRelOp (Just False) = "⋢"
+    mkRelOp Nothing      = "?⊑?"
+    showRel :: Range -> Range -> NonEmpty (Maybe Bool, AEnv) -> [String]
+    showRel r1 r2 ne = NE.toList $ ne
+      <&> \(rel, env) -> printf "%s %s %s at %s" (show r1) (mkRelOp rel) (show r2) (show env)
 
 -- | Query all ranges related to the given range.
 resolveRange
   :: ( Has (State TState) sig m
      , Has (Error String) sig m
+     , Has (Reader IEnv) sig m
      )
-  => Range -> m [(Range, Range, Maybe Bool, Loc)]
+  => Range -> m [(Range, Range, NonEmpty (Maybe Bool, AEnv), Loc)]
 resolveRange r@(Range name _ _) = do
+  (⊑/) <- asks substsR
   rlocs <- use (xSt . at name) `rethrowMaybe` (show . UnknownRangeError) r
-  return [ (r, r', r ⊑ r', loc) |  (r', loc) <- rlocs ]
+  return [ (r, r', r ⊑/ r', loc)
+         | (r', loc) <- rlocs ]
+  where
+    substsR :: IEnv -> Range -> Range -> NonEmpty (Maybe Bool, AEnv)
+    substsR l r1 r2 =
+      let aenvs = nondetIEnv l
+          subst r'' = (`substR` r'') <$> aenvs
+      in NE.zipWith (\(r1', r2') -> (r1' ⊑ r2',)) (NE.zip (subst r1) (subst r2))  aenvs
+
+    a ⊑? b = a ⊑ b == Just True
 
 
 resolvePartitions
   :: ( Has (State TState) sig m
      , Has (Error String) sig m
+     , Has (Reader IEnv) sig m
      , Has Trace sig m
      )
   => [Partition] -> m STuple
@@ -231,6 +251,8 @@ splitScheme' s@(STuple (loc, p, qt)) rSplitTo@(Range to rstL rstR) = do
           let xrl =
                 -- "new range -> new loc"
                 [ (rAux, locAux) | rAux <- rsAux ] ++
+                -- "split ranges -> old loc"
+                
                 -- "split ranges -> old loc"
                 [ (rMainNew, loc) | rMainNew <- rsRem ] ++
                 -- "the rest with the old range removed"
@@ -373,6 +395,7 @@ splitThenCastScheme s'@(STuple (loc, p, qt1)) qt2 rSplitTo =
 typingGuard
   :: ( Has (State TState) sig m
      , Has (Error String) sig m
+     , Has (Reader IEnv) sig m
      , Has Trace sig m
      )
   => Exp -> m STuple
@@ -419,6 +442,8 @@ checkSubtypeQ
   => QTy -> QTy -> m ()
 checkSubtypeQ t1 t2 =
   unless (subQ t1 t2) $
+  -- traceStack "" .
+  
   -- traceStack "" .
   throwError $
   "Type mismatch: `" ++ show t1 ++ "` is not a subtype of `" ++ show t2 ++ "`"
@@ -500,6 +525,8 @@ mergeSTuples
   do
     -- Sanity Check
     unless (qtMain == qtAux && qtAux == TEN) $
+      -- traceStack "" $
+      
       -- traceStack "" $
       throwError @String $ printf "%s and %s have different Q types!"
         (show stM) (show stA)

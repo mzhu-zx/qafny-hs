@@ -67,7 +67,6 @@ initTState = TState
   , _emitSt = mempty
   }
 
-
 data SplitScheme = SplitScheme
   { schROrigin     :: Range   -- | the original range
   , schRTo         :: Range   -- | the range splitted _to_

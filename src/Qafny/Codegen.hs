@@ -1,5 +1,6 @@
 {-# LANGUAGE
-    FlexibleContexts
+    DataKinds
+  , FlexibleContexts
   , RecordWildCards
   , ScopedTypeVariables
   , TupleSections
@@ -11,37 +12,37 @@ module Qafny.Codegen where
 
 
 -- Effects
--- import           Control.Effect.Labelled
--- import qualified Control.Effect.Reader.Labelled as L
+import           Control.Carrier.Reader (runReader)
 import           Control.Effect.Catch
-import           Control.Effect.Error  (Error, throwError)
+import           Control.Effect.Error   (Error, throwError)
 import           Control.Effect.Lens
 import           Control.Effect.Reader
-import           Control.Effect.State  (State, get, put)
+import           Control.Effect.State   (State, get, put)
 import           Control.Effect.Trace
-import           Effect.Gensym         (Gensym, gensym)
+import           Effect.Gensym          (Gensym, gensym)
 
 -- Handlers
-import           Qafny.Gensym          (resumeGensym)
+import           Qafny.Gensym           (resumeGensym)
 
 -- Utils
-import           Control.Lens          (at, non, (%~), (?~), (^.))
+import           Control.Arrow          (Arrow (first))
+import           Control.Lens           (at, non, (%~), (?~), (^.))
 import           Control.Lens.Tuple
-import           Control.Monad         (MonadPlus (mzero), forM, unless, when)
-import           Data.Functor          ((<&>))
-import qualified Data.List             as List
-import qualified Data.Map.Strict       as Map
-import qualified Data.Sum              as Sum
-import           Text.Printf           (printf)
+import           Control.Monad          (MonadPlus (mzero), forM, unless, when)
+import           Data.Functor           ((<&>))
+import qualified Data.List              as List
+import           Data.List.NonEmpty     (NonEmpty (..))
+import qualified Data.Map.Strict        as Map
+import qualified Data.Sum               as Sum
+import           Text.Printf            (printf)
 
 -- Qafny
-import           Control.Arrow         (Arrow (first))
-import           Data.Maybe            (listToMaybe, maybeToList)
+import           Data.Maybe             (listToMaybe, maybeToList)
 import           Qafny.AST
-import           Qafny.AST             (specPartitionQTys)
+import           Qafny.AST              (specPartitionQTys)
 import           Qafny.ASTFactory
 import           Qafny.Config
-import           Qafny.Emit            (DafnyPrinter (build), showEmit)
+import           Qafny.Emit             (DafnyPrinter (build), showEmit)
 import           Qafny.Env
     ( CastScheme (..)
     , STuple (..)
@@ -53,7 +54,8 @@ import           Qafny.Env
     , sSt
     , xSt
     )
-import           Qafny.Partial         (sizeOfRangeP, Reducible (reduce))
+import           Qafny.Partial          (Reducible (reduce), sizeOfRangeP)
+import           Qafny.TypeUtils        (isEN)
 import           Qafny.Typing
     ( appkEnvWithBds
     , checkSubtype
@@ -81,7 +83,6 @@ import           Qafny.Utils
     , rethrowMaybe
     , throwError'
     )
-import Qafny.TypeUtils (isEN)
 
 --------------------------------------------------------------------------------
 -- * Introduction
@@ -173,7 +174,7 @@ codegenToplevel'Method q@(QMethod v bds rts rqs ens Nothing) = return q
 codegenToplevel'Method q@(QMethod v bds rts rqs ens (Just block)) = do
   (countMeta, (countEmit, (rbdvsEmitR', rbdvsEmitB), (rqsCG, blockCG))) <-
     local (appkEnvWithBds bds) $
-    codegenRequires rqs `resumeGensym` codegenBlock block
+    codegenRequires rqs `resumeGensym` codegenMethodBody block
 
   mapFinalEmits <- use emitSt
   ensCG <- codegenEnsures ens
@@ -191,6 +192,8 @@ codegenToplevel'Method q@(QMethod v bds rts rqs ens (Just block)) = do
         ]
   return $ QMethod v bdsCG (rts ++ bdRets) rqsCG ensCG (Just . Block $ blockStmts)
   where
+    codegenMethodBody = runReader initIEnv . codegenBlock
+
     -- | All __qreg__ parameters
     vIns = [ vIn | Binding vIn (TQReg _) <- bds ]
 
@@ -230,6 +233,7 @@ codegenBlock
      , Has (Error String) sig m
      , Has (Gensym String) sig m
      , Has (Gensym RBinding) sig m
+     , Has (Reader IEnv) sig m
      , Has Trace sig m
      )
   => Block
@@ -243,6 +247,7 @@ codegenStmts
      , Has (Error String) sig m
      , Has (Gensym String) sig m
      , Has (Gensym RBinding) sig m
+     , Has (Reader IEnv) sig m
      , Has Trace sig m
      )
   => [Stmt]
@@ -260,6 +265,7 @@ codegenStmts (stmt : stmts) = do
 
 codegenStmt
   :: ( Has (Reader TEnv) sig m
+     , Has (Reader IEnv) sig m
      , Has (State TState)  sig m
      , Has (Error String) sig m
      , Has (Gensym String) sig m
@@ -325,66 +331,41 @@ codegenStmt (SIf e seps b) = do
   return $ stmtsCastB ++ stmts
 
 codegenStmt (SFor idx boundl boundr eG invs seps body) = do
-  let invPQts = specPartitionQTys invs
-  let invPQtsPre = first (reduce . substP [(idx, boundl)]) <$> invPQts
-  stmtsPreGuard <- invPQtsPre `forM` \(sInv, qtInv) -> case sInv of
-    Partition [rInv] -> do
-      stInv <- resolvePartition sInv
-      (sInvSplit, maySplit, mayCast) <- splitThenCastScheme stInv qtInv rInv
-      codegenSplitThenCastEmit maySplit mayCast
-    _                -> throwError' $ printf "More than 1 range %s" (show sInv)
-  -- trace $ "Emitted:\n" ++ showEmit (build $ Block (concat stmtsPreGuard))
-
-  -- | This is important because we will generate a new state from the loop
-  -- invariant and perform both typing and codegen in the new state!
-  statePreLoop <- get @TState
-
-  -- | Do type inference with the loop invariant typing state
-  stateLoop <- tStateFromPartitionQTys invPQts
+  (stmtsPreGuard, statePreLoop, stateLoop) <- codegenInit
   put stateLoop
-
-  -- trace $ printf "Loop Typing State: %s." (show stateLoop)
-  -- resolve guard type
-  stG@(STuple (_, sG, qtG)) <- typingGuard eG
-  stB'@(STuple (_, sB, qtB)) <- resolvePartitions . leftPartitions . inBlock $ body
-  (stmtsCastB, stB) <- case qtB of
-    _ | isEN qtB -> return ([], stB')
-    _            -> (,) <$> castPartitionEN stB' <*> resolvePartition (unSTup stB' ^. _2)
-
-  -- what to do with the guard partition is unsure...
-  (stmtsDupG, gCorr) <- dupState sG 
-  (rL, eConstraint) <- makeLoopRange sG boundl boundr
-  -- ^ FIXME: these two handling of guard state seems ungrounded 
-  (stmtsPrelude, stmtsBody) <- case qtG of
-    THad ->
-      do (stGSplited, schemeSMaybe) <- splitScheme stG rL
-         stmtsSplitG <- codegenSplitEmitMaybe schemeSMaybe
-         schemeC <- retypePartition stGSplited TEN
-         let CastScheme { schVsNewEmit=(~[vEmitG])} = schemeC
-         let cardVEmitG = EEmit . ECard . EVar $ vEmitG
-         let stmtsInitG =
-               [ qComment "Retype from Had to EN and initialize with 0"
-               , SAssign vEmitG $
-                   EEmit $ EMakeSeq TNat cardVEmitG $ constExp $ ENum 0 ]
-         stG' <- resolvePartition (unSTup stGSplited ^. _2)
-         stmtsCGHad <- codegenStmt'For'Had stB stG' vEmitG idx body
-         return $ ( stmtsInitG
-                  , stmtsSplitG ++ stmtsCGHad)
-    TEN01 -> do
-      dumpSSt
-      trace $ show stG
-      throwError' "break"
-      return ([], []) 
-    _    -> throwError' $ printf "%s is not a supported guard type!" (show qtG)
-  let innerFor = SEmit $ SForEmit idx boundl boundr [] $ Block stmtsBody
-
-  -- | Restore the state we have stashed before
+  let substEnv = [(idx, boundl :| [boundr `eSub` ENum 1])]
+  stmtsBody <- local (++ substEnv) $ codegenFor'Body idx boundl boundr eG body
   put statePreLoop
-  return $ concat stmtsPreGuard ++ stmtsCastB ++ stmtsDupG ++ stmtsPrelude ++ [innerFor]
+  return $ concat stmtsPreGuard ++ stmtsBody
   where
     errInvMtPart = "The invariants contains no partition."
     errInvPolypart p = printf
       "The loop invariants contains more than 1 partition.\n%s" (show p)
+
+    -- | Partitions and their types collected from the loop invariants
+    invPQts = specPartitionQTys invs
+
+    -- | ... partially evaluted with the index variable substituted by the lower
+    -- bound
+    invPQtsPre = first (reduce . substP [(idx, boundl)]) <$> invPQts
+
+    -- | Generate code and state for the precondition
+    codegenInit = do
+      stmtsPreGuard <- invPQtsPre `forM` \(sInv, qtInv) -> case sInv of
+        Partition [rInv] -> do
+          stInv <- resolvePartition sInv
+          (sInvSplit, maySplit, mayCast) <- splitThenCastScheme stInv qtInv rInv
+          codegenSplitThenCastEmit maySplit mayCast
+        _                -> throwError' $ printf "More than 1 range %s" (show sInv)
+
+      -- | This is important because we will generate a new state from the loop
+      -- invariant and perform both typing and codegen in the new state!
+      statePreLoop <- get @TState
+
+      -- | Do type inference with the loop invariant typing state
+      stateLoop <- tStateFromPartitionQTys invPQts
+      return (stmtsPreGuard, statePreLoop, stateLoop)
+
 
 codegenStmt (SAssert e@(ESpec{})) = do
   (SAssert <$>) <$> codegenAssertion e
@@ -404,6 +385,7 @@ codegenStmt'If'Had
      , Has (Error String) sig m
      , Has (Gensym String) sig m
      , Has (Gensym RBinding) sig m
+     , Has (Reader IEnv) sig m
      , Has Trace sig m
      )
   => STuple -> STuple -> Block
@@ -426,9 +408,64 @@ codegenStmt'If'Had stG stB' b = do
 --------------------------------------------------------------------------------
 -- * Loop
 --------------------------------------------------------------------------------
+-- | Code generation of the body statements of a for loop construct
+codegenFor'Body
+  :: ( Has (Reader TEnv) sig m
+     , Has (State TState)  sig m
+     , Has (Error String) sig m
+     , Has (Gensym String) sig m
+     , Has (Gensym RBinding) sig m
+     , Has (Reader IEnv) sig m
+     , Has Trace sig m
+     )
+  => Var   -- ^ index variable
+  -> Exp   -- ^ lower bound
+  -> Exp   -- ^ upper bound
+  -> Exp   -- ^ guard expression
+  -> Block -- ^ body
+  -> m [Stmt]
+codegenFor'Body idx boundl boundr eG body = do
+  stG@(STuple (_, sG, qtG)) <- typingGuard eG
+  stB'@(STuple (_, sB, qtB)) <- resolvePartitions . leftPartitions . inBlock $ body
+  (stmtsCastB, stB) <- case qtB of
+    _ | isEN qtB -> return ([], stB')
+    _            -> (,) <$> castPartitionEN stB' <*> resolvePartition (unSTup stB' ^. _2)
+
+  -- what to do with the guard partition is unsure...
+  (stmtsDupG, gCorr) <- dupState sG
+  (rL, eConstraint) <- makeLoopRange sG boundl boundr
+  -- ^ FIXME: these two handling of guard state seems ungrounded
+  (stmtsPrelude, stmtsBody) <- case qtG of
+    THad ->
+      -- FIXME: for now, I discard the env for the Had case for backward
+      -- compatibility
+      local (const initIEnv) $ do
+         (stGSplited, schemeSMaybe) <- splitScheme stG rL
+         stmtsSplitG <- codegenSplitEmitMaybe schemeSMaybe
+         schemeC <- retypePartition stGSplited TEN
+         let CastScheme { schVsNewEmit=(~[vEmitG])} = schemeC
+         let cardVEmitG = EEmit . ECard . EVar $ vEmitG
+         let stmtsInitG =
+               [ qComment "Retype from Had to EN and initialize with 0"
+               , SAssign vEmitG $
+                   EEmit $ EMakeSeq TNat cardVEmitG $ constExp $ ENum 0 ]
+         stG' <- resolvePartition (unSTup stGSplited ^. _2)
+         stmtsCGHad <- codegenStmt'For'Had stB stG' vEmitG idx body
+         return $ ( stmtsInitG
+                  , stmtsSplitG ++ stmtsCGHad)
+    TEN01 -> do
+      dumpSSt
+      trace $ show stG
+
+      return ([], [])
+    _    -> throwError' $ printf "%s is not a supported guard type!" (show qtG)
+  let innerFor = SEmit $ SForEmit idx boundl boundr [] $ Block stmtsBody
+  return $ stmtsCastB ++ stmtsDupG ++ stmtsPrelude ++ [innerFor]
+
 -- | Code Generation of a `For` statement with a Had partition
 codegenStmt'For'Had
   :: ( Has (Reader TEnv) sig m
+     , Has (Reader IEnv) sig m
      , Has (State TState)  sig m
      , Has (Error String) sig m
      , Has (Gensym String) sig m
@@ -471,6 +508,7 @@ mergeHadGuard
   :: ( Has (State TState) sig m
      , Has (Error String) sig m
      , Has (Gensym RBinding) sig m
+     , Has (Reader IEnv) sig m
      , Has Trace sig m
      )
   => STuple -> STuple -> Exp -> Exp -> m [Stmt]
@@ -480,6 +518,7 @@ mergeHadGuardWith
   :: ( Has (State TState) sig m
      , Has (Error String) sig m
      , Has (Gensym RBinding) sig m
+     , Has (Reader IEnv) sig m
      , Has Trace sig m
      )
   => Exp -> STuple -> STuple -> Exp -> Exp -> m [Stmt]
@@ -630,6 +669,7 @@ dupState
   :: ( Has (Error String) sig m
      , Has (State TState) sig m
      , Has (Gensym RBinding) sig m
+     , Has (Reader IEnv) sig m
      , Has Trace sig m
      )
   => Partition -> m ([Stmt], [(Var, Var)])
@@ -638,7 +678,7 @@ dupState s' = do
   let rs = unpackPart s
   -- generate a set of fresh emit variables as the stashed partition
   -- do not manipulate the `emitSt` here
-  vsEmitFresh <- rs `forM` (`gensymRangeQTy` qtS)     
+  vsEmitFresh <- rs `forM` (`gensymRangeQTy` qtS)
   -- the only place where state is used!
   vsEmitPrev  <- rs `forM` (`gensymEmitRangeQTy` qtS)
   let stmts = [ SAssign vEmitFresh (EVar vEmitPrev)
@@ -765,7 +805,7 @@ codegenEnsures
      )
   => Ensures -> m Ensures
 codegenEnsures ens =
-  (ands <$>) <$> forM ens codegenAssertion
+  (ands <$>) <$> forM ens (runReader initIEnv . codegenAssertion)
 
 
 -- | Take in an /assertional/ expression, perform type check and emit
@@ -775,6 +815,7 @@ codegenEnsures ens =
 codegenAssertion
   :: ( Has (State TState)  sig m
      , Has (Error String) sig m
+     , Has (Reader IEnv) sig m
      , Has Trace sig m
      )
   => Exp -> m [Exp]

@@ -51,5 +51,7 @@ produceCodegen conf ast =
   let (trace, (st, res)) = runCodegen conf ast
   in Production { pResult = res
                 , pState = st
-                , pTrace = "Trace:\n" ++ concatMap (\s -> "\t" ++ s ++ "\n") trace
+                , pTrace = sep ++ "Trace:\n\n" ++ unlines trace ++ sep
                 }
+  where
+    sep = replicate 80 '=' ++ "\n"
