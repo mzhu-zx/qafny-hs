@@ -13,12 +13,12 @@ method GHZ (q_0_15___seqL_nat_R___0__emit : seq<nat>) returns (q_0_1___seqL__seq
   ensures 5 == |q_10_15___seqL_nat_R___6__emit| && (forall i : nat | 0 <= i < 5 :: q_10_15___seqL_nat_R___6__emit[i] == 0)
 {
   // Forward Declaration
-  var q_0_l_i__add__1_r___seqL__seqL_nat_R__R___12__emit : seq<seq<nat>>;
-  var q_0_l_i__add__1_r___seqL__seqL_nat_R__R___11__emit : seq<seq<nat>>;
-  var q_0_l_i__add__1_r___seqL__seqL_nat_R__R___10__emit : seq<seq<nat>>;
-  var q_l_i__add__1_r_10___seqL_nat_R___9__emit : seq<nat>;
-  var q_l_i__add__1_r_10___seqL_nat_R___8__emit : seq<nat>;
-  var q_0_l_i__add__1_r___seqL__seqL_nat_R__R___7__emit : seq<seq<nat>>;
+  var q_compact_compact___seqL__seqL_nat_R__R___12__emit : seq<seq<nat>>;
+  var q_compact_10___seqL_nat_R___11__emit : seq<nat>;
+  var q_compact_compact___seqL_nat_R___10__emit : seq<nat>;
+  var q_0_compact___seqL__seqL_nat_R__R___9__emit : seq<seq<nat>>;
+  var q_compact_10___seqL_nat_R___8__emit : seq<nat>;
+  var q_0_compact___seqL__seqL_nat_R__R___7__emit : seq<seq<nat>>;
   var q_0_1___seqL_nat_R___3__emit : seq<nat>;
   var q_1_15___seqL_nat_R___2__emit : seq<nat>;
   var q_0_1___seqL_nat_R___1__emit : seq<nat>;
@@ -32,13 +32,11 @@ method GHZ (q_0_15___seqL_nat_R___0__emit : seq<nat>) returns (q_0_1___seqL__seq
   q_0_1___seqL__seqL_nat_R__R___4__emit := CastHadEN01'1(q_0_1___seqL_nat_R___3__emit);
   q_1_10___seqL_nat_R___5__emit := q_1_15___seqL_nat_R___2__emit[0..9];
   q_10_15___seqL_nat_R___6__emit := q_1_15___seqL_nat_R___2__emit[9..14];
-  // Cast TNor ==> TEN
-  q_l_i__add__1_r_10___seqL_nat_R___9__emit := CastNorEN(q_l_i__add__1_r_10___seqL_nat_R___8__emit);
-  q_0_l_i__add__1_r___seqL__seqL_nat_R__R___10__emit := q_0_l_i__add__1_r___seqL__seqL_nat_R__R___11__emit;
-  q_0_l_i__add__1_r___seqL__seqL_nat_R__R___12__emit := q_0_l_i__add__1_r___seqL__seqL_nat_R__R___11__emit[0..1];
-  q_0_l_i__add__1_r___seqL__seqL_nat_R__R___11__emit := q_0_l_i__add__1_r___seqL__seqL_nat_R__R___11__emit[1..|q_0_l_i__add__1_r___seqL__seqL_nat_R__R___11__emit|];
   for i := 0 to 9
   {
+    q_0_compact___seqL__seqL_nat_R__R___9__emit := q_0_compact___seqL__seqL_nat_R__R___7__emit[0..1];
+    q_0_compact___seqL__seqL_nat_R__R___7__emit := q_0_compact___seqL__seqL_nat_R__R___7__emit[1..|q_0_compact___seqL__seqL_nat_R__R___7__emit|];
+    q_compact_compact___seqL__seqL_nat_R__R___12__emit := Map(q_compact_compact___seqL__seqL_nat_R__R___12__emit => q_compact_compact___seqL__seqL_nat_R__R___12__emit[0..0] + Map(x => x + 1 % 2, q_compact_compact___seqL__seqL_nat_R__R___12__emit[0..2 + i]) + q_compact_compact___seqL__seqL_nat_R__R___12__emit[2 + i..|q_compact_compact___seqL__seqL_nat_R__R___12__emit|], q_compact_compact___seqL__seqL_nat_R__R___12__emit);
   }
 
 }

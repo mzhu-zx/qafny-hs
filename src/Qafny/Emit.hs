@@ -135,7 +135,7 @@ instance DafnyPrinter QDafny where
 
 instance DafnyPrinter QMethod where
   build (QMethod idt bds rets reqs ens blockHuh) =
-    "method " <!> idt
+    indent <> "method " <!> idt
     <+> withParen (byComma bds) <> buildRets rets
     <!> lineHuh reqEns
     <!> (withIncr2 . by line $ (indent <!>) <$> reqEns)
@@ -166,6 +166,13 @@ instance DafnyPrinter Stmt where
           -- todo: emit invariants
           b
   build (SDafny s') = indent <> build s'
+
+  build s@(SFor idx boundl boundr eG invs seps body) = debugOnly s $
+    indent <> "for"
+    <+> idx <+> "∈" <+> withBracket (boundl <+> ".." <+> boundr)
+    <+> "with" <+> eG <!> line
+    <!> body
+
   build s = indent <> buildStmt s <> build ';'
     where
       buildStmt :: Stmt -> Builder
@@ -175,13 +182,13 @@ instance DafnyPrinter Stmt where
       buildStmt (SCall e es) = e <!> withParen (byComma es)
       buildStmt (SEmit s') = buildEmit s'
       buildStmt (SAssert e) = "assert " <!> e
-      buildStmt (SApply e1 e2) = debugOnly s $ e1 <+> ":=" <+> "λ" <+> e2
-      buildStmt (SFor idx boundl boundr eG invs seps body) = debugOnly s $
-        "for"
-        <+> idx <+> "∈" <+> withBracket (boundl <+> ".." <+> boundr)
-        <+> "with" <+> eG <!> line
-        <!> body
+      buildStmt (SApply e1 e2) = debugOnly s $
+        e1 <+> "*=" <+> λHuh e2
       buildStmt e = "// undefined builder for Stmt : " <!> show e
+
+      λHuh e@(EEmit (ELambda {})) = "λ" <+> e
+      λHuh e = build e
+
       buildEmit :: EmitStmt -> Builder
       buildEmit (SIfDafny e b) = "if " <!> withParen (build e) <!> b
       buildEmit _              = error "Should have been handled!!"
@@ -202,6 +209,7 @@ instance DafnyPrinter Exp where
   build (EForall x eb e) = withParen $ "forall " <!> x  <!> beb eb <!>  " :: " <!> e
     where beb (Just eb') = " | " <!> eb'
           beb Nothing    = mempty
+  build e@EHad = debugOnly e "H"
   build e = "//" <!> show e <!> build " should not be in emitted form!"
 
 instance DafnyPrinter EmitExp where

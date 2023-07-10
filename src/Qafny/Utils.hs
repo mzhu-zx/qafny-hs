@@ -23,15 +23,6 @@ import           Qafny.Variable               (Variable (variable))
 import           Text.Printf                  (printf)
 import Control.Monad (forM)
 
-
--- catchMaybe
---   :: Has (Error e) sig m
---   => m (Maybe a)
---   -> m a
---   -> m a
--- catchMaybe mayFail fail' =
---   mayFail >>= maybe fail' return
-
 throwError'
   :: ( Has (Error String) sig m )
   => String -> m a
@@ -51,42 +42,6 @@ gensymLoc
   :: ( Has (Gensym String) sig m )
   => String -> m Loc
 gensymLoc = (Loc <$>) . gensym . variable . Loc
-
--- | Generate a new symbol for emit variable and add it to emitSt
--- gensymEmit
---   :: ( Has (Gensym RBinding) sig m
---      , Has (State TState) sig m
---      )
---   => Binding -> m String
--- gensymEmit b = do
---   name <- gensym b
---   emitSt %= (at b ?~ name)
---   return name
-
-
-
--- TODO: Binding can cause aliasing, Var is not sufficient, I need to define
--- `RBinding = (Range, Ty)` to avoid aliasing!
--- | Lookup for emitted symbols in emitSt
--- findEmitSym
---   :: ( Has (State TState) sig m
---      , Has (Error String) sig m
---      )
---   => Binding -> m String
--- findEmitSym b = do
---   st <- use emitSt
---   rethrowMaybe
---     (return (st ^. at b)) $
---     printf "the binding `%s` cannot be found in the renaming state.\n%s"
---       (show b)
---       (show st)
-
--- -- | Remove bindings from emitSt
--- removeEmitBindings
---   :: ( Has (State TState) sig m)
---   => [Binding] -> m ()
--- removeEmitBindings bs = do
---   emitSt %= (`Map.withoutKeys` Set.fromList bs)
 
 --------------------------------------------------------------------------------
 -- * Gensym Utils
@@ -158,9 +113,9 @@ dumpSSt
   :: ( Has (State TState) sig m
      , Has Trace sig m
      )
-  => m ()
-dumpSSt = do
+  => String -> m ()
+dumpSSt str = do
   s <- use sSt
-  trace $ printf "[info] Dumped sSt:\n%s" (show s)
+  trace $ printf "[info] Dumped sSt (%s):%s" str (show s)
 
 --------------------------------------------------------------------------------

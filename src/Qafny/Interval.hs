@@ -5,10 +5,8 @@ module Qafny.Interval where
 import           Control.Applicative (Applicative (liftA2))
 import           Data.Bool           (bool)
 import           Qafny.AST           (Exp, Range (..), Var)
-import           Qafny.ASTFactory    (eSub)
 import           Qafny.Partial       (evalPStatic, hasResidue)
 import           Text.Printf         (printf)
-import Debug.Trace (traceShowId, trace)
 
 --------------------------------------------------------------------------------
 -- * Partial Ordering
@@ -59,7 +57,7 @@ instance SemiLattice a => SemiLattice (Interval a) where
 -- * Partial Evaluation Related
 --------------------------------------------------------------------------------
 instance PartialOrd Exp where
-  e1 ⊑ e2 = (>= 0) <$> evalPStatic (e2 `eSub` e1)
+  e1 ⊑ e2 = (>= 0) <$> evalPStatic (e2 - e1)
 
 instance SemiLattice Exp where
   (⊔) = simpleLub

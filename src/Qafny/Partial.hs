@@ -5,11 +5,14 @@
   #-}
 
 module Qafny.Partial where
-import           Data.Bool        (bool)
-import qualified Data.Map.Strict  as Map
-import           Data.Maybe       (isJust, isNothing)
+import           Data.Bool             (bool)
+import           Data.Functor.Foldable
+    ( Corecursive (embed)
+    , Recursive (project)
+    )
+import qualified Data.Map.Strict       as Map
+import           Data.Maybe            (isJust)
 import           Qafny.AST
-import           Qafny.ASTFactory
 
 --------------------------------------------------------------------------------
 -- $doc
@@ -39,6 +42,7 @@ instance PEval Exp where
       OAdd -> (evalResidue (+) m1 m2, v1 + v2)
       OSub -> (evalResidue (+) m1 (Map.map (0 -) m2), v1 - v2)
       _    -> undefined
+  evalP e = undefined
 
   reflectP (m, i) =
     Map.foldrWithKey go (ENum i) m
@@ -56,7 +60,15 @@ instance Reducible a => Reducible [a] where
   reduce = fmap reduce
 
 instance Reducible Exp where
-  reduce = reflectP . evalP
+  reduce = go
+    where
+      go :: Exp -> Exp
+      go e@ENum{}          = red e
+      go e@EVar{}          = red e
+      go e@(EOp2 OAdd _ _) = red e
+      go e@(EOp2 OSub _ _) = red e
+      go e                 = embed $ go <$> project e
+      red = reflectP . evalP
 
 instance Reducible Range where
   reduce (Range x l r) = Range x (reduce l) (reduce r)
@@ -89,4 +101,4 @@ hasResidue = isJust . staticValue . evalP
 -- newtype PExp = PExp { unPExp :: Exp }
 
 sizeOfRangeP :: Range -> Maybe Int
-sizeOfRangeP (Range _ el er) = evalPStatic (er `eSub` el)
+sizeOfRangeP (Range _ el er) = evalPStatic (er - el)

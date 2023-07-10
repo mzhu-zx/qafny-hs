@@ -8,7 +8,6 @@ import           Qafny.AST
     , Range (..)
     , fVars
     )
-import           Qafny.ASTFactory (eSub)
 import           Qafny.Domain
 import           Qafny.Interval
 import           Qafny.Partial

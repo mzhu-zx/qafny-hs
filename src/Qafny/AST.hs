@@ -61,7 +61,10 @@ data Binding
 type Bindings = [Binding]
 
 newtype RBinding = RBinding { unRBinding :: (Range, Ty) }
-  deriving (Show, Eq, Ord)
+  deriving (Eq, Ord)
+
+instance Show RBinding where
+  show = show . unRBinding 
 
 data Op2
   = OAnd
@@ -271,6 +274,17 @@ makeBaseFunctor ''Exp
 --------------------------------------------------------------------------------
 -- * Exp Utils
 --------------------------------------------------------------------------------
+instance Num Exp where
+  e1 + e2 = EOp2 OAdd e1 e2 
+  e1 - e2 = EOp2 OSub e1 e2 
+  e1 * e2 = EOp2 OMul e1 e2 
+  negate = (0 -) 
+  abs = undefined
+  signum = undefined
+  fromInteger a = ENum (fromInteger a)
+
+  
+
 fVars :: Exp -> [Var]
 fVars = cata go
   where

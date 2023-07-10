@@ -28,8 +28,11 @@ instance Variable Op2 where
 instance Variable Exp where
   variable (ENum n) = variable n
   variable (EVar v) = variable v
+  -- I need a way to specify compact vs full spec 
   variable (EOp2 op e1 e2) =
-    printf "l_%s_%s_%s_r" (variable e1) (variable op) (variable e2)
+    if True
+    then "compact"
+    else  printf "l_%s_%s_%s_r" (variable e1) (variable op) (variable e2)
   variable _        = undefined
 
 instance Variable Range where

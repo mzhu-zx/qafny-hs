@@ -1,6 +1,9 @@
 {-# LANGUAGE
     DataKinds
+  , IncoherentInstances
   , FlexibleContexts
+  , FlexibleInstances
+  , UndecidableInstances
   , RecordWildCards
   , ScopedTypeVariables
   , TupleSections
@@ -71,7 +74,7 @@ import           Qafny.Typing
     , splitThenCastScheme
     , tStateFromPartitionQTys
     , typingExp
-    , typingGuard
+    , typingGuard, resolvePartition', typingPartition
     )
 import           Qafny.Utils
     ( dumpSSt
@@ -84,6 +87,8 @@ import           Qafny.Utils
     , throwError'
     , liftPartition
     )
+import Control.Exception (throw)
+import Control.Effect.Fail (Fail)
 
 --------------------------------------------------------------------------------
 -- * Introduction
@@ -172,7 +177,7 @@ codegenToplevel'Method
 -- order, sorting those variables should also be the part of the calling
 -- convention
 codegenToplevel'Method q@(QMethod v bds rts rqs ens Nothing) = return q
-codegenToplevel'Method q@(QMethod v bds rts rqs ens (Just block)) = do
+codegenToplevel'Method q@(QMethod v bds rts rqs ens (Just block)) = runWithCallStack q $ do
   (countMeta, (countEmit, (rbdvsEmitR', rbdvsEmitB), (rqsCG, blockCG))) <-
     local (appkEnvWithBds bds) $
     codegenRequires rqs `resumeGensym` codegenMethodBody block
@@ -281,9 +286,18 @@ codegenStmt
      )
   => Stmt
   -> m [Stmt]
-codegenStmt s = catchError (codegenStmt' s) $
-  \err -> throwError' $ err ++ "\nfrom:\n" ++ showEmitI 4 s
+codegenStmt s = runWithCallStack s (codegenStmt' s)
   
+runWithCallStack
+  :: ( Has (Error String) sig m
+     , DafnyPrinter s
+     )
+  => s
+  -> m b
+  -> m b
+runWithCallStack s =
+  flip catchError $ \err -> throwError' $ err ++ "\nat:\n" ++ showEmitI 4 s
+
 codegenStmt'
   :: ( Has (Reader TEnv) sig m
      , Has (Reader IEnv) sig m
@@ -321,24 +335,33 @@ codegenStmt' (SApply s EHad) = do
     opCastHad t = throwError $ "type `" ++ show t ++ "` cannot be casted to Had type"
 
 
-codegenStmt' stmt@(SApply s@(Partition ranges) e@(EEmit (ELambda {}))) = do
-  st'@(STuple (_, _, qt)) <- resolvePartition s
+codegenStmt' stmt@(SApply s@(Partition ranges) eLam@(EEmit (ELambda {}))) = do
+  (st'@(STuple (_, _, qt')), corr) <- resolvePartition' s
   qtLambda <- ask
-  checkSubtypeQ qt qtLambda
-  r <- case ranges of
+  checkSubtypeQ qt' qtLambda
+  (r@(Range _ erLower erUpper), (rSt@(Range _ esLower esUpper))) <- case ranges of
     []  -> throwError "Parser says no!"
-    [x] -> return x
+    [x] -> maybe (throwError' "???") (return . (x,)) $ lookup x corr
     _   -> throwError errRangeGt1
-  (_, maySplit, mayCast) <- splitThenCastScheme st' qtLambda r
+  (st@(STuple (_, _, qt)), maySplit, mayCast) <- splitThenCastScheme st' qtLambda r
   stmts <- codegenSplitThenCastEmit maySplit mayCast
   -- | It's important not to use the fully resolved `s` here because the OP
   -- should only be applied to the sub-partition specified in the annotation.
-  vsEmit <- unpackPart s `forM` (`findEmitRangeQTy` qt)
-  return $ mkMapCall `map` vsEmit
+  [vEmit] <- unpackPart s `forM` (`findEmitRangeQTy` qt)
+  case qtLambda of
+    TEN -> return $ [ mkMapCall vEmit ]
+    TEN01 -> do
+      vInner <- gensym "lambda_x"
+      let offset = erLower - esLower
+      let lambda = lambdaSplit vEmit offset (erUpper - offset)
+      return [ SAssign vEmit $ reduce $ callMap lambda (EVar vEmit) ]
   where
     errRangeGt1 :: String
     errRangeGt1 = printf "%s contains more than 1 range no!" (show ranges)
-    mkMapCall v = v `SAssign` EEmit (ECall "Map" [e, EVar v])
+    splitMap3 v el er f = EOpChained (sliceV v 0 el) $ (OAdd,) <$> [ callMap f (sliceV v el er), sliceV v er (cardV v)]
+    lambdaSplit v el er = EEmit (ELambda v (EEmit $ splitMap3 v el er eLam))
+    mkMapCall v = v `SAssign` callMap eLam (EVar v)
+
 codegenStmt' (SIf e seps b) = do
   -- resolve the type of the guard
   stG@(STuple (_, _, qtG)) <- typingGuard e
@@ -358,8 +381,13 @@ codegenStmt' (SIf e seps b) = do
 codegenStmt' (SFor idx boundl boundr eG invs seps body) = do
   (stmtsPreGuard, statePreLoop, stateLoop) <- codegenInit
   put stateLoop
-  let substEnv = [(idx, boundl :| [boundr `eSub` ENum 1])]
-  stmtsBody <- local (++ substEnv) $ codegenFor'Body idx boundl boundr eG body
+  let substEnv = [(idx, boundl :| [boundr - 1])]
+  
+  stmtsBody <- local (++ substEnv) $ do
+    stmtsBody <- codegenFor'Body idx boundl boundr eG body
+    codegenFinish
+    return stmtsBody
+
   put statePreLoop
   return $ concat stmtsPreGuard ++ stmtsBody
   where
@@ -374,6 +402,10 @@ codegenStmt' (SFor idx boundl boundr eG invs seps body) = do
     -- bound
     invPQtsPre = first (reduce . substP [(idx, boundl)]) <$> invPQts
 
+    -- | the postcondtion of one iteration amounts to that of incrementing the
+    -- index by one
+    invPQtsPost = first (reduce . substP [(idx, EVar idx + 1)]) <$> invPQts
+    
     -- | Generate code and state for the precondition
     codegenInit = do
       stmtsPreGuard <- invPQtsPre `forM` \(sInv, qtInv) -> case sInv of
@@ -382,7 +414,6 @@ codegenStmt' (SFor idx boundl boundr eG invs seps body) = do
           (sInvSplit, maySplit, mayCast) <- splitThenCastScheme stInv qtInv rInv
           codegenSplitThenCastEmit maySplit mayCast
         _                -> throwError' $ printf "More than 1 range %s" (show sInv)
-
       -- | This is important because we will generate a new state from the loop
       -- invariant and perform both typing and codegen in the new state!
       statePreLoop <- get @TState
@@ -390,6 +421,10 @@ codegenStmt' (SFor idx boundl boundr eG invs seps body) = do
       -- | Do type inference with the loop invariant typing state
       stateLoop <- tStateFromPartitionQTys invPQts
       return (stmtsPreGuard, statePreLoop, stateLoop)
+
+    codegenFinish =
+      forM invPQtsPost (uncurry typingPartition)
+
 
 
 codegenStmt' (SAssert e@(ESpec{})) = do
@@ -454,16 +489,19 @@ codegenFor'Body
 codegenFor'Body idx boundl boundr eG body = do
   stG@(STuple (_, sG, qtG)) <- typingGuard eG
   stB'@(STuple (_, sB, qtB)) <- resolvePartitions . leftPartitions . inBlock $ body
-  (stmtsCastB, stB) <- case qtB of
-    _ | isEN qtB -> return ([], stB')
-    _            -> (,) <$> castPartitionEN stB' <*> resolvePartition (unSTup stB' ^. _2)
 
-  -- what to do with the guard partition is unsure...
-  (stmtsDupG, gCorr) <- dupState sG
-  (rL, eConstraint) <- makeLoopRange sG boundl boundr
   -- ^ FIXME: these two handling of guard state seems ungrounded
   (stmtsPrelude, stmtsBody) <- case qtG of
-    THad ->
+    THad -> do
+      -- It seems that castEN semantics maybe unnecessary with invariant typing? 
+      (stmtsCastB, stB) <- case qtB of
+        _ | isEN qtB -> return ([], stB')
+        _            -> (,) <$> castPartitionEN stB' <*> resolvePartition (unSTup stB' ^. _2)
+
+      -- what to do with the guard partition is unsure...
+      (stmtsDupG, gCorr) <- dupState sG
+      (rL, eConstraint) <- makeLoopRange sG boundl boundr
+
       -- FIXME: for now, I discard the env for the Had case for backward
       -- compatibility
       local (const initIEnv) $ do
@@ -478,7 +516,7 @@ codegenFor'Body idx boundl boundr eG body = do
                    EEmit $ EMakeSeq TNat cardVEmitG $ constExp $ ENum 0 ]
          stG' <- resolvePartition (unSTup stGSplited ^. _2)
          stmtsCGHad <- codegenStmt'For'Had stB stG' vEmitG idx body
-         return $ ( stmtsInitG
+         return $ ( stmtsCastB ++ stmtsDupG ++ stmtsInitG
                   , stmtsSplitG ++ stmtsCGHad)
     TEN01 -> do
       eSep <- case eG of
@@ -491,14 +529,17 @@ codegenFor'Body idx boundl boundr eG body = do
       let stmtsSaveFalse = uncurry (stmtAssignSlice (ENum 0) eSep) <$> zip vsEmitGFalse vsEmitG
       let stmtsFocusTrue = stmtAssignSelfRest eSep <$> vsEmitG
 
-      -- hint: lambda should resolve to EN01 now
+      -- 2. generate the body statements with with that hint lambda should
+      -- resolve to EN01 now
       stmtsBody <- local (const TEN01) $ do 
         codegenBlock body 
 
-      return (stmtsSaveFalse ++ stmtsFocusTrue ++ [SEmit (SBlock stmtsBody)], [])
+      -- 3. 
+
+      return ([], stmtsSaveFalse ++ stmtsFocusTrue ++ inBlock stmtsBody)
     _    -> throwError' $ printf "%s is not a supported guard type!" (show qtG)
   let innerFor = SEmit $ SForEmit idx boundl boundr [] $ Block stmtsBody
-  return $ stmtsCastB ++ stmtsDupG ++ stmtsPrelude ++ [innerFor]
+  return $ stmtsPrelude ++ [innerFor]
   where
     errNoSep = "Insufficient knowledge to perform a separation for a EN01 partition "
     stmtAssignSlice el er idTo idFrom = SAssign idTo (sliceV idFrom el er)
@@ -863,19 +904,9 @@ codegenAssertion
      )
   => Exp -> m [Exp]
 codegenAssertion (ESpec s qt espec) = do
-  st@(STuple(_, pResolved, qtResolved)) <- resolvePartition s
-  when (qt /= qtResolved) $ throwError' (errTypeMismatch st)
-  when (List.sort (unpackPart s) /= List.sort (unpackPart pResolved)) $
-    throwError' $ errIncompletePartition st
+  st <- typingPartition s qt
   vsEmit <- unpackPart s `forM` (`findEmitRangeQTy` qt)
   codegenSpecExp (zip vsEmit (unpackPart s)) qt espec
-  where
-    errTypeMismatch st =
-      printf "The partition %s is not of type %s.\nResolved: %s"
-      (show s) (show qt) (show st)
-    errIncompletePartition st@(STuple(_, p, _)) =
-      printf "The partition %s is a sub-partition of %s.\nResolved: %s"
-      (show s) (show p) (show st)
 codegenAssertion e = return [e]
 
 
@@ -895,11 +926,11 @@ codegenSpecExp vrs p e =
       -- @
       let eSelect x = EEmit (ESelect (EVar x) (EVar idx))
       return . concat $
-        [ [ reduce (er `eSub` el) `eEq` EEmit (ECard (EVar v))
+        [ [ reduce (er - el) `eEq` EEmit (ECard (EVar v))
           , EForall (natB idx) eBound (eSelect v `eEq` eBody)
           ]
         | ((v, Range _ el er), eBody) <- zip vrs es
-        , let eBound = Just (eIntv idx (ENum 0) (reduce (er `eSub` el))) ]
+        , let eBound = Just (eIntv idx (ENum 0) (reduce (er - el))) ]
     (TEN, SESpecEN idx (Intv l r) eValues) -> do
       checkListCorr vrs eValues
       -- In x[? .. ?] where l and r bound the indicies of basis-kets
@@ -926,7 +957,7 @@ codegenSpecExp vrs p e =
         ((vE, Range _ el er), eV) <- zip vrs eValues
         when (eV == EWildcard) mzero
         let eBoundSum = Just $ eIntv idxSum lSum rSum
-        let eBoundTen = Just $ eIntv idxTen (ENum 0) (er `eSub` el)
+        let eBoundTen = Just $ eIntv idxTen 0 (er - el)
         let eForallSum = EForall (natB idxSum) eBoundSum
         let eForallTen = EForall (natB idxTen) eBoundTen
         let eSel = (EVar vE `eAt` EVar idxSum) `eAt` EVar idxTen
@@ -946,3 +977,8 @@ checkListCorr vsEmit eValues =
     throwError' $ printf
       "The number of elements doesn't agree with each other: %s %s"
       (show vsEmit) (show eValues)
+
+
+--------------------------------------------------------------------------------
+instance (Has (Error String) sig m, Monad m) => MonadFail m where
+  fail = throwError
