@@ -1,21 +1,26 @@
-{-# LANGUAGE FlexibleContexts, FlexibleInstances, GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE
+    FlexibleContexts
+  , FlexibleInstances
+  , GeneralizedNewtypeDeriving
+  #-}
 
 module Qafny.Emit where
 
 import           Qafny.AST
 
 import           Control.Monad.Reader
-import           Data.Sum
 import           Data.Maybe             (maybeToList)
+import           Data.Sum
 import           Data.Text.Lazy         (Text, unpack)
 import qualified Data.Text.Lazy.Builder as TB
-import qualified GHC.Num as TB
-import qualified GHC.Enum as TB
+import qualified GHC.Enum               as TB
+import qualified GHC.Num                as TB
+import Control.Arrow (Arrow(first))
 
 -------------------- Builder --------------------
 
-newtype Builder_ a = Builder { doBuild :: Reader Int a }
-  deriving (Functor, Applicative, Monad, (MonadReader Int))
+newtype Builder_ a = Builder { doBuild :: Reader (Int, Bool) a }
+  deriving (Functor, Applicative, Monad, (MonadReader (Int, Bool)))
 type Builder = Builder_ TB.Builder
 
 instance Semigroup Builder where
@@ -32,11 +37,15 @@ space :: Builder
 space = return $ TB.singleton ' '
 
 withIncr2 :: Builder -> Builder
-withIncr2 = local (+ 2)
+withIncr2 = local (first (+ 2))
 
 indent :: Builder
-indent = do n <- ask
+indent = do (n, _) <- ask
             build $ replicate n ' '
+
+withBracket :: Builder -> Builder
+withBracket b = build '[' <> b <> build ']'
+
 
 withParen :: Builder -> Builder
 withParen b = build '(' <> b <> build ')'
@@ -53,7 +62,7 @@ by op (x:xs) = foldl (\ys y -> ys <!> op <!> build y) (build x) xs
 byComma :: DafnyPrinter a => [a] -> Builder
 byComma = by ", "
 
--- | Build and separate by line but with a trailing newline 
+-- | Build and separate by line but with a trailing newline
 byLineT :: DafnyPrinter a => [a] -> Builder
 byLineT = foldr (\y ys -> y <!> line <!> ys) mempty
 
@@ -64,6 +73,11 @@ byLineL a = lineHuh a <> by line a
 
 lineHuh :: Foldable t => t a -> Builder
 lineHuh a = if null a then mempty else line
+
+debugOnly :: (Show e, DafnyPrinter a) => e -> a -> Builder
+debugOnly e d = do
+  (_, b) <- ask
+  if b then build d else build $ "// (DEBUG)" ++ show e
 
 infixr 6 <!>
 
@@ -96,22 +110,22 @@ instance DafnyPrinter AST where
   build = by line
 
 instance DafnyPrinter Ty where
-  build TNat     = build "nat"
-  build TInt     = build "int"
-  build TBool    = build "bool"
+  build TNat      = build "nat"
+  build TInt      = build "int"
+  build TBool     = build "bool"
   build (TQReg n) = "qreg" <+> n
   build (TSeq t)  = "seq<" <!> t <!> ">"
-  build _        = undefined
+  build _         = undefined
 
 instance DafnyPrinter AExp where
   build (ANat n) = build n
-  build (AVar v) = build v 
+  build (AVar v) = build v
 
 instance DafnyPrinter QTy where
-  build TNor = build "nor"
-  build THad = build "had"
-  build TEN  = build "ch"
-  build TEN01  = build "ch01"
+  build TNor  = build "nor"
+  build THad  = build "had"
+  build TEN   = build "ch"
+  build TEN01 = build "ch01"
 
 instance DafnyPrinter Binding where
   build (Binding x t) = x <+>  ":" <+> t
@@ -139,7 +153,7 @@ instance DafnyPrinter Toplevel where
   build t = case unTop t of
     Inl q -> build q
     Inr q -> build q
-    
+
 
 instance DafnyPrinter Stmt where
   build (SEmit (SBlock b)) = build b
@@ -161,10 +175,22 @@ instance DafnyPrinter Stmt where
       buildStmt (SCall e es) = e <!> withParen (byComma es)
       buildStmt (SEmit s') = buildEmit s'
       buildStmt (SAssert e) = "assert " <!> e
+      buildStmt (SApply e1 e2) = debugOnly s $ e1 <+> ":=" <+> "λ" <+> e2
+      buildStmt (SFor idx boundl boundr eG invs seps body) = debugOnly s $
+        "for"
+        <+> idx <+> "∈" <+> withBracket (boundl <+> ".." <+> boundr)
+        <+> "with" <+> eG <!> line
+        <!> body
       buildStmt e = "// undefined builder for Stmt : " <!> show e
       buildEmit :: EmitStmt -> Builder
       buildEmit (SIfDafny e b) = "if " <!> withParen (build e) <!> b
       buildEmit _              = error "Should have been handled!!"
+
+instance DafnyPrinter Partition where
+  build p = build $ show p
+
+instance DafnyPrinter GuardExp where
+  build (GEPartition p _) = build p
 
 instance DafnyPrinter Exp where
   build (ENum n) = build $ show n
@@ -215,8 +241,15 @@ buildOp2 op = (<!>) . (<!> opSign)
 buildConds :: String -> [Exp] -> [Builder]
 buildConds s = map ((s <!> " ") <!>)
 
+runBuilder :: DafnyPrinter a => Int -> Bool -> a -> Text
+runBuilder i debug = TB.toLazyText . flip runReader (i, debug) . doBuild . build
+
 texify :: DafnyPrinter a => a -> Text
-texify = TB.toLazyText . flip runReader 0 . doBuild . build
+texify = runBuilder 0 False
 
 showEmit :: DafnyPrinter a => a -> String
-showEmit = unpack . texify 
+showEmit = unpack . texify
+
+showEmitI :: DafnyPrinter a => Int -> a -> String
+showEmitI i = unpack . runBuilder i True
+

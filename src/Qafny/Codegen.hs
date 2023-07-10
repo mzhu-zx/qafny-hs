@@ -42,7 +42,7 @@ import           Qafny.AST
 import           Qafny.AST              (specPartitionQTys)
 import           Qafny.ASTFactory
 import           Qafny.Config
-import           Qafny.Emit             (DafnyPrinter (build), showEmit)
+import           Qafny.Emit             (DafnyPrinter (build), showEmit, showEmitI)
 import           Qafny.Env
     ( CastScheme (..)
     , STuple (..)
@@ -281,12 +281,29 @@ codegenStmt
      )
   => Stmt
   -> m [Stmt]
-codegenStmt s@(SVar (Binding v t) Nothing)  = return [s]
-codegenStmt s@(SVar (Binding v t) (Just e)) = do
+codegenStmt s = catchError (codegenStmt' s) $
+  \err -> throwError' $ err ++ "\nfrom:\n" ++ showEmitI 4 s
+  
+codegenStmt'
+  :: ( Has (Reader TEnv) sig m
+     , Has (Reader IEnv) sig m
+     , Has (Reader QTy) sig m
+     , Has (State TState)  sig m
+     , Has (Error String) sig m
+     , Has (Gensym String) sig m
+     , Has (Gensym RBinding) sig m
+     , Has Trace sig m
+     )
+  => Stmt
+  -> m [Stmt]
+codegenStmt' s@(SVar (Binding v t) Nothing)  = return [s]
+codegenStmt' s@(SVar (Binding v t) (Just e)) = do
   te <- typingExp e
-  checkSubtype t te -- check if `t` agrees with the type of `e`
+
+  -- check if `t` agrees with the type of `e`
+  checkSubtype t te
   codegenAlloc v e t <&> (: [])
-codegenStmt (SApply s EHad) = do
+codegenStmt' (SApply s EHad) = do
   r <- case unpackPart s of
     [r] -> return r
     _   -> throwError "TODO: support non-singleton partition in `*=`"
@@ -304,7 +321,7 @@ codegenStmt (SApply s EHad) = do
     opCastHad t = throwError $ "type `" ++ show t ++ "` cannot be casted to Had type"
 
 
-codegenStmt (SApply s@(Partition ranges) e@(EEmit (ELambda {}))) = do
+codegenStmt' stmt@(SApply s@(Partition ranges) e@(EEmit (ELambda {}))) = do
   st'@(STuple (_, _, qt)) <- resolvePartition s
   qtLambda <- ask
   checkSubtypeQ qt qtLambda
@@ -322,7 +339,7 @@ codegenStmt (SApply s@(Partition ranges) e@(EEmit (ELambda {}))) = do
     errRangeGt1 :: String
     errRangeGt1 = printf "%s contains more than 1 range no!" (show ranges)
     mkMapCall v = v `SAssign` EEmit (ECall "Map" [e, EVar v])
-codegenStmt (SIf e seps b) = do
+codegenStmt' (SIf e seps b) = do
   -- resolve the type of the guard
   stG@(STuple (_, _, qtG)) <- typingGuard e
   -- resolve the body partition
@@ -338,7 +355,7 @@ codegenStmt (SIf e seps b) = do
     _    -> undefined
   return $ stmtsCastB ++ stmts
 
-codegenStmt (SFor idx boundl boundr eG invs seps body) = do
+codegenStmt' (SFor idx boundl boundr eG invs seps body) = do
   (stmtsPreGuard, statePreLoop, stateLoop) <- codegenInit
   put stateLoop
   let substEnv = [(idx, boundl :| [boundr `eSub` ENum 1])]
@@ -375,11 +392,11 @@ codegenStmt (SFor idx boundl boundr eG invs seps body) = do
       return (stmtsPreGuard, statePreLoop, stateLoop)
 
 
-codegenStmt (SAssert e@(ESpec{})) = do
+codegenStmt' (SAssert e@(ESpec{})) = do
   (SAssert <$>) <$> codegenAssertion e
   -- check type or cast here
 
-codegenStmt s = error $ "Unimplemented:\n\t" ++ show s ++ "\n"
+codegenStmt' s = error $ "Unimplemented:\n\t" ++ show s ++ "\n"
 
 
 --------------------------------------------------------------------------------
