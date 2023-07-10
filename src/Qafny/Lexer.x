@@ -59,13 +59,13 @@ token :-
   for              { emit $  TFor                }
   in               { emit $  TIn                 }
   "∈"              { emit $  TUnicodeIn          }
-  "\in"           { emit $  TUnicodeIn          }
+  "\in"            { emit $  TUnicodeIn          }
   "Σ"              { emit $  TUnicodeSum         }
-  "\Sum"          { emit $  TUnicodeIn          }
+  "\Sum"           { emit $  TUnicodeIn          }
   "⊗"              { emit $  TUnicodeTensor      }
-  "\otimes"       { emit $  TUnicodeIn          }
+  "\otimes"        { emit $  TUnicodeIn          }
   "↦"              { emit $  TUnicodeMap         }
-  "\mapsto"       { emit $  TUnicodeMap         }
+  "\mapsto"        { emit $  TUnicodeMap         }
   with             { emit $  TWith               }
   invariant        { emit $  TInv                }
   H                { emit $  THApp               }

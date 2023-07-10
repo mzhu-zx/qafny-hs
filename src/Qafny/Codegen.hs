@@ -193,7 +193,10 @@ codegenToplevel'Method q@(QMethod v bds rts rqs ens (Just block)) = do
         ]
   return $ QMethod v bdsCG (rts ++ bdRets) rqsCG ensCG (Just . Block $ blockStmts)
   where
-    codegenMethodBody = runReader initIEnv . codegenBlock
+    codegenMethodBody =
+      runReader initIEnv .  -- | TODO: propagate parameter constrains
+      runReader TEN .       -- | resolve λ to EN on default
+      codegenBlock
 
     -- | All __qreg__ parameters
     vIns = [ vIn | Binding vIn (TQReg _) <- bds ]
@@ -235,6 +238,7 @@ codegenBlock
      , Has (Gensym String) sig m
      , Has (Gensym RBinding) sig m
      , Has (Reader IEnv) sig m
+     , Has (Reader QTy) sig m
      , Has Trace sig m
      )
   => Block
@@ -250,6 +254,7 @@ codegenStmts
      , Has (Gensym RBinding) sig m
      , Has (Reader IEnv) sig m
      , Has Trace sig m
+     , Has (Reader QTy) sig m -- hints for λ type resolution
      )
   => [Stmt]
   -> m [Stmt]
@@ -267,6 +272,7 @@ codegenStmts (stmt : stmts) = do
 codegenStmt
   :: ( Has (Reader TEnv) sig m
      , Has (Reader IEnv) sig m
+     , Has (Reader QTy) sig m
      , Has (State TState)  sig m
      , Has (Error String) sig m
      , Has (Gensym String) sig m
@@ -300,12 +306,13 @@ codegenStmt (SApply s EHad) = do
 
 codegenStmt (SApply s@(Partition ranges) e@(EEmit (ELambda {}))) = do
   st'@(STuple (_, _, qt)) <- resolvePartition s
-  checkSubtypeQ qt TEN
+  qtLambda <- ask
+  checkSubtypeQ qt qtLambda
   r <- case ranges of
     []  -> throwError "Parser says no!"
     [x] -> return x
     _   -> throwError errRangeGt1
-  (_, maySplit, mayCast) <- splitThenCastScheme st' TEN r
+  (_, maySplit, mayCast) <- splitThenCastScheme st' qtLambda r
   stmts <- codegenSplitThenCastEmit maySplit mayCast
   -- | It's important not to use the fully resolved `s` here because the OP
   -- should only be applied to the sub-partition specified in the annotation.
@@ -387,6 +394,7 @@ codegenStmt'If'Had
      , Has (Gensym String) sig m
      , Has (Gensym RBinding) sig m
      , Has (Reader IEnv) sig m
+     , Has (Reader QTy) sig m
      , Has Trace sig m
      )
   => STuple -> STuple -> Block
@@ -412,11 +420,12 @@ codegenStmt'If'Had stG stB' b = do
 -- | Code generation of the body statements of a for loop construct
 codegenFor'Body
   :: ( Has (Reader TEnv) sig m
+     , Has (Reader IEnv) sig m
+     , Has (Reader QTy) sig m
      , Has (State TState)  sig m
      , Has (Error String) sig m
      , Has (Gensym String) sig m
      , Has (Gensym RBinding) sig m
-     , Has (Reader IEnv) sig m
      , Has Trace sig m
      )
   => Var   -- ^ index variable
@@ -464,7 +473,12 @@ codegenFor'Body idx boundl boundr eG body = do
       vsEmitGFalse <- liftPartition (`gensymRangeQTy` qtG) sG
       let stmtsSaveFalse = uncurry (stmtAssignSlice (ENum 0) eSep) <$> zip vsEmitGFalse vsEmitG
       let stmtsFocusTrue = stmtAssignSelfRest eSep <$> vsEmitG
-      return (stmtsSaveFalse ++ stmtsFocusTrue, [])
+
+      -- hint: lambda should resolve to EN01 now
+      stmtsBody <- local (const TEN01) $ do 
+        codegenBlock body 
+
+      return (stmtsSaveFalse ++ stmtsFocusTrue ++ [SEmit (SBlock stmtsBody)], [])
     _    -> throwError' $ printf "%s is not a supported guard type!" (show qtG)
   let innerFor = SEmit $ SForEmit idx boundl boundr [] $ Block stmtsBody
   return $ stmtsCastB ++ stmtsDupG ++ stmtsPrelude ++ [innerFor]
@@ -477,6 +491,7 @@ codegenFor'Body idx boundl boundr eG body = do
 codegenStmt'For'Had
   :: ( Has (Reader TEnv) sig m
      , Has (Reader IEnv) sig m
+     , Has (Reader QTy) sig m
      , Has (State TState)  sig m
      , Has (Error String) sig m
      , Has (Gensym String) sig m
@@ -505,7 +520,7 @@ codegenStmt'For'Had stB stG vEmitG vIdx b = do
   -- TODO: in the current implementation, if the number of kets is changed in
   -- the body, this strategy is incorrect!
 
-  -- 5. (Compromise) double the counter
+  -- 5. (Compromised) double the counter
   let stmtAdd1 = addENHad1 vEmitG vIdx
   mergeSTuples stB stG
   return $ stmtsDupB ++ [stmtB] ++ stmtsMergeB ++ [stmtAdd1]
