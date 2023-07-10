@@ -181,7 +181,7 @@ instance DafnyPrinter Exp where
 instance DafnyPrinter EmitExp where
   build (ELambda v e) = v <!> " => " <!> e
   build (ESelect e1 e2) = e1 <!> "[" <!> e2 <!> "]"
-  build (ESeqRange e1 e2 e3) = e1 <!> "[" <!> e2 <!> ".." <!> e3 <!> "]"
+  build (ESlice e1 e2 e3) = e1 <!> "[" <!> e2 <!> ".." <!> e3 <!> "]"
   build EMtSeq = build "[]"
   build (EMakeSeq ty e ee) =
     "seq<" <!> ty <!> ">" <!> withParen (e <!> ", " <!> ee)

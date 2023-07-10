@@ -16,6 +16,7 @@ data Token
   | TAssign | TApply
   | TVar | TIf | TCl | TFor
   | TWith
+  | TSplit | TAt
   | TMea
   | TUnicodeMap
   | TUnicodeTensor

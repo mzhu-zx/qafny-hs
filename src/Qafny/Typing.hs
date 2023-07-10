@@ -398,9 +398,9 @@ typingGuard
      , Has (Reader IEnv) sig m
      , Has Trace sig m
      )
-  => Exp -> m STuple
-typingGuard (EPartition s') = resolvePartition s'
-typingGuard e               = throwError $ "Unsupported guard: " ++ show e
+  => GuardExp -> m STuple
+typingGuard (GEPartition s' _) = resolvePartition s'
+-- typingGuard e                 = throwError $ "Unsupported guard: " ++ show e
 
 
 --------------------------------------------------------------------------------

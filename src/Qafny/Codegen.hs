@@ -31,7 +31,7 @@ import           Control.Lens.Tuple
 import           Control.Monad          (MonadPlus (mzero), forM, unless, when)
 import           Data.Functor           ((<&>))
 import qualified Data.List              as List
-import           Data.List.NonEmpty     (NonEmpty (..))
+import           Data.List.NonEmpty     (NonEmpty (..), partition)
 import qualified Data.Map.Strict        as Map
 import qualified Data.Sum               as Sum
 import           Text.Printf            (printf)
@@ -82,6 +82,7 @@ import           Qafny.Utils
     , rbindingOfRangeQTy
     , rethrowMaybe
     , throwError'
+    , liftPartition
     )
 
 --------------------------------------------------------------------------------
@@ -421,7 +422,7 @@ codegenFor'Body
   => Var   -- ^ index variable
   -> Exp   -- ^ lower bound
   -> Exp   -- ^ upper bound
-  -> Exp   -- ^ guard expression
+  -> GuardExp   -- ^ guard expression
   -> Block -- ^ body
   -> m [Stmt]
 codegenFor'Body idx boundl boundr eG body = do
@@ -454,13 +455,23 @@ codegenFor'Body idx boundl boundr eG body = do
          return $ ( stmtsInitG
                   , stmtsSplitG ++ stmtsCGHad)
     TEN01 -> do
-      dumpSSt
-      trace $ show stG
+      eSep <- case eG of
+        GEPartition _ (Just eSep) -> return eSep
+        _ -> throwError' errNoSep
 
-      return ([], [])
+      -- 1. save the "false" part to a new variable
+      vsEmitG <- liftPartition (`findEmitRangeQTy` qtG) sG
+      vsEmitGFalse <- liftPartition (`gensymRangeQTy` qtG) sG
+      let stmtsSaveFalse = uncurry (stmtAssignSlice (ENum 0) eSep) <$> zip vsEmitGFalse vsEmitG
+      let stmtsFocusTrue = stmtAssignSelfRest eSep <$> vsEmitG
+      return (stmtsSaveFalse ++ stmtsFocusTrue, [])
     _    -> throwError' $ printf "%s is not a supported guard type!" (show qtG)
   let innerFor = SEmit $ SForEmit idx boundl boundr [] $ Block stmtsBody
   return $ stmtsCastB ++ stmtsDupG ++ stmtsPrelude ++ [innerFor]
+  where
+    errNoSep = "Insufficient knowledge to perform a separation for a EN01 partition "
+    stmtAssignSlice el er idTo idFrom = SAssign idTo (sliceV idFrom el er)
+    stmtAssignSelfRest eBegin idSelf = stmtAssignSlice eBegin (EEmit . ECard . EVar $ idSelf) idSelf idSelf
 
 -- | Code Generation of a `For` statement with a Had partition
 codegenStmt'For'Had
@@ -737,7 +748,7 @@ codegenSplitEmit
       let offset e = reduce $ EOp2 OSub e left
       let stmtsSplit =
             [ SAssign vEmitNew $
-              EEmit (ESeqRange (EVar (schVEmitOrigin ss)) (offset el) (offset er))
+              EEmit (ESlice (EVar (schVEmitOrigin ss)) (offset el) (offset er))
             | (vEmitNew, Range _ el er) <- zip (schVsEmitAll ss) (rTo : rsRem) ]
       return stmtsSplit
     _    -> throwError @String $ printf "Splitting a %s partition is unsupported." (show qty)

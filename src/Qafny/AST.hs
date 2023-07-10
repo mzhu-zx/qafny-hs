@@ -82,6 +82,11 @@ data Op1
   = ONot
   deriving (Show, Eq, Ord)
 
+
+data GuardExp
+  = GEPartition Partition (Maybe Exp) -- guard partition with a split at
+  deriving (Show, Eq)
+
 -- the exp is not reversible
 data Exp
   = ENum Int
@@ -135,7 +140,7 @@ data EmitExp
   | ECard Exp
   | ECall Var [Exp]
   | ESelect Exp Exp
-  | ESeqRange Exp Exp Exp
+  | ESlice Exp Exp Exp
   | EDafnyVar Var
   | EOpChained Exp [(Op2, Exp)]
   deriving  (Show, Eq, Ord)
@@ -200,9 +205,9 @@ data Stmt
   | SAssign Var Exp
   | SApply Partition Exp
   | SDafny String
-  | SIf Exp Separates Block
-  --     id left right guard invarants separates Body
-  | SFor Var Exp Exp   Exp   [Exp]     Partition   Block
+  | SIf GuardExp Separates Block
+  --     id left right guard    invarants separates Body
+  | SFor Var Exp Exp   GuardExp [Exp]     Partition   Block
   | SEmit EmitStmt
   deriving (Show, Eq)
 

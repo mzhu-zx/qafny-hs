@@ -13,6 +13,7 @@ method GHZ (q_0_15___seqL_nat_R___0__emit : seq<nat>) returns (q_0_1___seqL__seq
   ensures 5 == |q_10_15___seqL_nat_R___6__emit| && (forall i : nat | 0 <= i < 5 :: q_10_15___seqL_nat_R___6__emit[i] == 0)
 {
   // Forward Declaration
+  var q_0_l_i__add__1_r___seqL__seqL_nat_R__R___12__emit : seq<seq<nat>>;
   var q_0_l_i__add__1_r___seqL__seqL_nat_R__R___11__emit : seq<seq<nat>>;
   var q_0_l_i__add__1_r___seqL__seqL_nat_R__R___10__emit : seq<seq<nat>>;
   var q_l_i__add__1_r_10___seqL_nat_R___9__emit : seq<nat>;
@@ -34,6 +35,8 @@ method GHZ (q_0_15___seqL_nat_R___0__emit : seq<nat>) returns (q_0_1___seqL__seq
   // Cast TNor ==> TEN
   q_l_i__add__1_r_10___seqL_nat_R___9__emit := CastNorEN(q_l_i__add__1_r_10___seqL_nat_R___8__emit);
   q_0_l_i__add__1_r___seqL__seqL_nat_R__R___10__emit := q_0_l_i__add__1_r___seqL__seqL_nat_R__R___11__emit;
+  q_0_l_i__add__1_r___seqL__seqL_nat_R__R___12__emit := q_0_l_i__add__1_r___seqL__seqL_nat_R__R___11__emit[0..1];
+  q_0_l_i__add__1_r___seqL__seqL_nat_R__R___11__emit := q_0_l_i__add__1_r___seqL__seqL_nat_R__R___11__emit[1..|q_0_l_i__add__1_r___seqL__seqL_nat_R__R___11__emit|];
   for i := 0 to 9
   {
   }

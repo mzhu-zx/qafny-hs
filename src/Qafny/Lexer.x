@@ -51,14 +51,21 @@ token :-
   qreg             { emit $  TQReg               }
   var              { emit $  TVar                }
   if               { emit $  TIf                 }
+  split            { emit $  TSplit              }
+  at               { emit $  TAt                 }
   cl               { emit $  TCl                 }
   "λ"              { emit $  TCl                 }
+  "\lambda"        { emit $  TCl                 }
   for              { emit $  TFor                }
   in               { emit $  TIn                 }
   "∈"              { emit $  TUnicodeIn          }
+  "\in"           { emit $  TUnicodeIn          }
   "Σ"              { emit $  TUnicodeSum         }
+  "\Sum"          { emit $  TUnicodeIn          }
   "⊗"              { emit $  TUnicodeTensor      }
+  "\otimes"       { emit $  TUnicodeIn          }
   "↦"              { emit $  TUnicodeMap         }
+  "\mapsto"       { emit $  TUnicodeMap         }
   with             { emit $  TWith               }
   invariant        { emit $  TInv                }
   H                { emit $  THApp               }

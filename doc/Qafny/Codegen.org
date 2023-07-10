@@ -86,7 +86,23 @@ Currently, we have the following knowing strategy.
   3. Add =Pow2(i)= to all kets in the range where the guard is moved to.
   4. Merge the "main" partition with the "shaddow" partition we duplicated.
 
-- =EN01= typed state
+- =EN01= typed guard "split-at" semantics
+
+  Observe that it's hard to maintain the correspondence between the guard
+  partition and the partition scoped by the loop body.
+  # 
+  One workaround is to apply language restriction to separate the guard
+  partition into two where the first half has a "true" interpretation while the
+  rest has a "false" one.
+  # 
+  This is hinted through a =split at e= guard annotaion which means the slice of
+  kets from =e= to the end all evalautes to "true".
+
+  However, the solution here is just a hotfix: I'm planning to coin two
+  conditionals =true before e= and =true after e= into the existing =separates=
+  clause to make the meaning more evident.
+  
+  
 
 However, what is non-trivial to solve generally is the presence of the index
 variable =i= which complicates interval inclusion problem. One easy solution is

@@ -21,6 +21,8 @@ dafny                 { ( _, L.TDafny $$  ) }
 "separates"           { ( _, L.TSeparates ) }
 "invariant"           { ( _, L.TInv       ) }
 "with"                { ( _, L.TWith      ) }
+"at"                  { ( _, L.TAt      ) }
+"split"               { ( _, L.TSplit      ) }
 "for"                 { ( _, L.TFor       ) }
 "returns"             { ( _, L.TReturns   ) }
 "not"                 { ( _, L.TNot       ) }
@@ -134,10 +136,16 @@ stmt :: { Stmt }
   | "var" binding ":=" expr ';'       { SVar $2 (Just $4)                    }
   | id ":=" expr ';'                  { SAssign $1 $3                        }
   | partition "*=" expr ';'           { SApply $1 $3                         }
-  | "if" '(' expr ')' cond block
+  | "if" '(' guardExpr ')' cond block
     {% do sep <- separatesOnly $5; return $ SIf $3 sep $6                    }
-  | "for" id "in" '[' expr ".." expr ']' "with" expr conds block
+  | "for" id "in" '[' expr ".." expr ']' "with" guardExpr conds block
     {% do (invs, sep) <- invariantSeperates $11; return $ SFor $2 $5 $7 $10 invs sep $12 }
+
+splitAt :: { Exp }
+  : "split" "at" expr                 { $3 }
+
+guardExpr :: {GuardExp }
+  : partition opt(splitAt)            { GEPartition $1 $2 }
                                                                           
 partition :: { Partition }                                                               
   : manyComma(range)                  { Partition $ $1                       }

@@ -52,3 +52,6 @@ eAt e1 e2 = EEmit (ESelect e1 e2)
 
 eEq :: Exp -> Exp -> Exp
 eEq = EOp2 OEq
+
+sliceV :: Var -> Exp -> Exp -> Exp
+sliceV x l r = EEmit (ESlice (EVar x) l r) 

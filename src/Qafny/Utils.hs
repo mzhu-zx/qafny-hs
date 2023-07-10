@@ -21,6 +21,7 @@ import           Qafny.Env                    (TState, emitSt, sSt)
 import           Qafny.TypeUtils              (typingQEmit)
 import           Qafny.Variable               (Variable (variable))
 import           Text.Printf                  (printf)
+import Control.Monad (forM)
 
 
 -- catchMaybe
@@ -120,11 +121,14 @@ gensymRangeQTy
 gensymRangeQTy r qty =
   gensym $ rbindingOfRangeQTy r qty
 
+liftPartition :: Monad m => (Range -> m b) -> Partition -> m [b]
+liftPartition f p = forM (unpackPart p) f
+
 findEmitRangeQTy
   :: ( Has (State TState) sig m
      , Has (Error String) sig m
      )
-  => Range -> QTy -> m String
+  => Range -> QTy -> m Var
 findEmitRangeQTy r qty = do
   let rb = rbindingOfRangeQTy r qty
   st <- use emitSt
@@ -133,8 +137,6 @@ findEmitRangeQTy r qty = do
     printf "the binding `%s` cannot be found in the renaming state.\n%s"
       (show rb)
       (show st)
-
-  -- findEmitSym $ rbindingOfRangeQTy r qty
 
 removeEmitRangeQTys
   :: ( Has (State TState) sig m)
