@@ -53,25 +53,17 @@ import           Qafny.Emit
     , showEmitI
     )
 import           Qafny.Env
-    ( CastScheme (..)
-    , STuple (..)
-    , SplitScheme (..)
-    , TEnv (..)
-    , TState (TState)
-    , emitSt
-    , kEnv
-    , sSt
-    , xSt
-    )
 import           Qafny.Partial          (Reducible (reduce), sizeOfRangeP)
 import           Qafny.TypeUtils        (isEN)
 import           Qafny.Typing
     ( appkEnvWithBds
+    , castScheme
     , checkSubtype
     , checkSubtypeQ
     , collectMethodTypesM
     , extendTState
     , mergeSTuples
+    , mergeScheme
     , resolvePartition
     , resolvePartition'
     , resolvePartitions
@@ -83,7 +75,7 @@ import           Qafny.Typing
     , typingExp
     , typingGuard
     , typingPartition
-    , typingPartitionQTy, mergeScheme
+    , typingPartitionQTy
     )
 import           Qafny.Utils
     ( dumpSSt
@@ -547,7 +539,11 @@ codegenFor'Body idx boundl boundr eG body stSep = do
       -- 3. Perform merge with merge scheme
       stBs <- forM psBody $ \p -> do
         stP <- resolvePartition p
-        mergeScheme stSep stP
+        dumpSSt "premerge"
+        schemes <- mergeScheme stSep stP
+        dumpSSt "postmerge"
+        throwError "break"
+        stmtsMerge <- codegenMergeScheme schemes
         dumpSSt "Merge Scheme"
 
       return ([], stmtsSaveFalse ++ stmtsFocusTrue ++ inBlock stmtsBody)
@@ -873,6 +869,20 @@ addENHad1 vEmit idx =
 doubleHadCounter :: Var -> Stmt
 doubleHadCounter vCounter =
   SAssign vCounter $ EOp2 OMul (ENum 2) (EVar vCounter)
+
+
+codegenMergeScheme
+  :: ( Has (Gensym RBinding) sig m
+     , Has (State TState) sig m
+     , Has (Error String) sig m
+     )
+  => [MergeScheme] -> m [Stmt]
+codegenMergeScheme = mapM $ \scheme -> do
+  case scheme of
+    MMove -> throwError' "I have no planning in solving it here now."
+    MJoin JoinStrategy { } ->
+      undefined
+
 
 
 --------------------------------------------------------------------------------

@@ -89,3 +89,16 @@ data CastScheme = CastScheme
   , schRsCast    :: [Range] -- | casted ranges
   }
   deriving Show
+
+data MergeScheme
+  = MJoin JoinStrategy  -- ^ Join a 'Range' into an existing 'Range' 
+  | MMove 
+  
+data JoinStrategy = JoinStrategy
+  { jsRMain :: Range
+  , jsQtMain :: QTy 
+  , jsRResult :: Range 
+  , jsRMerged :: Range
+  , jsQtMerged :: QTy
+  }
+

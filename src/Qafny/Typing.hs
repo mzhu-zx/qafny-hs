@@ -554,12 +554,12 @@ mergeScheme
      )
   => STuple -- ^ Main
   -> STuple -- ^ Servent
-  -> m [()]
+  -> m [MergeScheme]
 mergeScheme
   stM'@(STuple (locMain, _, qtMain))
   stA@(STuple (locAux, sAux@(Partition rsAux), qtAux)) = do
   sSt %= (`Map.withoutKeys` Set.singleton locAux) -- GC aux's loc
-  schemes <- forM rsAux $ \rAux@(Range _ _ erAux) -> do
+  forM rsAux $ \rAux@(Range _ _ erAux) -> do
     -- fetch the latest 'rsMain'
     let fetchMain = uses sSt (^. at locMain)
     (Partition rsMain, _) <- rethrowMaybe fetchMain "WTF?"
@@ -573,6 +573,7 @@ mergeScheme
         let pM = Partition $ rAux : rsMain
         xSt %= Map.map redirectX
         sSt %= (at locMain ?~ (pM, qtMain)) -- update main's partition
+        return MMove
       [rCandidate@(Range x elCandidate _)] -> do
         -- | Merge the range into an existing range
         -- We know that the upperbound of the candidate is the same as the
@@ -581,8 +582,14 @@ mergeScheme
         let pM = Partition $ (\r -> bool r rNew (r == rCandidate)) <$> rsMain
         xSt %= Map.map (revampX rCandidate rAux rNew)
         sSt %= (at locMain ?~ (pM, qtMain))
+        return $ MJoin JoinStrategy
+          { jsRMain = rCandidate
+          , jsRMerged = rAux
+          , jsRResult = rNew
+          , jsQtMain = qtMain
+          , jsQtMerged = qtAux
+          }
       _ -> throwError' "Whoops! A lot of candidates to go, which one to go?"
-  return schemes
   where
     redirectX rAndLoc = do
       (r, locR) <- oneOf rAndLoc
