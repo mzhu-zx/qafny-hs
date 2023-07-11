@@ -8,7 +8,7 @@ method GHZ(q : qreg[10])
   // always take the ith qubit as the controller 
   for i in [0 .. 9] with q[i .. (i + 1)] split at 1
     // provide hints on how to perform separation
-    separates q[0 .. i]
+    separates q[0 .. (i + 1)]
     invariant {
       q [0 .. (i + 1)] : en01 ↦ Σ j ∈ [0 .. 2] . ⊗ k ∈ [0 .. j] . ( _ , j)
     }

@@ -308,6 +308,18 @@ initIEnv = []
 
 -- | Perform expression subtitution
 --
+class Substitutable a where
+  subst :: AEnv -> a -> a
+  
+instance Substitutable Exp where
+  subst = substE
+
+instance Substitutable Partition where
+  subst = substP
+
+instance Substitutable Range where
+  subst = substR
+
 substE :: AEnv -> Exp -> Exp
 substE [] = id
 substE env = go

@@ -13,21 +13,23 @@ module Qafny.Typing where
 -- | Typing though Fused Effects
 
 -- Effects
-import qualified Control.Carrier.State.Strict as State
+import           Control.Carrier.Reader        (runReader)
+import qualified Control.Carrier.State.Strict  as State
 import           Control.Effect.Catch
-import           Control.Effect.Error         (Error, throwError)
+import           Control.Effect.Error          (Error, throwError)
 import           Control.Effect.Lens
+import           Control.Effect.NonDet
 import           Control.Effect.Reader
-import           Control.Effect.State         (State)
-import           Effect.Gensym                (Gensym)
+import           Control.Effect.State          (State)
+import           Effect.Gensym                 (Gensym)
 
 -- Qafny
 import           Qafny.AST
-import           Qafny.Domain                 (NatInterval)
+import           Qafny.Domain                  (NatInterval)
 import           Qafny.Env
-import           Qafny.Error                  (QError (..))
+import           Qafny.Error                   (QError (..))
 import           Qafny.Interval
-import           Qafny.IntervalUtils          (rangeToNInt, γRange)
+import           Qafny.IntervalUtils           (rangeToNInt, γRange)
 import           Qafny.TypeUtils
 import           Qafny.Utils
     ( exp2AExp
@@ -41,21 +43,27 @@ import           Qafny.Utils
 
 -- Utils
 import           Control.Effect.Trace
-import           Control.Lens                 (at, (%~), (.~), (?~), (^.))
-import           Control.Monad                (forM, forM_, unless, when)
-import           Data.Bool                    (bool)
-import           Data.Function                ((&))
-import           Data.Functor                 ((<&>))
-import qualified Data.List                    as List
-import qualified Data.List.NonEmpty           as NE
-import           Data.List.NonEmpty           (NonEmpty(..))
-import qualified Data.Map.Strict              as Map
-import           Data.Maybe                   (listToMaybe, maybeToList, fromMaybe, isJust)
-import qualified Data.Set                     as Set
+import           Control.Lens                  (at, (%~), (.~), (?~), (^.))
+import           Control.Lens.Tuple
+import           Control.Monad                 (forM, forM_, unless, when)
+import           Data.Bool                     (bool)
+import           Data.Function                 ((&))
+import           Data.Functor                  ((<&>))
+import qualified Data.List                     as List
+import           Data.List.NonEmpty            (NonEmpty (..))
+import qualified Data.List.NonEmpty            as NE
+import qualified Data.Map.Strict               as Map
+import           Data.Maybe
+    ( fromMaybe
+    , isJust
+    , listToMaybe
+    , maybeToList
+    )
+import qualified Data.Set                      as Set
 import           Data.Sum
-import           GHC.Stack                    (HasCallStack)
-import           Text.Printf                  (printf)
-import Control.Carrier.Reader (runReader)
+import           GHC.Stack                     (HasCallStack)
+import           Text.Printf                   (printf)
+import Control.Carrier.NonDet.Church (runNonDetA)
 
 -- | Compute the type of the given expression
 typingExp
@@ -212,7 +220,7 @@ contractRange r = do
   case botHuh of
     _ | all (== Just True) botHuh -> return []
     _ | all isJust botHuh         -> return [r] -- may or may not be, therefore leave it there
-    _ -> err
+    _                             -> err
   where
     err = throwError' $ printf "Cannot decide if %s is empty." (show r)
 
@@ -254,7 +262,7 @@ splitScheme' s@(STuple (loc, p, qt)) rSplitTo@(Range to rstL rstR) = do
             -- "new range -> new loc"
             [ (rAux, locAux) | rAux <- rsAux ] ++
             -- "split ranges -> old loc"
-            
+
             -- "split ranges -> old loc"
             [ (rMainNew, loc) | rMainNew <- rsRem ] ++
             -- "the rest with the old range removed"
@@ -390,24 +398,36 @@ typingGuard
   => GuardExp -> m STuple
 typingGuard (GEPartition s' _) = resolvePartition s'
 
--- | Type check if the given partition is exactly of that type
-typingPartition
+-- | Type check if the given partition exists in the context
+typingPartitionQTy
   :: ( Has (State TState)  sig m
      , Has (Error String) sig m
      , Has (Reader IEnv) sig m
      , Has Trace sig m
      )
   => Partition -> QTy -> m STuple
-typingPartition s qt = do
-  st@(STuple(_, pResolved, qtResolved)) <- resolvePartition s
-  when (qt /= qtResolved) $ throwError' (errTypeMismatch st)
-  when (List.sort (unpackPart s) /= List.sort (unpackPart pResolved)) $
-    throwError' $ errIncompletePartition st
+typingPartitionQTy s qt = do
+  st@(STuple tup) <- resolvePartition s
+  when (qt /= (tup ^. _3)) $ throwError' (errTypeMismatch st)
   return st
   where
     errTypeMismatch st =
       printf "The partition %s is not of type %s.\nResolved: %s"
       (show s) (show qt) (show st)
+
+typingPartition
+  :: ( Has (State TState)  sig m
+     , Has (Error String) sig m
+     , Has (Reader IEnv) sig m
+     , Has Trace sig m
+     )
+  => Partition -> m STuple
+typingPartition s = do
+  st@(STuple(_, pResolved, qtResolved)) <- resolvePartition s
+  when (List.sort (unpackPart s) /= List.sort (unpackPart pResolved)) $
+    throwError' $ errIncompletePartition st
+  return st
+  where
     errIncompletePartition st@(STuple(_, p, _)) =
       printf "The partition %s is a sub-partition of %s.\nResolved: %s"
       (show s) (show p) (show st)
@@ -452,7 +472,7 @@ checkSubtypeQ
 checkSubtypeQ t1 t2 =
   unless (subQ t1 t2) $
   -- traceStack "" .
-  
+
   -- traceStack "" .
   throwError $
   "Type mismatch: `" ++ show t1 ++ "` is not a subtype of `" ++ show t2 ++ "`"
@@ -526,6 +546,64 @@ retypePartition = (snd <$>) .: castScheme
 -- * Merge Typing
 --------------------------------------------------------------------------------
 
+-- | Merge the second STuple into the first one
+mergeScheme
+  :: ( Has (State TState) sig m
+     , Has (Error String) sig m
+     , Has (Reader IEnv) sig m
+     )
+  => STuple -- ^ Main
+  -> STuple -- ^ Servent
+  -> m [()]
+mergeScheme
+  stM'@(STuple (locMain, _, qtMain))
+  stA@(STuple (locAux, sAux@(Partition rsAux), qtAux)) = do
+  sSt %= (`Map.withoutKeys` Set.singleton locAux) -- GC aux's loc
+  schemes <- forM rsAux $ \rAux@(Range _ _ erAux) -> do
+    -- fetch the latest 'rsMain'
+    let fetchMain = uses sSt (^. at locMain)
+    (Partition rsMain, _) <- rethrowMaybe fetchMain "WTF?"
+    -- decide how to merge based on the if there's an adjacent range match 
+    rsMergeTo <- lookupAdjacentRange rsMain rAux
+    case rsMergeTo of
+      [] -> do
+        -- | Merge the standalone range into the Main partition and update range
+        -- reference record in 'xSt' and the partition informaton of Main in
+        -- 'sSt'
+        let pM = Partition $ rAux : rsMain
+        xSt %= Map.map redirectX
+        sSt %= (at locMain ?~ (pM, qtMain)) -- update main's partition
+      [rCandidate@(Range x elCandidate _)] -> do
+        -- | Merge the range into an existing range
+        -- We know that the upperbound of the candidate is the same as the
+        -- lowerbound of the aux range
+        let rNew = Range x elCandidate erAux
+        let pM = Partition $ (\r -> bool r rNew (r == rCandidate)) <$> rsMain
+        xSt %= Map.map (revampX rCandidate rAux rNew)
+        sSt %= (at locMain ?~ (pM, qtMain))
+      _ -> throwError' "Whoops! A lot of candidates to go, which one to go?"
+  return schemes
+  where
+    redirectX rAndLoc = do
+      (r, locR) <- oneOf rAndLoc
+      let locRNew = if locR == locAux then locMain else locR 
+      return (r, locRNew)
+    revampX rCandidate rAux rNew rAndLoc = do
+      self@(r, locR) <- oneOf rAndLoc
+      return $ if r == rCandidate || r == rAux
+               then (rNew, locMain)
+               else self
+
+-- | check if there exists a range that's adjacent to another. 
+lookupAdjacentRange
+  :: ( Has (Reader IEnv) sig m
+     )
+  => [Range] -> Range -> m [Range]
+lookupAdjacentRange rs r@(Range id el er) = do
+  (≡?) <- (allI .:) <$> liftIEnv2 (≡)
+  return  [ r' | r'@(Range x' el' er') <- rs, er' ≡? el ]
+  
+
 -- Merge two given partition tuples if both of them are of EN type.
 mergeSTuples
   :: ( Has (State TState) sig m
@@ -538,9 +616,6 @@ mergeSTuples
   do
     -- Sanity Check
     unless (qtMain == qtAux && qtAux == TEN) $
-      -- traceStack "" $
-      
-      -- traceStack "" $
       throwError @String $ printf "%s and %s have different Q types!"
         (show stM) (show stA)
     -- start merge
@@ -548,6 +623,7 @@ mergeSTuples
     -- let vsMetaAux =  varFromPartition sAux
     -- let newAuxLocs = Map.fromList $ [(v, locMain) | v <- vsMetaAux]
     -- xSt %= Map.union newAuxLocs -- use Main's loc for aux
+    -- change all range reference to the merged location 
     xSt %= Map.map
       (\rLoc -> [ (r, loc')
                 | (r, loc) <- rLoc,
@@ -606,26 +682,36 @@ extendTState p  qt = do
   xSt %= Map.unionWith (++) (Map.fromListWith (++) xMap)
   return $ fst <$> vsREmit
 
--- * Partial Ordering under IENV 
+-- * Lattice and Ordering Operators lifted to IEnv
 -- | Perform substitution on both ranges and compute with the (⊑) predicate
+
+liftIEnv2
+  :: ( Has (Reader IEnv) sig m, Substitutable b )
+  => (b -> b -> a) -> m (b -> b -> NonEmpty (a, AEnv))
+liftIEnv2 (<?>) = do
+  ienv <- ask
+  let aenvs = nondetIEnv ienv
+      subst' r'' = (`subst` r'') <$> aenvs
+  return $ \r1 r2 -> NE.zipWith (\(r1', r2') -> (r1' <?> r2',)) (NE.zip (subst' r1) (subst' r2))  aenvs
+
 (⊑/)
   :: ( Has (Reader IEnv) sig m )
   => m (Range -> Range -> NonEmpty (Maybe Bool, AEnv))
-(⊑/) = do
-  ienv <- ask
-  let aenvs = nondetIEnv ienv
-      subst r'' = (`substR` r'') <$> aenvs
-  return $ \r1 r2 -> NE.zipWith (\(r1', r2') -> (r1' ⊑ r2',)) (NE.zip (subst r1) (subst r2))  aenvs
-  
+(⊑/) = liftIEnv2 (⊑)
+
+allI :: NonEmpty (Maybe Bool, a) -> Bool
+allI = all ((== Just True) . fst)
+
 (⊑?)
   :: ( Has (Reader IEnv) sig m )
   => m (Range -> Range -> Bool)
-(⊑?) = (\f r1 r2 -> all ((== Just True) . fst) (f r1 r2)) <$> (⊑/)
+(⊑?) = (allI .:) <$> (⊑/)
 
 isBotI
   :: ( Has (Reader IEnv) sig m )
   => m (Range -> NonEmpty (Maybe Bool))
 isBotI = do
   ienv <- ask
-  return $ \r -> (isBot . (`substR` r) <$> nondetIEnv ienv)
-  
+  return $ \r -> isBot . (`substR` r) <$> nondetIEnv ienv
+
+

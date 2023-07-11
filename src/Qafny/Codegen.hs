@@ -1,13 +1,13 @@
 {-# LANGUAGE
     DataKinds
-  , IncoherentInstances
   , FlexibleContexts
   , FlexibleInstances
-  , UndecidableInstances
+  , IncoherentInstances
   , RecordWildCards
   , ScopedTypeVariables
   , TupleSections
   , TypeApplications
+  , UndecidableInstances
   #-}
 
 module Qafny.Codegen where
@@ -40,12 +40,18 @@ import qualified Data.Sum               as Sum
 import           Text.Printf            (printf)
 
 -- Qafny
+import           Control.Effect.Fail    (Fail)
+import           Control.Exception      (throw)
 import           Data.Maybe             (listToMaybe, maybeToList)
 import           Qafny.AST
 import           Qafny.AST              (specPartitionQTys)
 import           Qafny.ASTFactory
 import           Qafny.Config
-import           Qafny.Emit             (DafnyPrinter (build), showEmit, showEmitI)
+import           Qafny.Emit
+    ( DafnyPrinter (build)
+    , showEmit
+    , showEmitI
+    )
 import           Qafny.Env
     ( CastScheme (..)
     , STuple (..)
@@ -67,6 +73,7 @@ import           Qafny.Typing
     , extendTState
     , mergeSTuples
     , resolvePartition
+    , resolvePartition'
     , resolvePartitions
     , retypePartition
     , retypePartition1
@@ -74,7 +81,9 @@ import           Qafny.Typing
     , splitThenCastScheme
     , tStateFromPartitionQTys
     , typingExp
-    , typingGuard, resolvePartition', typingPartition
+    , typingGuard
+    , typingPartition
+    , typingPartitionQTy, mergeScheme
     )
 import           Qafny.Utils
     ( dumpSSt
@@ -82,13 +91,11 @@ import           Qafny.Utils
     , gensymEmitRangeQTy
     , gensymLoc
     , gensymRangeQTy
+    , liftPartition
     , rbindingOfRangeQTy
     , rethrowMaybe
     , throwError'
-    , liftPartition
     )
-import Control.Exception (throw)
-import Control.Effect.Fail (Fail)
 
 --------------------------------------------------------------------------------
 -- * Introduction
@@ -287,7 +294,7 @@ codegenStmt
   => Stmt
   -> m [Stmt]
 codegenStmt s = runWithCallStack s (codegenStmt' s)
-  
+
 runWithCallStack
   :: ( Has (Error String) sig m
      , DafnyPrinter s
@@ -382,9 +389,10 @@ codegenStmt' (SFor idx boundl boundr eG invs seps body) = do
   (stmtsPreGuard, statePreLoop, stateLoop) <- codegenInit
   put stateLoop
   let substEnv = [(idx, boundl :| [boundr - 1])]
-  
+
   stmtsBody <- local (++ substEnv) $ do
-    stmtsBody <- codegenFor'Body idx boundl boundr eG body
+    stSep <- typingPartition seps -- check if `seps` clause is valid
+    stmtsBody <- codegenFor'Body idx boundl boundr eG body stSep
     codegenFinish
     return stmtsBody
 
@@ -405,7 +413,7 @@ codegenStmt' (SFor idx boundl boundr eG invs seps body) = do
     -- | the postcondtion of one iteration amounts to that of incrementing the
     -- index by one
     invPQtsPost = first (reduce . substP [(idx, EVar idx + 1)]) <$> invPQts
-    
+
     -- | Generate code and state for the precondition
     codegenInit = do
       stmtsPreGuard <- invPQtsPre `forM` \(sInv, qtInv) -> case sInv of
@@ -423,7 +431,7 @@ codegenStmt' (SFor idx boundl boundr eG invs seps body) = do
       return (stmtsPreGuard, statePreLoop, stateLoop)
 
     codegenFinish =
-      forM invPQtsPost (uncurry typingPartition)
+      forM invPQtsPost (uncurry typingPartitionQTy)
 
 
 
@@ -485,15 +493,17 @@ codegenFor'Body
   -> Exp   -- ^ upper bound
   -> GuardExp   -- ^ guard expression
   -> Block -- ^ body
+  -> STuple -- ^ the partition to be merged into
   -> m [Stmt]
-codegenFor'Body idx boundl boundr eG body = do
+codegenFor'Body idx boundl boundr eG body stSep = do
+  let psBody = leftPartitions . inBlock $ body
   stG@(STuple (_, sG, qtG)) <- typingGuard eG
-  stB'@(STuple (_, sB, qtB)) <- resolvePartitions . leftPartitions . inBlock $ body
 
   -- ^ FIXME: these two handling of guard state seems ungrounded
   (stmtsPrelude, stmtsBody) <- case qtG of
     THad -> do
-      -- It seems that castEN semantics maybe unnecessary with invariant typing? 
+      stB'@(STuple (_, sB, qtB)) <- resolvePartitions psBody
+      -- It seems that castEN semantics maybe unnecessary with invariant typing?
       (stmtsCastB, stB) <- case qtB of
         _ | isEN qtB -> return ([], stB')
         _            -> (,) <$> castPartitionEN stB' <*> resolvePartition (unSTup stB' ^. _2)
@@ -521,7 +531,7 @@ codegenFor'Body idx boundl boundr eG body = do
     TEN01 -> do
       eSep <- case eG of
         GEPartition _ (Just eSep) -> return eSep
-        _ -> throwError' errNoSep
+        _                         -> throwError' errNoSep
 
       -- 1. save the "false" part to a new variable
       vsEmitG <- liftPartition (`findEmitRangeQTy` qtG) sG
@@ -531,10 +541,14 @@ codegenFor'Body idx boundl boundr eG body = do
 
       -- 2. generate the body statements with with that hint lambda should
       -- resolve to EN01 now
-      stmtsBody <- local (const TEN01) $ do 
-        codegenBlock body 
+      stmtsBody <- local (const TEN01) $ do
+        codegenBlock body
 
-      -- 3. 
+      -- 3. Perform merge with merge scheme
+      stBs <- forM psBody $ \p -> do
+        stP <- resolvePartition p
+        mergeScheme stSep stP
+        dumpSSt "Merge Scheme"
 
       return ([], stmtsSaveFalse ++ stmtsFocusTrue ++ inBlock stmtsBody)
     _    -> throwError' $ printf "%s is not a supported guard type!" (show qtG)
@@ -904,7 +918,7 @@ codegenAssertion
      )
   => Exp -> m [Exp]
 codegenAssertion (ESpec s qt espec) = do
-  st <- typingPartition s qt
+  st <- typingPartitionQTy s qt
   vsEmit <- unpackPart s `forM` (`findEmitRangeQTy` qt)
   codegenSpecExp (zip vsEmit (unpackPart s)) qt espec
 codegenAssertion e = return [e]
