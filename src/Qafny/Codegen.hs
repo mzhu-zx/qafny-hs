@@ -31,10 +31,16 @@ import           Qafny.Gensym           (resumeGensym)
 import           Control.Arrow          (Arrow (first))
 import           Control.Lens           (at, non, (%~), (?~), (^.))
 import           Control.Lens.Tuple
-import           Control.Monad          (MonadPlus (mzero), forM, unless, when)
+import           Control.Monad
+    ( MonadPlus (mzero)
+    , forM
+    , forM_
+    , unless
+    , when
+    )
 import           Data.Functor           ((<&>))
 import qualified Data.List              as List
-import           Data.List.NonEmpty     (NonEmpty (..), partition)
+import           Data.List.NonEmpty     (NonEmpty (..))
 import qualified Data.Map.Strict        as Map
 import qualified Data.Sum               as Sum
 import           Text.Printf            (printf)
@@ -84,9 +90,11 @@ import           Qafny.Utils
     , gensymLoc
     , gensymRangeQTy
     , liftPartition
+    , modifyEmitRangeQTy
     , rbindingOfRangeQTy
+    , removeEmitRangeQTys
     , rethrowMaybe
-    , throwError', removeEmitRangeQTys
+    , throwError'
     )
 
 --------------------------------------------------------------------------------
@@ -493,7 +501,7 @@ codegenFor'Body
   -> Block -- ^ body
   -> STuple -- ^ the partition to be merged into
   -> m [Stmt]
-codegenFor'Body idx boundl boundr eG body stSep = do
+codegenFor'Body idx boundl boundr eG body stSep@(STuple (_, Partition rsSep, qtSep)) = do
   let psBody = leftPartitions . inBlock $ body
   stG@(STuple (_, sG, qtG)) <- typingGuard eG
 
@@ -508,6 +516,7 @@ codegenFor'Body idx boundl boundr eG body stSep = do
 
       -- what to do with the guard partition is unsure...
       (stmtsDupG, gCorr) <- dupState sG
+
       (rL, eConstraint) <- makeLoopRange sG boundl boundr
 
       -- FIXME: for now, I discard the env for the Had case for backward
@@ -533,30 +542,58 @@ codegenFor'Body idx boundl boundr eG body stSep = do
 
       -- 1. save the "false" part to a new variable
       vsEmitG <- liftPartition (`findEmitRangeQTy` qtG) sG
-      vsEmitGFalse <- liftPartition (`gensymRangeQTy` qtG) sG
+      rqtvsEmitFalseG <- liftPartition (\r -> ((r, qtG),) <$> r `gensymRangeQTy` qtG) sG
+      let vsEmitGFalse = snd <$> rqtvsEmitFalseG
       let stmtsSaveFalse = uncurry (stmtAssignSlice (ENum 0) eSep) <$> zip vsEmitGFalse vsEmitG
       let stmtsFocusTrue = stmtAssignSelfRest eSep <$> vsEmitG
 
+      -- save the current emit symbol table for
+      stateIterBegin <- get @TState
+
+      let installEmits bindings =
+            forM_ bindings $ \((r, qt), v) -> modifyEmitRangeQTy r qt v
+
+      -- TODO: I need one way to duplicate generated emit symbols in the split
+      -- and cast semantics so that execute the computation above twice will
+      -- solve the problem.
+      vsEmitSep <- forM rsSep (`findEmitRangeQTy` qtSep)
+
+      (stmtsFalse, vsFalse) <- do
+        installEmits rqtvsEmitFalseG
+        codegenHalf psBody
+
+      (stmtsTrue, vsTrue)  <- do
+        put stateIterBegin
+        codegenHalf psBody
+
+      -- 4. put stashed part back
+      let stmtsUnsplit = zipWith3 (\vS vRF vRT -> vS ::=: (EVar vRF + EVar vRT)) vsEmitSep vsFalse vsTrue
+      return ([], concat [ stmtsSaveFalse
+                         , stmtsFocusTrue
+                         , stmtsFalse
+                         , stmtsTrue
+                         , stmtsUnsplit
+                         ])
+    _    -> throwError' $ printf "%s is not a supported guard type!" (show qtG)
+  let innerFor = SEmit $ SForEmit idx boundl boundr [] $ Block stmtsBody
+  return $ stmtsPrelude ++ [innerFor]
+  
+  where
+    codegenHalf psBody = do
       -- 2. generate the body statements with with that hint lambda should
       -- resolve to EN01 now
-      stmtsBody <- local (const TNor) $ do
-        codegenBlock body
+      stmtsBody <- local (const TNor) $ codegenBlock body
 
       -- 3. Perform merge with merge scheme
-      stBs <- forM psBody $ \p -> do
+      stmtsAndVsMerge <- (concat <$>) $ forM psBody $ \p -> do
         stP <- resolvePartition p
         dumpSSt "premerge"
         schemes <- mergeScheme stSep stP
         dumpSSt "postmerge"
-        throwError "break"
-        stmtsMerge <- codegenMergeScheme schemes
-        dumpSSt "Merge Scheme"
+        codegenMergeScheme schemes
+      let (stmtsMerge, vsEmitMerge) = unzip stmtsAndVsMerge
+      return $ (inBlock stmtsBody ++ stmtsMerge, vsEmitMerge)
 
-      return ([], stmtsSaveFalse ++ stmtsFocusTrue ++ inBlock stmtsBody)
-    _    -> throwError' $ printf "%s is not a supported guard type!" (show qtG)
-  let innerFor = SEmit $ SForEmit idx boundl boundr [] $ Block stmtsBody
-  return $ stmtsPrelude ++ [innerFor]
-  where
     errNoSep = "Insufficient knowledge to perform a separation for a EN01 partition "
     stmtAssignSlice el er idTo idFrom = (::=:) idTo (sliceV idFrom el er)
     stmtAssignSelfRest eBegin idSelf = stmtAssignSlice eBegin (EEmit . ECard . EVar $ idSelf) idSelf idSelf
@@ -634,7 +671,7 @@ hadGuardMergeExp vEmit tEmit cardMain cardStash eBase =
   in [ qComment "Merge: Body partition + the Guard partition."
      , (vEmit ::=:) $
        (EEmit $ EMakeSeq tInSeq cardMain $
-          constExp $ EOp2 OAdd eBase (ENum 1)) + 
+          constExp $ EOp2 OAdd eBase (ENum 1)) +
        (EEmit $ EMakeSeq tInSeq cardStash $ constExp eBase)
      ]
 
@@ -820,7 +857,6 @@ codegenSplitEmitMaybe = maybe (return []) codegenSplitEmit
 -- | Generate emit variables and split operations from a given split scheme.
 codegenSplitEmit
   :: ( Has (Error String) sig m
-     , Has Trace sig m
      )
   => SplitScheme
   -> m [Stmt]
@@ -876,20 +912,22 @@ doubleHadCounter vCounter =
   (::=:) vCounter $ EOp2 OMul (ENum 2) (EVar vCounter)
 
 
+-- | Generate from the merge scheme statements to perform the merge and the
+-- final result variable.
 codegenMergeScheme
   :: ( Has (Gensym RBinding) sig m
      , Has (Gensym String) sig m
      , Has (State TState) sig m
      , Has (Error String) sig m
      )
-  => [MergeScheme] -> m [Stmt]
+  => [MergeScheme] -> m [(Stmt, Var)]
 codegenMergeScheme = mapM $ \scheme -> do
   case scheme of
     MMove -> throwError' "I have no planning in solving it here now."
     MJoin JoinStrategy { jsQtMain=qtMain, jsQtMerged=qtMerged
                        , jsRResult=rResult, jsRMerged=rMerged, jsRMain=rMain
                        } -> do
-      vEmitResult <- gensymEmitRangeQTy rResult qtMerged
+      vEmitResult <- gensymEmitRangeQTy rResult qtMain
       vEmitMerged <- findEmitRangeQTy rMerged qtMerged
       vEmitMain   <- findEmitRangeQTy rMain qtMain
       removeEmitRangeQTys [(rMerged, qtMerged), (rMain, qtMain)]
@@ -899,7 +937,7 @@ codegenMergeScheme = mapM $ \scheme -> do
           vBind <- gensym "lambda_x"
           let stmt = vEmitResult ::=: callMap ef (EVar vEmitMain)
               ef   = EEmit (ELambda vBind (EVar vBind + EVar vEmitMerged))
-          return stmt
+          return (stmt, vEmitMain)
         _             -> throwError' $ printf "No idea about %s to %s conversion."
 
 

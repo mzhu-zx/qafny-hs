@@ -93,6 +93,14 @@ findEmitRangeQTy r qty = do
       (show rb)
       (show st)
 
+modifyEmitRangeQTy
+  :: ( Has (State TState) sig m )
+  => Range -> QTy -> Var -> m ()
+modifyEmitRangeQTy r qty name = do
+  let rb = rbindingOfRangeQTy r qty
+  emitSt %= (at rb ?~ name)
+
+
 removeEmitRangeQTys
   :: ( Has (State TState) sig m)
   => [(Range, QTy)] -> m ()

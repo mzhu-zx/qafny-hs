@@ -13,7 +13,10 @@ method GHZ (q_0_15___seqL_nat_R___0__emit : seq<nat>) returns (q_0_1___seqL__seq
   ensures 5 == |q_10_15___seqL_nat_R___6__emit| && (forall i : nat | 0 <= i < 5 :: q_10_15___seqL_nat_R___6__emit[i] == 0)
 {
   // Forward Declaration
-  var q_compact_compact___seqL__seqL_nat_R__R___12__emit : seq<seq<nat>>;
+  var q_0_compact___seqL__seqL_nat_R__R___15__emit : seq<seq<nat>>;
+  var q_compact_10___seqL_nat_R___14__emit : seq<nat>;
+  var q_compact_compact___seqL_nat_R___13__emit : seq<nat>;
+  var q_0_compact___seqL__seqL_nat_R__R___12__emit : seq<seq<nat>>;
   var q_compact_10___seqL_nat_R___11__emit : seq<nat>;
   var q_compact_compact___seqL_nat_R___10__emit : seq<nat>;
   var q_0_compact___seqL__seqL_nat_R__R___9__emit : seq<seq<nat>>;
@@ -36,7 +39,11 @@ method GHZ (q_0_15___seqL_nat_R___0__emit : seq<nat>) returns (q_0_1___seqL__seq
   {
     q_0_compact___seqL__seqL_nat_R__R___9__emit := q_0_compact___seqL__seqL_nat_R__R___7__emit[0..1];
     q_0_compact___seqL__seqL_nat_R__R___7__emit := q_0_compact___seqL__seqL_nat_R__R___7__emit[1..|q_0_compact___seqL__seqL_nat_R__R___7__emit|];
-    q_compact_compact___seqL__seqL_nat_R__R___12__emit := Map(q_compact_compact___seqL__seqL_nat_R__R___12__emit => q_compact_compact___seqL__seqL_nat_R__R___12__emit[0..0] + Map(x => x + 1 % 2, q_compact_compact___seqL__seqL_nat_R__R___12__emit[0..2 + i]) + q_compact_compact___seqL__seqL_nat_R__R___12__emit[2 + i..|q_compact_compact___seqL__seqL_nat_R__R___12__emit|], q_compact_compact___seqL__seqL_nat_R__R___12__emit);
+    q_compact_compact___seqL_nat_R___10__emit := q_compact_compact___seqL_nat_R___10__emit[0..0] + Map(x => x + 1 % 2, q_compact_compact___seqL_nat_R___10__emit[0..2 + i]) + q_compact_compact___seqL_nat_R___10__emit[2 + i..|q_compact_compact___seqL_nat_R___10__emit|];
+    q_0_compact___seqL__seqL_nat_R__R___12__emit := Map(lambda_x__6 => lambda_x__6 + q_compact_compact___seqL_nat_R___10__emit, q_0_compact___seqL__seqL_nat_R__R___9__emit);
+    q_compact_compact___seqL_nat_R___13__emit := q_compact_compact___seqL_nat_R___13__emit[0..0] + Map(x => x + 1 % 2, q_compact_compact___seqL_nat_R___13__emit[0..2 + i]) + q_compact_compact___seqL_nat_R___13__emit[2 + i..|q_compact_compact___seqL_nat_R___13__emit|];
+    q_0_compact___seqL__seqL_nat_R__R___15__emit := Map(lambda_x__8 => lambda_x__8 + q_compact_compact___seqL_nat_R___13__emit, q_0_compact___seqL__seqL_nat_R__R___7__emit);
+    q_0_compact___seqL__seqL_nat_R__R___7__emit := q_0_compact___seqL__seqL_nat_R__R___9__emit + q_0_compact___seqL__seqL_nat_R__R___7__emit;
   }
 
 }
