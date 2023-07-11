@@ -8,14 +8,12 @@ module Qafny.Emit where
 
 import           Qafny.AST
 
+import           Control.Arrow          (Arrow (first))
 import           Control.Monad.Reader
 import           Data.Maybe             (maybeToList)
 import           Data.Sum
 import           Data.Text.Lazy         (Text, unpack)
 import qualified Data.Text.Lazy.Builder as TB
-import qualified GHC.Enum               as TB
-import qualified GHC.Num                as TB
-import Control.Arrow (Arrow(first))
 
 -------------------- Builder --------------------
 
@@ -187,7 +185,7 @@ instance DafnyPrinter Stmt where
       buildStmt e = "// undefined builder for Stmt : " <!> show e
 
       λHuh e@(EEmit (ELambda {})) = "λ" <+> e
-      λHuh e = build e
+      λHuh e                      = build e
 
       buildEmit :: EmitStmt -> Builder
       buildEmit (SIfDafny e b) = "if " <!> withParen (build e) <!> b
