@@ -134,8 +134,8 @@ stmt :: { Stmt }
   | "assert" expr ';'                 { SAssert $2                           }
   | "var" binding ';'                 { SVar $2 Nothing                      }
   | "var" binding ":=" expr ';'       { SVar $2 (Just $4)                    }
-  | id ":=" expr ';'                  { SAssign $1 $3                        }
-  | partition "*=" expr ';'           { SApply $1 $3                         }
+  | id ":=" expr ';'                  { $1 ::=: $3                           }
+  | partition "*=" expr ';'           { $1 :*=: $3                           }
   | "if" '(' guardExpr ')' cond block
     {% do sep <- separatesOnly $5; return $ SIf $3 sep $6                    }
   | "for" id "in" '[' expr ".." expr ']' "with" guardExpr conds block

@@ -86,7 +86,7 @@ import           Qafny.Utils
     , liftPartition
     , rbindingOfRangeQTy
     , rethrowMaybe
-    , throwError'
+    , throwError', removeEmitRangeQTys
     )
 
 --------------------------------------------------------------------------------
@@ -316,7 +316,7 @@ codegenStmt' s@(SVar (Binding v t) (Just e)) = do
   -- check if `t` agrees with the type of `e`
   checkSubtype t te
   codegenAlloc v e t <&> (: [])
-codegenStmt' (SApply s EHad) = do
+codegenStmt' ((:*=:) s EHad) = do
   r <- case unpackPart s of
     [r] -> return r
     _   -> throwError "TODO: support non-singleton partition in `*=`"
@@ -334,7 +334,7 @@ codegenStmt' (SApply s EHad) = do
     opCastHad t = throwError $ "type `" ++ show t ++ "` cannot be casted to Had type"
 
 
-codegenStmt' stmt@(SApply s@(Partition ranges) eLam@(EEmit (ELambda {}))) = do
+codegenStmt' stmt@(s@(Partition ranges) :*=: eLam@(EEmit (ELambda {}))) = do
   (st'@(STuple (_, _, qt')), corr) <- resolvePartition' s
   qtLambda <- ask
   checkSubtypeQ qt' qtLambda
@@ -353,11 +353,11 @@ codegenStmt' stmt@(SApply s@(Partition ranges) eLam@(EEmit (ELambda {}))) = do
       vInner <- gensym "lambda_x"
       let offset = erLower - esLower
       let lambda = lambdaSplit vEmit offset (erUpper - offset)
-      return [ SAssign vEmit $ callMap lambda (EVar vEmit) ]
+      return [ vEmit ::=: callMap lambda (EVar vEmit) ]
     TNor -> do
       let offset = erLower - esLower
       let body = bodySplit vEmit offset (erUpper - offset)
-      return [ SAssign vEmit $ body ]
+      return [ vEmit ::=: body ]
     _    -> throwError' "I have no idea what to do in this case ..."
   where
     errRangeGt1 :: String
@@ -365,7 +365,7 @@ codegenStmt' stmt@(SApply s@(Partition ranges) eLam@(EEmit (ELambda {}))) = do
     splitMap3 v el er f = EOpChained (sliceV v 0 el) $ (OAdd,) <$> [ callMap f (sliceV v el er), sliceV v er (cardV v)]
     bodySplit v el er =  EEmit $ splitMap3 v el er eLam
     lambdaSplit v el er = EEmit (ELambda v (bodySplit v el er))
-    mkMapCall v = v `SAssign` callMap eLam (EVar v)
+    mkMapCall v = v ::=: callMap eLam (EVar v)
 
 codegenStmt' (SIf e seps b) = do
   -- resolve the type of the guard
@@ -520,7 +520,7 @@ codegenFor'Body idx boundl boundr eG body stSep = do
          let cardVEmitG = EEmit . ECard . EVar $ vEmitG
          let stmtsInitG =
                [ qComment "Retype from Had to EN and initialize with 0"
-               , SAssign vEmitG $
+               , (::=:) vEmitG $
                    EEmit $ EMakeSeq TNat cardVEmitG $ constExp $ ENum 0 ]
          stG' <- resolvePartition (unSTup stGSplited ^. _2)
          stmtsCGHad <- codegenStmt'For'Had stB stG' vEmitG idx body
@@ -539,7 +539,7 @@ codegenFor'Body idx boundl boundr eG body stSep = do
 
       -- 2. generate the body statements with with that hint lambda should
       -- resolve to EN01 now
-      stmtsBody <- local (const TEN01) $ do
+      stmtsBody <- local (const TNor) $ do
         codegenBlock body
 
       -- 3. Perform merge with merge scheme
@@ -558,7 +558,7 @@ codegenFor'Body idx boundl boundr eG body stSep = do
   return $ stmtsPrelude ++ [innerFor]
   where
     errNoSep = "Insufficient knowledge to perform a separation for a EN01 partition "
-    stmtAssignSlice el er idTo idFrom = SAssign idTo (sliceV idFrom el er)
+    stmtAssignSlice el er idTo idFrom = (::=:) idTo (sliceV idFrom el er)
     stmtAssignSelfRest eBegin idSelf = stmtAssignSlice eBegin (EEmit . ECard . EVar $ idSelf) idSelf idSelf
 
 -- | Code Generation of a `For` statement with a Had partition
@@ -632,11 +632,10 @@ hadGuardMergeExp :: Var -> Ty -> Exp -> Exp -> Exp -> [Stmt]
 hadGuardMergeExp vEmit tEmit cardMain cardStash eBase =
   let ~(TSeq tInSeq) = tEmit
   in [ qComment "Merge: Body partition + the Guard partition."
-     , vEmit
-       `SAssign` EOp2 OAdd
-        (EEmit $ EMakeSeq tInSeq cardMain $
-          constExp $ EOp2 OAdd eBase (ENum 1))
-        (EEmit $ EMakeSeq tInSeq cardStash $ constExp eBase)
+     , (vEmit ::=:) $
+       (EEmit $ EMakeSeq tInSeq cardMain $
+          constExp $ EOp2 OAdd eBase (ENum 1)) + 
+       (EEmit $ EMakeSeq tInSeq cardStash $ constExp eBase)
      ]
 
 -- Emit two expressions representing the number of kets in two states in
@@ -655,7 +654,7 @@ cardStatesCorr a =
 -- Merge the two partitions in correspondence
 mergeEmitted :: [(Var, Var)] -> [Stmt]
 mergeEmitted corr =
-  [ SAssign vMain (EOp2 OAdd (EVar vMain) (EVar vStash))
+  [ (::=:) vMain (EOp2 OAdd (EVar vMain) (EVar vStash))
   | (vMain, vStash) <- corr ]
 
 
@@ -676,10 +675,10 @@ codegenAlloc v e@(EOp2 ONor e1 e2) t@(TQReg _) = do
   loc <- gensymLoc v
   xSt %= (at v . non [] %~ ((rV, loc) :))
   sSt %= (at loc ?~ (sV, TNor))
-  return $ SAssign vEmit eEmit
+  return $ (::=:) vEmit eEmit
 codegenAlloc v e@(EOp2 ONor _ _) _ =
   throwError "Internal: Attempt to create a Nor partition that's not of nor type"
-codegenAlloc v e _ = return $ SAssign v e
+codegenAlloc v e _ = return $ (::=:) v e
 
 --------------------------------------------------------------------------------
 -- * Cast Semantics
@@ -704,7 +703,7 @@ codegenCastEmit
   op <- mkOp qtOld qtNew
   return . concat $
       [ [ qComment $ "Cast " ++ show qtOld ++ " ==> " ++ show qtNew
-        , SAssign vNew $ EEmit (op rCast  `ECall` [EEmit $ EDafnyVar vOld])
+        , (::=:) vNew $ EEmit (op rCast  `ECall` [EEmit $ EDafnyVar vOld])
         ]
       | (vOld, vNew, rCast) <- zip3 vsOldEmits vsNewEmit rsCast ]
   where
@@ -736,7 +735,7 @@ castWithOp op s newTy =
     -- assemble the emitted terms
     return . concat $
       [ [ qComment $ "Cast " ++ show partitionTy ++ " ==> " ++ show newTy
-        , SAssign vNew $ EEmit (op `ECall` [EEmit $ EDafnyVar vOld])
+        , (::=:) vNew $ EEmit (op `ECall` [EEmit $ EDafnyVar vOld])
         ]
       | (vOld, vNew) <- zip vsOldEmits vsNewEmit ]
 
@@ -781,7 +780,7 @@ dupState s' = do
   vsEmitFresh <- rs `forM` (`gensymRangeQTy` qtS)
   -- the only place where state is used!
   vsEmitPrev  <- rs `forM` (`gensymEmitRangeQTy` qtS)
-  let stmts = [ SAssign vEmitFresh (EVar vEmitPrev)
+  let stmts = [ (::=:) vEmitFresh (EVar vEmitPrev)
               | (vEmitFresh, vEmitPrev) <- zip vsEmitFresh vsEmitPrev ]
   return (stmts, zip vsEmitPrev vsEmitFresh)
 
@@ -836,7 +835,7 @@ codegenSplitEmit
     t | t `elem` [ TNor, THad, TEN01 ] -> do
       let offset e = reduce $ EOp2 OSub e left
       let stmtsSplit =
-            [ SAssign vEmitNew $
+            [ (::=:) vEmitNew $
               EEmit (ESlice (EVar (schVEmitOrigin ss)) (offset el) (offset er))
             | (vEmitNew, Range _ el er) <- zip (schVsEmitAll ss) (rTo : rsRem) ]
       return stmtsSplit
@@ -862,7 +861,7 @@ codegenSplitThenCastEmit sS sC =
 -- uses the name of the emitted seq as well as the index name
 addENHad1 :: Var -> Var -> Stmt
 addENHad1 vEmit idx =
-  SAssign vEmit $
+  (::=:) vEmit $
     EOp2 OAdd (EVar vEmit) (EEmit $ ECall "Map" [eLamPlusPow2, EVar vEmit])
   where
     vfresh = "x__lambda"
@@ -874,11 +873,12 @@ addENHad1 vEmit idx =
 -- | Multiply the Had coutner by 2
 doubleHadCounter :: Var -> Stmt
 doubleHadCounter vCounter =
-  SAssign vCounter $ EOp2 OMul (ENum 2) (EVar vCounter)
+  (::=:) vCounter $ EOp2 OMul (ENum 2) (EVar vCounter)
 
 
 codegenMergeScheme
   :: ( Has (Gensym RBinding) sig m
+     , Has (Gensym String) sig m
      , Has (State TState) sig m
      , Has (Error String) sig m
      )
@@ -886,9 +886,21 @@ codegenMergeScheme
 codegenMergeScheme = mapM $ \scheme -> do
   case scheme of
     MMove -> throwError' "I have no planning in solving it here now."
-    MJoin JoinStrategy { } ->
-      undefined
-
+    MJoin JoinStrategy { jsQtMain=qtMain, jsQtMerged=qtMerged
+                       , jsRResult=rResult, jsRMerged=rMerged, jsRMain=rMain
+                       } -> do
+      vEmitResult <- gensymEmitRangeQTy rResult qtMerged
+      vEmitMerged <- findEmitRangeQTy rMerged qtMerged
+      vEmitMain   <- findEmitRangeQTy rMain qtMain
+      removeEmitRangeQTys [(rMerged, qtMerged), (rMain, qtMain)]
+      case (qtMain, qtMerged) of
+        (TEN01, TNor) -> do
+          -- append the merged value (ket) into each kets in the main value
+          vBind <- gensym "lambda_x"
+          let stmt = vEmitResult ::=: callMap ef (EVar vEmitMain)
+              ef   = EEmit (ELambda vBind (EVar vBind + EVar vEmitMerged))
+          return stmt
+        _             -> throwError' $ printf "No idea about %s to %s conversion."
 
 
 --------------------------------------------------------------------------------

@@ -205,8 +205,8 @@ data Stmt
   = SAssert Exp
   | SCall Exp [Exp]
   | SVar Binding (Maybe Exp)
-  | SAssign Var Exp
-  | SApply Partition Exp
+  | Var ::=: Exp
+  | Partition :*=: Exp
   | SDafny String
   | SIf GuardExp Separates Block
   --     id left right guard    invarants separates Body
@@ -253,7 +253,7 @@ leftPartitions :: [Stmt] -> [Partition]
 leftPartitions =
   concatMap perStmt
   where
-    perStmt (SApply s _) = [s]
+    perStmt ((:*=:) s _) = [s]
     -- TODO: query If and For recursively
     perStmt _            = []
 
@@ -284,7 +284,6 @@ instance Num Exp where
   fromInteger a = ENum (fromInteger a)
 
   
-
 fVars :: Exp -> [Var]
 fVars = cata go
   where

@@ -178,11 +178,11 @@ instance DafnyPrinter Stmt where
       buildStmt :: Stmt -> Builder
       buildStmt (SVar bd Nothing) = "var " <!> bd
       buildStmt (SVar bd (Just e)) = "var " <!> bd <!> " := " <!> e
-      buildStmt (SAssign v e) = v <!> " := " <!> e
+      buildStmt (v ::=: e) = v <!> " := " <!> e
       buildStmt (SCall e es) = e <!> withParen (byComma es)
       buildStmt (SEmit s') = buildEmit s'
       buildStmt (SAssert e) = "assert " <!> e
-      buildStmt (SApply e1 e2) = debugOnly s $
+      buildStmt (e1 :*=: e2) = debugOnly s $
         e1 <+> "*=" <+> λHuh e2
       buildStmt e = "// undefined builder for Stmt : " <!> show e
 
