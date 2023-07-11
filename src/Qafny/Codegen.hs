@@ -353,12 +353,18 @@ codegenStmt' stmt@(SApply s@(Partition ranges) eLam@(EEmit (ELambda {}))) = do
       vInner <- gensym "lambda_x"
       let offset = erLower - esLower
       let lambda = lambdaSplit vEmit offset (erUpper - offset)
-      return [ SAssign vEmit $ reduce $ callMap lambda (EVar vEmit) ]
+      return [ SAssign vEmit $ callMap lambda (EVar vEmit) ]
+    TNor -> do
+      let offset = erLower - esLower
+      let body = bodySplit vEmit offset (erUpper - offset)
+      return [ SAssign vEmit $ body ]
+    _    -> throwError' "I have no idea what to do in this case ..."
   where
     errRangeGt1 :: String
     errRangeGt1 = printf "%s contains more than 1 range no!" (show ranges)
     splitMap3 v el er f = EOpChained (sliceV v 0 el) $ (OAdd,) <$> [ callMap f (sliceV v el er), sliceV v er (cardV v)]
-    lambdaSplit v el er = EEmit (ELambda v (EEmit $ splitMap3 v el er eLam))
+    bodySplit v el er =  EEmit $ splitMap3 v el er eLam
+    lambdaSplit v el er = EEmit (ELambda v (bodySplit v el er))
     mkMapCall v = v `SAssign` callMap eLam (EVar v)
 
 codegenStmt' (SIf e seps b) = do
