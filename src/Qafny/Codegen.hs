@@ -8,6 +8,7 @@
   , TupleSections
   , TypeApplications
   , UndecidableInstances
+  , TypeFamilies
   #-}
 
 module Qafny.Codegen where
@@ -155,8 +156,8 @@ codegenToplevel
      , Has (Error String) sig m
      , Has Trace sig m
      )
-  => Toplevel
-  -> m Toplevel
+  => Toplevel'
+  -> m Toplevel'
 codegenToplevel t = case unTop t of
   Sum.Inl q -> Sum.inj <$> codegenToplevel'Method q
   Sum.Inr q -> return . Sum.inj $ q
@@ -167,8 +168,8 @@ codegenToplevel'Method
      , Has (Error String) sig m
      , Has Trace sig m
      )
-  => QMethod
-  -> m QMethod
+  => QMethod ()
+  -> m (QMethod ())
 -- | The method calling convention is defined as followed.
 --
 -- [params] __qreg__ variables are replaced in place in the parameter list by
@@ -253,8 +254,8 @@ codegenBlock
      , Has (Reader QTy) sig m
      , Has Trace sig m
      )
-  => Block
-  -> m Block
+  => Block ()
+  -> m (Block ())
 codegenBlock (Block stmts) =
   Block <$> codegenStmts stmts
 
@@ -268,8 +269,8 @@ codegenStmts
      , Has Trace sig m
      , Has (Reader QTy) sig m -- hints for λ type resolution
      )
-  => [Stmt]
-  -> m [Stmt]
+  => [Stmt']
+  -> m [Stmt']
 codegenStmts [] = return []
 codegenStmts (stmt : stmts) = do
   stmts' <- codegenStmt stmt
@@ -291,8 +292,8 @@ codegenStmt
      , Has (Gensym RBinding) sig m
      , Has Trace sig m
      )
-  => Stmt
-  -> m [Stmt]
+  => Stmt'
+  -> m [Stmt']
 codegenStmt s = runWithCallStack s (codegenStmt' s)
 
 runWithCallStack
@@ -315,8 +316,8 @@ codegenStmt'
      , Has (Gensym RBinding) sig m
      , Has Trace sig m
      )
-  => Stmt
-  -> m [Stmt]
+  => Stmt'
+  -> m [Stmt']
 codegenStmt' s@(SVar (Binding v t) Nothing)  = return [s]
 codegenStmt' s@(SVar (Binding v t) (Just e)) = do
   te <- typingExp e
@@ -463,8 +464,8 @@ codegenStmt'If'Had
      , Has (Reader QTy) sig m
      , Has Trace sig m
      )
-  => STuple -> STuple -> Block
-  -> m [Stmt]
+  => STuple -> STuple -> Block'
+  -> m [Stmt']
 codegenStmt'If'Had stG stB' b = do
   -- 0. extract partition, this will not be changed
   let sB = unSTup stB' ^. _2
@@ -495,12 +496,12 @@ codegenFor'Body
      , Has Trace sig m
      )
   => Var   -- ^ index variable
-  -> Exp   -- ^ lower bound
-  -> Exp   -- ^ upper bound
+  -> Exp'   -- ^ lower bound
+  -> Exp'   -- ^ upper bound
   -> GuardExp   -- ^ guard expression
-  -> Block -- ^ body
+  -> Block' -- ^ body
   -> STuple -- ^ the partition to be merged into
-  -> m [Stmt]
+  -> m [Stmt']
 codegenFor'Body idx boundl boundr eG body stSep@(STuple (_, Partition rsSep, qtSep)) = do
   let psBody = leftPartitions . inBlock $ body
   stG@(STuple (_, sG, qtG)) <- typingGuard eG
@@ -609,8 +610,8 @@ codegenStmt'For'Had
      , Has (Gensym RBinding) sig m
      , Has Trace sig m
      )
-  => STuple -> STuple -> Var -> Var -> Block
-  -> m [Stmt]
+  => STuple -> STuple -> Var -> Var -> Block'
+  -> m [Stmt']
 codegenStmt'For'Had stB stG vEmitG vIdx b = do
   -- 0. extract partition, this will not be changed
   let sB = unSTup stB ^. _2
@@ -648,7 +649,7 @@ mergeHadGuard
      , Has (Reader IEnv) sig m
      , Has Trace sig m
      )
-  => STuple -> STuple -> Exp -> Exp -> m [Stmt]
+  => STuple -> STuple -> Exp' -> Exp' -> m [Stmt']
 mergeHadGuard = mergeHadGuardWith (ENum 0)
 
 mergeHadGuardWith
@@ -658,14 +659,14 @@ mergeHadGuardWith
      , Has (Reader IEnv) sig m
      , Has Trace sig m
      )
-  => Exp -> STuple -> STuple -> Exp -> Exp -> m [Stmt]
+  => Exp' -> STuple -> STuple -> Exp' -> Exp' -> m [Stmt']
 mergeHadGuardWith eBase stG' stB cardBody cardStashed = do
   (_, _, vGENow, tGENow) <- retypePartition1 stG' TEN
   stG <- resolvePartition (unSTup stG' ^. _2)
   mergeSTuples stB stG
   return $ hadGuardMergeExp vGENow tGENow cardBody cardStashed eBase
 
-hadGuardMergeExp :: Var -> Ty -> Exp -> Exp -> Exp -> [Stmt]
+hadGuardMergeExp :: Var -> Ty -> Exp' -> Exp' -> Exp' -> [Stmt']
 hadGuardMergeExp vEmit tEmit cardMain cardStash eBase =
   let ~(TSeq tInSeq) = tEmit
   in [ qComment "Merge: Body partition + the Guard partition."
@@ -680,7 +681,7 @@ hadGuardMergeExp vEmit tEmit cardMain cardStash eBase =
 cardStatesCorr
   :: (Has (Error String) sig m)
   => [(Var, Var)]
-  -> m (Exp, Exp)
+  -> m (Exp', Exp')
 cardStatesCorr ((vStash ,vMain) : _) =
   return ( EEmit . ECard . EVar $ vStash
          , EEmit . ECard . EVar $ vMain)
@@ -689,7 +690,7 @@ cardStatesCorr a =
 
 
 -- Merge the two partitions in correspondence
-mergeEmitted :: [(Var, Var)] -> [Stmt]
+mergeEmitted :: [(Var, Var)] -> [Stmt']
 mergeEmitted corr =
   [ (::=:) vMain (EOp2 OAdd (EVar vMain) (EVar vStash))
   | (vMain, vStash) <- corr ]
@@ -703,7 +704,7 @@ codegenAlloc
      , Has (State TState)  sig m
      , Has (Error String) sig m
      )
-  => Var -> Exp -> Ty -> m Stmt
+  => Var -> Exp' -> Ty -> m Stmt'
 codegenAlloc v e@(EOp2 ONor e1 e2) t@(TQReg _) = do
   let eEmit = EEmit $ EMakeSeq TNat e1 $ constExp e2
   let rV = Range v (ENum 0) e1
@@ -722,14 +723,14 @@ codegenAlloc v e _ = return $ (::=:) v e
 --------------------------------------------------------------------------------
 codegenCastEmitMaybe
   :: ( Has (Error String) sig m)
-  => Maybe CastScheme -> m [Stmt]
+  => Maybe CastScheme -> m [Stmt']
 codegenCastEmitMaybe =
   maybe (return []) codegenCastEmit
 
 
 codegenCastEmit
   :: ( Has (Error String) sig m)
-  => CastScheme -> m [Stmt]
+  => CastScheme -> m [Stmt']
 codegenCastEmit
   CastScheme{ schVsOldEmit=vsOldEmits
             , schVsNewEmit=vsNewEmit
@@ -763,7 +764,7 @@ castWithOp
      , Has (State TState) sig m
      , Has (Gensym RBinding) sig m
      )
-  => String -> STuple -> QTy -> m [Stmt]
+  => String -> STuple -> QTy -> m [Stmt']
 castWithOp op s newTy =
   do
     schemeC <- retypePartition s newTy
@@ -783,7 +784,7 @@ castPartitionEN
      , Has (State TState) sig m
      , Has (Gensym RBinding) sig m
      )
-  => STuple -> m [Stmt]
+  => STuple -> m [Stmt']
 castPartitionEN st@(STuple (locS, s, qtS)) = do
   case qtS of
     TNor -> castWithOp "CastNorEN" st TEN
@@ -808,7 +809,7 @@ dupState
      , Has (Reader IEnv) sig m
      , Has Trace sig m
      )
-  => Partition -> m ([Stmt], [(Var, Var)])
+  => Partition -> m ([Stmt'], [(Var, Var)])
 dupState s' = do
   STuple (locS, s, qtS) <- resolvePartition s'
   let rs = unpackPart s
@@ -830,7 +831,7 @@ dupState s' = do
 --
 makeLoopRange
   :: Has (Error String) sig m
-  => Partition -> Exp -> Exp -> m (Range, Exp)
+  => Partition -> Exp' -> Exp' -> m (Range, Exp')
 makeLoopRange (Partition [Range r sl sh]) l h =
   return
     ( Range r l h
@@ -851,7 +852,7 @@ codegenSplitEmitMaybe
      , Has Trace sig m
      )
   => Maybe SplitScheme
-  -> m [Stmt]
+  -> m [Stmt']
 codegenSplitEmitMaybe = maybe (return []) codegenSplitEmit
 
 -- | Generate emit variables and split operations from a given split scheme.
@@ -859,7 +860,7 @@ codegenSplitEmit
   :: ( Has (Error String) sig m
      )
   => SplitScheme
-  -> m [Stmt]
+  -> m [Stmt']
 codegenSplitEmit
   ss@SplitScheme { schQty=qty
                  , schROrigin=rOrigin@(Range x left _)
@@ -886,7 +887,7 @@ codegenSplitThenCastEmit
      )
   => Maybe SplitScheme
   -> Maybe CastScheme
-  -> m [Stmt]
+  -> m [Stmt']
 codegenSplitThenCastEmit sS sC =
   (++) <$> codegenSplitEmitMaybe sS <*> codegenCastEmitMaybe sC
 
@@ -895,7 +896,7 @@ codegenSplitThenCastEmit sS sC =
 --------------------------------------------------------------------------------
 -- | Merge semantics of a Had qubit into one EN emitted state
 -- uses the name of the emitted seq as well as the index name
-addENHad1 :: Var -> Var -> Stmt
+addENHad1 :: Var -> Var -> Stmt'
 addENHad1 vEmit idx =
   (::=:) vEmit $
     EOp2 OAdd (EVar vEmit) (EEmit $ ECall "Map" [eLamPlusPow2, EVar vEmit])
@@ -907,7 +908,7 @@ addENHad1 vEmit idx =
 
 
 -- | Multiply the Had coutner by 2
-doubleHadCounter :: Var -> Stmt
+doubleHadCounter :: Var -> Stmt'
 doubleHadCounter vCounter =
   (::=:) vCounter $ EOp2 OMul (ENum 2) (EVar vCounter)
 
@@ -920,7 +921,7 @@ codegenMergeScheme
      , Has (State TState) sig m
      , Has (Error String) sig m
      )
-  => [MergeScheme] -> m [(Stmt, Var)]
+  => [MergeScheme] -> m [(Stmt', Var)]
 codegenMergeScheme = mapM $ \scheme -> do
   case scheme of
     MMove -> throwError' "I have no planning in solving it here now."
@@ -952,7 +953,7 @@ codegenRequires
      , Has (Gensym RBinding) sig m
      -- , Has (Writer [(String, Range)]) sig m
      )
-  => Requires -> m Requires
+  => [Exp'] -> m [Exp']
 codegenRequires rqs = forM rqs $ \rq ->
   -- TODO: I need to check if partitions from different `requires` clauses are
   -- indeed disjoint!
@@ -967,7 +968,7 @@ codegenEnsures
      , Has (Error String) sig m
      , Has Trace sig m
      )
-  => Ensures -> m Ensures
+  => [Exp'] -> m [Exp']
 codegenEnsures ens =
   (ands <$>) <$> forM ens (runReader initIEnv . codegenAssertion)
 
@@ -982,7 +983,7 @@ codegenAssertion
      , Has (Reader IEnv) sig m
      , Has Trace sig m
      )
-  => Exp -> m [Exp]
+  => Exp' -> m [Exp']
 codegenAssertion (ESpec s qt espec) = do
   st <- typingPartitionQTy s qt
   vsEmit <- unpackPart s `forM` (`findEmitRangeQTy` qt)
@@ -994,7 +995,7 @@ codegenAssertion e = return [e]
 -- partition type; with which, generate expressions (predicates)
 codegenSpecExp
   :: ( Has (Error String) sig m )
-  => [(Var, Range)] -> QTy -> SpecExp -> m [Exp]
+  => [(Var, Range)] -> QTy -> SpecExp' -> m [Exp']
 codegenSpecExp vrs p e =
   case (p, e) of
     (_, SEWildcard) -> return []

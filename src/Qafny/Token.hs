@@ -1,4 +1,5 @@
 module Qafny.Token where
+import Text.Printf (printf)
 
 data Token
   -- Dafny Fragments
@@ -67,5 +68,8 @@ data SrcLoc = SrcLoc
   , sColumn :: !Int
   }
   
+instance Show SrcLoc where
+  show s = printf "(%d:%d)" (sLine s) (sColumn s)
+
 type SToken = (SrcLoc, Token)
 

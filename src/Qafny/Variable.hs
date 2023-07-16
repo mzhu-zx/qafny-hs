@@ -25,7 +25,7 @@ instance Variable Op2 where
   variable OSub = "_sub_"
   variable _    = undefined
 
-instance Variable Exp where
+instance Variable (Exp ()) where
   variable (ENum n) = variable n
   variable (EVar v) = variable v
   -- I need a way to specify compact vs full spec 
@@ -39,7 +39,7 @@ instance Variable Range where
   variable (Range x l r) =
     printf "%s_%s_%s" (variable x) (variable l) (variable r)
 
-instance Variable Binding where
+instance Variable (Binding ()) where
   variable (Binding s t) = variable (s, t)
 
 instance Variable RBinding where

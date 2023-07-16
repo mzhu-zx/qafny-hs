@@ -29,7 +29,6 @@ import           Qafny.Domain                  (NatInterval)
 import           Qafny.Env
 import           Qafny.Error                   (QError (..))
 import           Qafny.Interval
-import           Qafny.IntervalUtils           (rangeToNInt, γRange)
 import           Qafny.TypeUtils
 import           Qafny.Utils
     ( exp2AExp
@@ -72,7 +71,7 @@ typingExp
      , Has (Error String) sig m
      , HasCallStack
      )
-  => Exp -> m Ty
+  => Exp' -> m Ty
 typingExp (ENum _)  = return TNat
 typingExp (EVar x)  = do
   env <- view kEnv
@@ -654,11 +653,11 @@ collectMethodTypes a = [ (idt, TMethod (bdTypes ins) (bdTypes outs))
 collectMethodTypesM :: AST -> Map.Map Var Ty
 collectMethodTypesM = Map.fromList . collectMethodTypes
 
-appkEnvWithBds :: Bindings -> TEnv -> TEnv
+appkEnvWithBds :: Bindings () -> TEnv -> TEnv
 appkEnvWithBds bds = kEnv %~ appBds
   where appBds = Map.union $ Map.fromList [(v, t) | Binding v t <- bds]
 
-bdTypes :: Bindings -> [Ty]
+bdTypes :: Bindings () -> [Ty]
 bdTypes b = [t | Binding _ t <- b]
 
 

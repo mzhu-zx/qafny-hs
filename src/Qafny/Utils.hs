@@ -111,7 +111,7 @@ removeEmitRangeQTys rqts = do
 --------------------------------------------------------------------------------
 exp2AExp
   :: (Has (Error String) sig m)
-  => Exp -> m AExp
+  => Exp' -> m AExp
 exp2AExp (EVar v) = return $ AVar v
 exp2AExp (ENum n) = return $ ANat n
 exp2AExp e = throwError @String $

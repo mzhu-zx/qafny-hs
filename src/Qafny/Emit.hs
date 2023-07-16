@@ -125,13 +125,13 @@ instance DafnyPrinter QTy where
   build TEN   = build "ch"
   build TEN01 = build "ch01"
 
-instance DafnyPrinter Binding where
+instance DafnyPrinter (Binding ()) where
   build (Binding x t) = x <+>  ":" <+> t
 
 instance DafnyPrinter QDafny where
   build (QDafny s) = indent <> build s
 
-instance DafnyPrinter QMethod where
+instance DafnyPrinter (QMethod ()) where
   build (QMethod idt bds rets reqs ens blockHuh) =
     indent <> "method " <!> idt
     <+> withParen (byComma bds) <> buildRets rets
@@ -144,16 +144,16 @@ instance DafnyPrinter QMethod where
           buildRets r  = " returns" <+> withParen (byComma r)
           reqEns = buildConds "requires" reqs ++ buildConds "ensures" ens
 
-instance DafnyPrinter Block where
+instance DafnyPrinter (Block ()) where
   build = withBrace . withIncr2 . byLineT . inBlock
 
-instance DafnyPrinter Toplevel where
+instance DafnyPrinter (Toplevel ()) where
   build t = case unTop t of
     Inl q -> build q
     Inr q -> build q
 
 
-instance DafnyPrinter Stmt where
+instance DafnyPrinter (Stmt ()) where
   build (SEmit (SBlock b)) = build b
   build (SEmit f@(SForEmit idf initf bound invs b)) =
     indent <> buildFor
@@ -173,7 +173,7 @@ instance DafnyPrinter Stmt where
 
   build s = indent <> buildStmt s <> build ';'
     where
-      buildStmt :: Stmt -> Builder
+      buildStmt :: Stmt' -> Builder
       buildStmt (SVar bd Nothing) = "var " <!> bd
       buildStmt (SVar bd (Just e)) = "var " <!> bd <!> " := " <!> e
       buildStmt (v ::=: e) = v <!> " := " <!> e
@@ -197,7 +197,7 @@ instance DafnyPrinter Partition where
 instance DafnyPrinter GuardExp where
   build (GEPartition p _) = build p
 
-instance DafnyPrinter Exp where
+instance DafnyPrinter (Exp ()) where
   build (ENum n) = build $ show n
   build (EVar v) = build v
   build (EBool b) = build $ if b then "true" else "false"
@@ -244,7 +244,7 @@ buildOp2 op = (<!>) . (<!> opSign)
         OGe  -> " >= "
         _    -> "\\ unsupprted " ++ show op
 
-buildConds :: String -> [Exp] -> [Builder]
+buildConds :: String -> [Exp'] -> [Builder]
 buildConds s = map ((s <!> " ") <!>)
 
 runBuilder :: DafnyPrinter a => Int -> Bool -> a -> Text

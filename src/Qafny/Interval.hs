@@ -1,10 +1,13 @@
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE
+    FlexibleInstances
+  , GeneralizedNewtypeDeriving
+  #-}
 
 module Qafny.Interval where
 
 import           Control.Applicative (Applicative (liftA2))
 import           Data.Bool           (bool)
-import           Qafny.AST           (Exp, Range (..), Var)
+import           Qafny.AST           (Exp (..), Exp', Range (..), Var)
 import           Qafny.Partial       (evalPStatic, hasResidue)
 import           Text.Printf         (printf)
 
@@ -56,10 +59,10 @@ instance SemiLattice a => SemiLattice (Interval a) where
 --------------------------------------------------------------------------------
 -- * Partial Evaluation Related
 --------------------------------------------------------------------------------
-instance PartialOrd Exp where
+instance PartialOrd (Exp ()) where
   e1 ⊑ e2 = (>= 0) <$> evalPStatic (e2 - e1)
 
-instance SemiLattice Exp where
+instance SemiLattice (Exp ()) where
   (⊔) = simpleLub
   (⊓) = simpleGlb
 
@@ -73,7 +76,7 @@ instance SemiLattice Range where
   (⊔) = fRangeInterval (\x i1 i2 -> interval2Range x <$> (i1 ⊓ i2))
 
 fRangeInterval
-  :: (Var -> Interval Exp -> Interval Exp -> Maybe c)
+  :: (Var -> Interval Exp' -> Interval Exp' -> Maybe c)
   -> Range
   -> Range
   -> Maybe c
@@ -82,7 +85,7 @@ fRangeInterval f (Range x xl xr) (Range y yl yr) =
   where
     yes = f x (Interval xl xr)  (Interval yl yr)
 
-interval2Range :: Var -> Interval Exp -> Range
+interval2Range :: Var -> Interval Exp' -> Range
 interval2Range x (Interval i1 i2) = Range x i1 i2
 
 instance Lattice Range where

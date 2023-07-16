@@ -1,4 +1,7 @@
 {
+{-# LANGUAGE TypeFamilies, FlexibleContexts, FlexibleInstances #-}
+
+
 module Qafny.Parser(scanAndParse) where
 import qualified Qafny.Lexer as L
 import           Qafny.ParserUtils
@@ -84,7 +87,7 @@ AST
 toplevels                                                                 
   : many(toplevel)                    { $1                                   }
                                                                           
-toplevel  :: { Toplevel }
+toplevel  :: { Toplevel' }
   :  dafny                            { inj (QDafny $1) }
   | "method" id '(' bindings ')' "returns" '(' bindings ')' conds opt(block)                           
     {%  ((\(rs, es) -> inj (QMethod $2 $4 $8 rs es $11)) `fmap` (requireEnsures $10)) }
@@ -129,7 +132,7 @@ stmts
   : many(stmt)                        { $1                                   }
                                                                           
                                                                           
-stmt :: { Stmt }
+stmt :: { Stmt' }
   : dafny                             { SDafny $1                            }
   | "assert" expr ';'                 { SAssert $2                           }
   | "var" binding ';'                 { SVar $2 Nothing                      }
@@ -141,10 +144,10 @@ stmt :: { Stmt }
   | "for" id "in" '[' expr ".." expr ']' "with" guardExpr conds block
     {% do (invs, sep) <- invariantSeperates $11; return $ SFor $2 $5 $7 $10 invs sep $12 }
 
-splitAt :: { Exp }
+splitAt :: { Exp' }
   : "split" "at" expr                 { $3 }
 
-guardExpr :: {GuardExp }
+guardExpr :: { GuardExp }
   : partition opt(splitAt)            { GEPartition $1 $2 }
                                                                           
 partition :: { Partition }                                                               
@@ -153,11 +156,11 @@ partition :: { Partition }
 range                                                                     
   : id '[' expr ".." expr ']'         { Range $1 $3 $5                       }
                                                                 
-spec ::   { Exp }
+spec ::   { Exp' }
   : '{' partition ':'  qty "↦" qspec '}'
                                       { ESpec $2 $4 $6                       }
 
-qspec ::  { SpecExp }
+qspec ::  { SpecExp' }
   : "⊗" id '.' tuple(expr)
                                       { SESpecNor $2 $4                   }
   | "Σ" id "∈" '[' expr ".." expr ']' '.' tuple(expr)
@@ -190,18 +193,18 @@ qops
   | "QFT"                             { EQFT                   }
   | "RQFT"                            { ERQFT                  }
 
-logicOrExp :: { Exp } 
+logicOrExp :: { Exp' } 
   : logicAndExp "||" logicOrExp       { EOp2 OOr $1 $3         }
   | logicAndExp                       { $1 } 
 
-logicAndExp :: { Exp } 
+logicAndExp :: { Exp' } 
   : cmpExpr "&&" logicAndExp          { EOp2 OAnd $1 $3        }
   | cmpExpr                           { $1 }
 
 cmpPartial
  : cmp arithExpr  { ($1, $2) }
 
-cmpExpr :: { Exp }
+cmpExpr :: { Exp' }
  : arithExpr many(cmpPartial)         { unchainExps $1 $2  }
 
 cmp :: { Op2 }
@@ -210,7 +213,7 @@ cmp :: { Op2 }
  | ">="                     { OGe }
  | "<="                     { OLe }
 
-arithExpr :: { Exp }
+arithExpr :: { Exp' }
  : atomic arith arithExpr   { EOp2 $2 $1 $3 }
  | atomic                   { $1 }
 

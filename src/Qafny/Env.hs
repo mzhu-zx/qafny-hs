@@ -32,7 +32,7 @@ type KEnv = Map.Map Var Ty
 data TEnv = TEnv
   { _kEnv :: KEnv
   , _ctx  :: CtxMode
-  , _qnum :: Exp -- assume each Q type variable is associated with a qubit num which is C type exp
+  , _qnum :: Exp' -- assume each Q type variable is associated with a qubit num which is C type exp
   }
 
 

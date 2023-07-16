@@ -19,7 +19,7 @@ parseError ((L.SrcLoc {L.sLine=sLine, L.sColumn=sColumn}, tok) : xs) = Left . wi
   printf "at line %s, col %s, token %s\nRest tokens: %s"
     (show sLine) (show sColumn) (show tok) (show (snd <$> xs))
 
-requireEnsures :: [Conds] -> Parser (Requires, Ensures)
+requireEnsures :: [Conds] -> Parser ([Exp'], [Exp'])
 requireEnsures =
   foldr inner (return ([], [])) 
   where
@@ -31,7 +31,7 @@ requireEnsures =
         _          -> Left . err $ show cond
     err = printf "%s is not one of `requires` or `ensures`"
 
-invariantSeperates :: [Conds] -> Parser (Invariants, Separates)
+invariantSeperates :: [Conds] -> Parser ([Exp'], Partition)
 invariantSeperates conds = do
   (invs, seps) <- foldr inner (return ([], [])) conds
   case seps of
@@ -47,7 +47,7 @@ invariantSeperates conds = do
     err = printf "%s is not one of `invariant` or `separates`"
     errSep = printf "There should be exactly one `separates` condition, given %s."
 
-unchainExps :: Exp -> [(Op2, Exp)] -> Exp
+unchainExps :: Exp' -> [(Op2, Exp')] -> Exp'
 unchainExps eLeft [] = eLeft
 unchainExps eLeft [(op2, eLast)] = EOp2 op2 eLeft eLast
 unchainExps eLeft ((op2, eNow) : oes) = 

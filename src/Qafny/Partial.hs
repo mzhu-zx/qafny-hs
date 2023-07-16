@@ -2,6 +2,7 @@
     FlexibleInstances
   , GeneralizedNewtypeDeriving
   , TupleSections
+  , TypeFamilies
   #-}
 
 module Qafny.Partial where
@@ -32,7 +33,7 @@ class PEval a where
   evalP :: a -> PResult
   reflectP :: PResult -> a
 
-instance PEval Exp where
+instance PEval Exp' where
   evalP (ENum i) = (Map.empty, i)
   evalP (EVar v) = (Map.singleton v 1, 0)
   evalP (EOp2 op e1 e2) =
@@ -59,10 +60,10 @@ class Reducible a where
 instance Reducible a => Reducible [a] where
   reduce = fmap reduce
 
-instance Reducible Exp where
+instance Reducible Exp' where
   reduce = go
     where
-      go :: Exp -> Exp
+      go :: Exp' -> Exp'
       go e@ENum{}          = red e
       go e@EVar{}          = red e
       go e@(EOp2 OAdd _ _) = red e
