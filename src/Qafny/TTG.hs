@@ -1,16 +1,19 @@
 {-# LANGUAGE
-    TypeFamilies
-  , TypeOperators
+    DeriveDataTypeable
+  , DeriveFunctor
   , StandaloneDeriving
+  , TypeFamilies
+  , TypeOperators
   #-}
 
 module Qafny.TTG where
+import           Data.Data
 import           Qafny.Token (SrcLoc (..))
-
 --------------------------------------------------------------------------------
 -- * Indexed Family for Extensible ADTs
 
 data Source
+  deriving (Data, Typeable)
 
 type family XRec idx a
 
@@ -18,7 +21,7 @@ type instance XRec () a = a
 type instance XRec Source a = Located a
 
 data Located f = L SrcLoc f
-  deriving (Show)
+  deriving (Show, Functor, Typeable, Data)
 
 unLoc :: Located f -> f
 unLoc (L _ f) = f

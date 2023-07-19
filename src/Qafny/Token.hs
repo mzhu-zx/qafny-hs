@@ -1,5 +1,9 @@
+{-# LANGUAGE
+    DeriveDataTypeable
+  #-}
 module Qafny.Token where
-import Text.Printf (printf)
+import           Text.Printf (printf)
+import           Data.Data
 
 data Token
   -- Dafny Fragments
@@ -64,10 +68,11 @@ data Token
 
 
 data SrcLoc = SrcLoc
-  { sLine :: !Int 
+  { sLine   :: !Int
   , sColumn :: !Int
   }
-  
+  deriving (Typeable, Data)
+
 instance Show SrcLoc where
   show s = printf "(%d:%d)" (sLine s) (sColumn s)
 

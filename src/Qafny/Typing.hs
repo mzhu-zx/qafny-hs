@@ -696,9 +696,11 @@ liftIEnv2
   => (b -> b -> a) -> m (b -> b -> NonEmpty (a, AEnv))
 liftIEnv2 (<?>) = do
   ienv <- ask
-  let aenvs = nondetIEnv ienv
-      subst' r'' = (`subst` r'') <$> aenvs
-  return $ \r1 r2 -> NE.zipWith (\(r1', r2') -> (r1' <?> r2',)) (NE.zip (subst' r1) (subst' r2))  aenvs
+  return $ \r1 r2 ->
+    let fvs = fVars r1 ++ fVars r2
+        aenvs = nondetIEnv $ filterIEnv fvs ienv
+        subst' r'' = (`subst` r'') <$> aenvs
+    in NE.zipWith (\(r1', r2') -> (r1' <?> r2',)) (NE.zip (subst' r1) (subst' r2)) aenvs
 
 (⊑/)
   :: ( Has (Reader IEnv) sig m )

@@ -1,5 +1,6 @@
 {-# LANGUAGE
     DeriveAnyClass
+  , DeriveDataTypeable
   , DeriveFoldable
   , DeriveFunctor
   , DeriveGeneric
@@ -20,7 +21,9 @@ module Qafny.AST where
 import           Qafny.TTG
 
 --------------------------------------------------------------------------------
+import           Control.Arrow            ((>>^))
 import           Control.Monad            (forM)
+import           Data.Data
 import           Data.Functor.Foldable
     ( Base
     , Corecursive (embed)
@@ -32,6 +35,7 @@ import           Data.Maybe               (fromMaybe)
 import           Data.Sum
 import           GHC.Generics             hiding ((:+:))
 import           Text.Printf              (printf)
+import Data.Bool (bool)
 
 
 --------------------------------------------------------------------------------
@@ -39,7 +43,7 @@ import           Text.Printf              (printf)
 data AExp
   = ANat Int
   | AVar Var
-  deriving (Show, Eq, Ord)
+  deriving (Show, Eq, Ord, Data, Typeable)
 
 data Ty
   = TNat
@@ -49,24 +53,29 @@ data Ty
   | TQReg AExp
   | TMethod [Ty] [Ty] -- parameter and return types
   | TEmit EmitTy
-  deriving (Show, Eq, Ord)
+  deriving (Show, Eq, Ord, Data, Typeable)
 
 -- | EmitExp : Unchecked Types for Codegen Only
 data EmitTy
   = TAny String
-  deriving (Show, Eq, Ord)
+  deriving (Show, Eq, Ord, Data, Typeable)
 
 data QTy
   = TNor
   | THad
   | TEN
   | TEN01
-  deriving (Show, Eq, Ord)
+  deriving (Show, Eq, Ord, Data, Typeable)
 
 type Var = String
 
 data Binding x
   = Binding (XRec x Var) (XRec x Ty)
+
+deriving instance (Typeable (Binding Source))
+deriving instance (Typeable (Binding ()))
+deriving instance (Data (Binding Source))
+deriving instance (Data (Binding ()))
 
 deriving instance (Show (XRec x Var), Show (XRec x Ty)) => Show (Binding x)
 deriving instance (Eq (XRec x Var), Eq (XRec x Ty)) => Eq (Binding x)
@@ -93,11 +102,11 @@ data Op2
   | OGt
   | OGe
   | OEq
-  deriving (Show, Eq, Ord)
+  deriving (Show, Eq, Ord, Data, Typeable)
 
 data Op1
   = ONot
-  deriving (Show, Eq, Ord)
+  deriving (Show, Eq, Ord, Data, Typeable)
 
 
 data GuardExp
@@ -127,6 +136,11 @@ data Exp x
   -- | REq Exp Exp Var Exp -- compare exp == exp and store the value in var[exp], var must be Q type
   -- | RLt Exp Exp Var Exp -- compare exp < exp and store the value in var[exp], var must be Q type
 
+
+deriving instance (Typeable (Exp ()))
+deriving instance (Data (Exp ()))
+deriving instance (Typeable (Exp Source))
+deriving instance (Data (Exp Source))
 deriving instance (Generic (Exp ()))
 deriving instance (Show (Exp ()))
 deriving instance (Show (Exp Source))
@@ -141,8 +155,6 @@ deriving instance (Ord (Exp Source))
 
 
 
-type LExp = XRec Source (Exp Source)
-
 data SpecExp x
   = SESpecNor  Var [XRec x (Exp x)]
   | SESpecEN   Var Intv [XRec x (Exp x)]
@@ -151,6 +163,10 @@ data SpecExp x
 deriving instance (Show (XRec x (Exp x))) => Show (SpecExp x)
 deriving instance (Eq (XRec x (Exp x))) => Eq (SpecExp x)
 deriving instance (Ord (XRec x (Exp x))) => Ord (SpecExp x)
+deriving instance (Typeable (SpecExp ()))
+deriving instance (Data (SpecExp ()))
+deriving instance (Typeable (SpecExp Source))
+deriving instance (Data (SpecExp Source))
 
 showExp :: Exp () -> String
 showExp (ENum n) = show n
@@ -176,7 +192,7 @@ data EmitExp
   | ESlice (Exp ()) (Exp ()) (Exp ())
   | EDafnyVar Var
   | EOpChained (Exp ()) [(Op2, Exp ())]
-  deriving  (Show, Eq, Ord)
+  deriving  (Show, Eq, Ord, Data, Typeable)
 
 data Conds
   = Requires (Exp ())
@@ -211,10 +227,10 @@ instance (Injection q (QMethod x :+: QDafny)) => Injection q (Toplevel x) where
   inj = Toplevel . inj
 
 data Intv = Intv (Exp ()) (Exp ())
-  deriving (Eq, Show, Ord)
+  deriving (Eq, Show, Ord, Data, Typeable)
 
 data Range = Range Var (Exp ()) (Exp ())
-  deriving (Eq, Ord)
+  deriving (Eq, Ord, Data, Typeable)
 
 instance Show Range where
   show (Range x y z) = printf "%s[%s .. %s]" x (showExp y) (showExp z)
@@ -226,7 +242,7 @@ instance Show Loc where
   show = deref
 
 newtype Partition = Partition { unpackPart :: [Range] }
-  deriving (Eq, Ord)
+  deriving (Eq, Ord, Data, Typeable)
 
 
 instance Show Partition where
@@ -303,9 +319,8 @@ specPartitionQTys :: [Exp x] -> [(Partition, QTy)]
 specPartitionQTys es = [ (p, qty) | (ESpec p qty _) <- es ]
 
 
-(.:) :: (c -> d) -> (a -> b -> c) -> a -> b -> d
-(.:) g f2 x y = g (f2 x y)
-
+(.:) :: (c -> d) -> (a -> b -> c) -> (a -> b -> d)
+(.:) = (.) . (.)
 
 --------------------------------------------------------------------------------
 -- * Recursion Schemes
@@ -347,16 +362,13 @@ instance Num (Exp ()) where
   fromInteger a = ENum (fromInteger a)
 
 
-fVars :: Exp () -> [Var]
-fVars = cata go
-  where
-    go :: ExpF [Var] -> [Var]
-    go (EVarF x) = [x]
-    go fvs       = concat fvs
-
 
 type AEnv = [(Var, Exp ())]
 type IEnv = [(Var, NonEmpty (Exp ()))]
+
+-- | Remove from 'IEnv' variables that are not in the free variable list 
+filterIEnv :: [Var] -> IEnv -> IEnv
+filterIEnv fvs = filter (\(v, _) -> v `elem` fvs)
 
 nondetIEnv :: IEnv -> NonEmpty AEnv
 nondetIEnv = traverse (\(v, ne) -> (v,) <$> ne)
@@ -372,15 +384,25 @@ initIEnv = []
 --
 class Substitutable a where
   subst :: AEnv -> a -> a
+  fVars :: a -> [Var]
+
 
 instance Substitutable (Exp ()) where
   subst = substE
+  fVars = cata go
+    where
+      go :: ExpF [Var] -> [Var]
+      go (EVarF x) = [x]
+      go fvs       = concat fvs
+  
 
 instance Substitutable Partition where
   subst = substP
+  fVars = concatMap fVars . unpackPart
 
 instance Substitutable Range where
   subst = substR
+  fVars (Range _ e1 e2) = fVars e1 ++ fVars e2
 
 substE :: AEnv -> Exp () -> Exp ()
 substE [] = id
@@ -416,3 +438,11 @@ type Binding' = Binding ()
 type Block' = Block ()
 type SpecExp' = SpecExp ()
 type Toplevel' = Toplevel ()
+
+-- * Annotated Types
+type LExp = XRec Source (Exp Source)
+type LStmt = XRec Source (Stmt Source)
+
+--------------------------------------------------------------------------------
+-- unL :: LExp -> Exp'
+-- unL (L _ e) = gmapT unL e
