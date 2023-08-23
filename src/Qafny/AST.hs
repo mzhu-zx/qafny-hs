@@ -21,8 +21,6 @@ module Qafny.AST where
 import           Qafny.TTG
 
 --------------------------------------------------------------------------------
-import           Control.Arrow            ((>>^))
-import           Control.Monad            (forM)
 import           Data.Data
 import           Data.Functor.Foldable
     ( Base
@@ -35,8 +33,6 @@ import           Data.Maybe               (fromMaybe)
 import           Data.Sum
 import           GHC.Generics             hiding ((:+:))
 import           Text.Printf              (printf)
-import Data.Bool (bool)
-
 
 --------------------------------------------------------------------------------
 
@@ -366,7 +362,7 @@ instance Num (Exp ()) where
 type AEnv = [(Var, Exp ())]
 type IEnv = [(Var, NonEmpty (Exp ()))]
 
--- | Remove from 'IEnv' variables that are not in the free variable list 
+-- | Remove from 'IEnv' variables that are not in the free variable list
 filterIEnv :: [Var] -> IEnv -> IEnv
 filterIEnv fvs = filter (\(v, _) -> v `elem` fvs)
 
@@ -394,7 +390,7 @@ instance Substitutable (Exp ()) where
       go :: ExpF [Var] -> [Var]
       go (EVarF x) = [x]
       go fvs       = concat fvs
-  
+
 
 instance Substitutable Partition where
   subst = substP

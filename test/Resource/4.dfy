@@ -23,6 +23,8 @@ method DeutschJozsa (n : nat)
   q_0_1___seqL_nat_R___2__emit := CastNorHad(q_0_1___seqL_nat_R___0__emit);
   // Cast TNor ==> THad
   p_0_n___seqL_nat_R___3__emit := CastNorHad(p_0_n___seqL_nat_R___1__emit);
+
+  assert 1 != 1;
 }
 
 }

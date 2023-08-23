@@ -14,12 +14,18 @@
 
    (At this point, Dafny is fixed to =v3.12.0=.)
 
-   Installing Dafny is not required.
+   <<build_dafny>>
+   Installing Dafny is not required,  but one can install it by the following 
+
+   #+begin_src sh
+     cd external/dafny/
+     make exe
+     make z3-ubuntu             # presumably, you use some kind of GNU/Linux
+   #+end_src
 
 2. Install Stack and GHC
 
-   It's recommanded to use [[https://www.haskell.org/ghcup/][GHCup]] to install GHC and Stack. 
-
+   It's recommended to use [[https://www.haskell.org/ghcup/][GHCup]] to install GHC and Stack. 
 
 3. Build Qafny
 
@@ -46,4 +52,20 @@ All samples/tests (=<testname>.qfy=) are located in =external/Resources=.
   
 * Something Interesting
 - =fused-effects=
-x
+
+* How to use Dafny in my editor? 
+** Emacs
+
+Use =boogie-friends=.
+
+** Visual Studio Code
+
+There's a Dafny extension available for Code. You will need to
+configure it to use the Dafny [[build_dafny][installed]]. Noteably, the 'Cli Path' option which
+you can find in Extension Settings. 
+
+Here are some dependencies required (the exact packages depend on the Linux
+distribution you use).
+
+- =dotnet-6.0=
+- =aspnet-runtime-6.0=

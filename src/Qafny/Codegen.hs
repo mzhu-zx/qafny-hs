@@ -555,7 +555,7 @@ codegenFor'Body idx boundl boundr eG body stSep@(STuple (_, Partition rsSep, qtS
             forM_ bindings $ \((r, qt), v) -> modifyEmitRangeQTy r qt v
 
       -- TODO: I need one way to duplicate generated emit symbols in the split
-      -- and cast semantics so that execute the computation above twice will
+      -- and cast semantics so that executing the computation above twice will
       -- solve the problem.
       vsEmitSep <- forM rsSep (`findEmitRangeQTy` qtSep)
 
