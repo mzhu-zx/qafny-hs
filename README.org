@@ -60,9 +60,8 @@ Use =boogie-friends=.
 
 ** Visual Studio Code
 
-There's a Dafny extension available for Code. You will need to
-configure it to use the Dafny [[build_dafny][installed]]. Noteably, the 'Cli Path' option which
-you can find in Extension Settings. 
+There's a Dafny extension available for Code. You will need to configure it to
+use the Dafny [[build_dafny][installed]], notably the "Cli Path" option under Extension Settings.
 
 Here are some dependencies required (the exact packages depend on the Linux
 distribution you use).
