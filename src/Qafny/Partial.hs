@@ -46,14 +46,15 @@ instance PEval Exp' where
   evalP e = undefined
 
   reflectP (m, i) =
-    Map.foldrWithKey go (ENum i) m
+    let m' = Map.filter (/= 0) m
+    in if Map.null m'
+       then ENum i
+       else foldr1 (+) (eNums ++ vars' m')
     where
-      go v cnt =
-        let fs = if cnt >= 0
-                 then replicate cnt (EOp2 OAdd `flip` EVar v)
-                 else replicate (negate cnt) (EOp2 OSub `flip` EVar v)
-        in foldr (.) id fs
-
+      eNums = [ ENum i | i /= 0 ]
+      vars' m' = map (uncurry go) (Map.toList m')
+      go v cnt = foldr1 (EOp2 (if cnt >= 0 then OAdd else OSub)) $
+        replicate (abs cnt) (EVar v)
 class Reducible a where
   reduce :: a -> a
 

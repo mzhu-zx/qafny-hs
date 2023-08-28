@@ -10,7 +10,7 @@ abstract module {:options "-functionSyntax:4"} QPreludeUntyped {
   import opened Seq
 
   // import opened Seq
-  // cast nor type qubit to had type qubit
+  // cast nor type qubit to had type qubit by applying an 'H' gate to it
   function CastNorHad(q : seq<nat>) : (h : seq<int>) 
     requires forall k : nat | k < |q| :: q[k] == 0 || q[k] == 1
     ensures |h| == |q| && forall k : nat | k < |q| ::
@@ -31,7 +31,7 @@ abstract module {:options "-functionSyntax:4"} QPreludeUntyped {
   // |0, 0, 0⟩ + α|1, 0, 0⟩ + ...
   //
   function CastHadEN01(q : seq<int>) : (c : seq<seq<nat>>)
-    requires forall k : nat | k < |q| :: q[k] == 0 || q[k] == -1
+    requires forall k : nat | k < |q| :: q[k] == 1 || q[k] == -1
     ensures |c| == Pow2(|q|) && forall i : nat | i < |c| :: |c[i]| == |q|
     ensures forall i : nat | i < Pow2(|q|) :: 
             forall j : nat | j < |q| :: Locate(i, j) == c[i][j]
@@ -39,7 +39,7 @@ abstract module {:options "-functionSyntax:4"} QPreludeUntyped {
 
   function CastHadEN01'1(q : seq<int>) : (c : seq<seq<nat>>)
     requires |q| == 1
-    requires forall k : nat | k < |q| :: q[k] == 0 || q[k] == -1
+    requires forall k : nat | k < |q| :: q[k] == 1 || q[k] == -1
     ensures c == [[0], [1]]
   ;
 

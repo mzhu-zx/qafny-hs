@@ -29,16 +29,18 @@ import           Effect.Gensym          (Gensym, gensym)
 import           Qafny.Gensym           (resumeGensym)
 
 -- Utils
-import           Control.Arrow          (Arrow (first))
 import           Control.Lens           (at, non, (%~), (?~), (^.))
 import           Control.Lens.Tuple
 import           Control.Monad
     ( MonadPlus (mzero)
     , forM
     , forM_
+    , join
     , unless
-    , when, void
+    , void
+    , when
     )
+import           Data.Bifunctor
 import           Data.Functor           ((<&>))
 import qualified Data.List              as List
 import           Data.List.NonEmpty     (NonEmpty (..))
@@ -52,7 +54,6 @@ import           Control.Exception      (throw)
 import           Data.Bool              (bool)
 import           Data.Maybe             (listToMaybe, maybeToList)
 import           Qafny.AST
-import           Qafny.AST              (specPartitionQTys)
 import           Qafny.ASTFactory
 import           Qafny.Config
 import           Qafny.Emit
@@ -120,7 +121,7 @@ import           Qafny.Utils
 -- put Stmt's anyway
 putPure :: Has (Reader Bool) sig m
         => [Stmt'] -> m [Stmt']
-putPure = pure 
+putPure = pure
 
 -- put Stmt's only if it's allowed
 putOpt :: Has (Reader Bool) sig m => m [Stmt'] -> m [Stmt']
@@ -412,11 +413,14 @@ codegenStmt' (SIf e seps b) = do
 codegenStmt' (SFor idx boundl boundr eG invs seps body) = do
   (stmtsPreGuard, statePreLoop, stateLoop) <- codegenInit
   put stateLoop
+  -- generate loop invariants
+  newInvs <- forM invs codegenAssertion
+
   let substEnv = [(idx, boundl :| [boundr - 1])]
 
   stmtsBody <- local (++ substEnv) $ do
     stSep <- typingPartition seps -- check if `seps` clause is valid
-    stmtsBody <- codegenFor'Body idx boundl boundr eG body stSep
+    stmtsBody <- codegenFor'Body idx boundl boundr eG body stSep (concat newInvs)
     void codegenFinish
     return stmtsBody
 
@@ -434,17 +438,26 @@ codegenStmt' (SFor idx boundl boundr eG invs seps body) = do
     -- bound
     invPQtsPre = first (reduce . substP [(idx, boundl)]) <$> invPQts
 
-    -- | the postcondtion of one iteration amounts to that of incrementing the
-    -- index by one
+    -- | the postcondtion of one iteration can be computed bys setting the upper
+    -- bound to be the index plus one
     invPQtsPost = first (reduce . substP [(idx, EVar idx + 1)]) <$> invPQts
 
-    -- | Generate code and state for the precondition
+    -- | Generate code and state for the precondition after which
+    -- | we only need to concern those mentioned by the loop invariants
     codegenInit = do
       stmtsPreGuard <- invPQtsPre `forM` \(sInv, qtInv) -> case sInv of
         Partition [rInv] -> do
           stInv <- resolvePartition sInv
           (sInvSplit, maySplit, mayCast) <- splitThenCastScheme stInv qtInv rInv
           codegenSplitThenCastEmit maySplit mayCast
+        -- Q: What is a reasonable split if there are 2 ranges? Would this have
+        --    a slightly different meaning? For example, consider a EN partition
+        --
+        --       { q[0..i], p[0..i] } ↦ { Σ_i . ket(i, i) }
+        --
+        --    In this case, split will also requires a non-trivial merge?
+        --    How to do this?
+        --
         _                -> throwError' $ printf "More than 1 range %s" (show sInv)
       -- | This is important because we will generate a new state from the loop
       -- invariant and perform both typing and codegen in the new state!
@@ -520,8 +533,9 @@ codegenFor'Body
   -> GuardExp   -- ^ guard expression
   -> Block' -- ^ body
   -> STuple -- ^ the partition to be merged into
+  -> [Exp'] -- ^ emitted invariants
   -> m [Stmt']
-codegenFor'Body idx boundl boundr eG body stSep@(STuple (_, Partition rsSep, qtSep)) = do
+codegenFor'Body idx boundl boundr eG body stSep@(STuple (_, Partition rsSep, qtSep)) newInvs = do
   let psBody = leftPartitions . inBlock $ body
   stG@(STuple (_, sG, qtG)) <- typingGuard eG
 
@@ -579,29 +593,35 @@ codegenFor'Body idx boundl boundr eG body stSep@(STuple (_, Partition rsSep, qtS
       -- solve the problem.
       vsEmitSep <- forM rsSep (`findEmitRangeQTy` qtSep)
 
-      -- compile for the 'false' branch with non-essential statements suppressed 
+      -- compile for the 'false' branch with non-essential statements suppressed
       (stmtsFalse, vsFalse) <- do
         installEmits rqtvsEmitFalseG
         local (const False) $ codegenHalf psBody
 
-      -- compile the if body for the 'true' branch
+      -- compile the for body for the 'true' branch
       (stmtsTrue, vsTrue)  <- do
         put stateIterBegin
         codegenHalf psBody
 
       -- 4. put stashed part back
-      let stmtsUnsplit = zipWith3 (\vS vRF vRT -> vS ::=: (EVar vRF + EVar vRT)) vsEmitSep vsFalse vsTrue
+      let stmtsUnsplit = zipWith3 merge3 vsEmitSep vsFalse vsTrue
       return ([], concat [ stmtsSaveFalse
                          , stmtsFocusTrue
+                         , [qComment "// begin false"]
                          , stmtsFalse
+                         , [qComment "// end false"]
+                         , [qComment "// begin true"]
                          , stmtsTrue
+                         , [qComment "// end true"]
                          , stmtsUnsplit
                          ])
     _    -> throwError' $ printf "%s is not a supported guard type!" (show qtG)
-  let innerFor = SEmit $ SForEmit idx boundl boundr [] $ Block stmtsBody
+  let innerFor = SEmit $ SForEmit idx boundl boundr newInvs $ Block stmtsBody
   return $ stmtsPrelude ++ [innerFor]
 
   where
+    merge3 vS vRF vRT = vS ::=: (EVar vRF + EVar vRT)
+
     codegenHalf psBody = do
       -- 2. generate the body statements with with that hint lambda should
       -- resolve to EN01 now
@@ -709,7 +729,7 @@ cardStatesCorr ((vStash ,vMain) : _) =
   return ( EEmit . ECard . EVar $ vStash
          , EEmit . ECard . EVar $ vMain)
 cardStatesCorr a =
-  throwError $ "State cardinality of an empty correspondence is undefined!"
+  throwError "State cardinality of an empty correspondence is undefined!"
 
 
 -- Merge the two partitions in correspondence
@@ -996,10 +1016,6 @@ codegenEnsures ens =
   (ands <$>) <$> forM ens (runReader initIEnv . codegenAssertion)
 
 
--- | Take in an /assertional/ expression, perform type check and emit
--- corresponding expressions
---
--- TODO: Would it be better named as _checkAndCodegen_?
 codegenAssertion
   :: ( Has (State TState)  sig m
      , Has (Error String) sig m
@@ -1007,11 +1023,24 @@ codegenAssertion
      , Has Trace sig m
      )
   => Exp' -> m [Exp']
-codegenAssertion (ESpec s qt espec) = do
+codegenAssertion e = runWithCallStack e (codegenAssertion' e)
+
+-- | Take in an /assertional/ expression, perform type check and emit
+-- corresponding expressions
+--
+-- TODO: Would it be better named as _checkAndCodegen_?
+codegenAssertion'
+  :: ( Has (State TState)  sig m
+     , Has (Error String) sig m
+     , Has (Reader IEnv) sig m
+     , Has Trace sig m
+     )
+  => Exp' -> m [Exp']
+codegenAssertion' (ESpec s qt espec) = do
   st <- typingPartitionQTy s qt
   vsEmit <- unpackPart s `forM` (`findEmitRangeQTy` qt)
   codegenSpecExp (zip vsEmit (unpackPart s)) qt espec
-codegenAssertion e = return [e]
+codegenAssertion' e = return [e]
 
 
 -- | Take in the emit variable corresponding to each range in the partition and the
@@ -1058,10 +1087,10 @@ codegenSpecExp vrs p e =
       -- todo: also emit bounds!
       checkListCorr vrs eValues
       return $ do
-        ((vE, Range _ el er), eV) <- zip vrs eValues
+        ((vE, Range _ el er), eV) <- bimap (second reduce) reduce <$> zip vrs eValues
         when (eV == EWildcard) mzero
         let eBoundSum = Just $ eIntv idxSum lSum rSum
-        let eBoundTen = Just $ eIntv idxTen 0 (er - el)
+        let eBoundTen = Just $ eIntv idxTen 0 (reduce (er - el))
         let eForallSum = EForall (natB idxSum) eBoundSum
         let eForallTen = EForall (natB idxTen) eBoundTen
         let eSel = (EVar vE `eAt` EVar idxSum) `eAt` EVar idxTen

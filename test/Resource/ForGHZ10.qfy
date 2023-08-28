@@ -10,10 +10,10 @@ method GHZ(q : qreg[10])
     // provide hints on how to perform separation
     separates q[0 .. (i + 1)]
     invariant {
-      q [0 .. (i + 1)] : en01 ↦ Σ j ∈ [0 .. 2] . ⊗ k ∈ [0 .. j] . ( _ , j)
+      q [0 .. (i + 1)] : en01 ↦ Σ j ∈ [0 .. 2] . ⊗ k ∈ [0 .. j] . ( j )
     }
     invariant {
-      q [(i + 1) .. 10] : nor ↦ ⊗ k . (0)
+      q [(i + 1) .. 10] : nor ↦ ⊗ k . ( 0 )
     }
   {
     q[(i + 1) .. (i + 2)] *= λ (x => (x + 1) % 2);

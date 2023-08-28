@@ -662,7 +662,7 @@ bdTypes b = [t | Binding _ t <- b]
 
 
 
--- | Construct from ascratch a new TState containing the given partitons.
+-- | Construct from a scratch a new TState containing the given partitons.
 tStateFromPartitionQTys
   :: ( Has (Gensym RBinding) sig m
      , Has (Gensym Var) sig m

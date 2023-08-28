@@ -160,9 +160,11 @@ instance DafnyPrinter (Stmt ()) where
     where
       buildFor =
         "for " <!> idf <!> " := " <!> initf <!> " to " <!> bound
-          <!> "\n" <!>
-          -- todo: emit invariants
-          b
+          <!> "\n"
+          <!> buildInvs
+          <!> b
+      buildInvs = withIncr2 . byLineT $
+        map (((indent <!> "invariant") <+>) . build) invs
   build (SDafny s') = indent <> build s'
 
   build s@(SFor idx boundl boundr eG invs seps body) = debugOnly s $
@@ -208,6 +210,7 @@ instance DafnyPrinter (Exp ()) where
     where beb (Just eb') = " | " <!> eb'
           beb Nothing    = mempty
   build e@EHad = debugOnly e "H"
+  build e@ESpec{} = debugOnly e (show e)
   build e = "//" <!> show e <!> build " should not be in emitted form!"
 
 instance DafnyPrinter EmitExp where
@@ -222,7 +225,6 @@ instance DafnyPrinter EmitExp where
     foldl (\el (op, er) -> buildOp2 op el (build er)) (build e) eos
   build (ECard e) = "|" <!> e <!> build "|"
   build (ECall e es) = e <!> withParen (byComma es)
-
 
 -- | Warning: don't emit parentheses in `buildOp2` because `EOpChained` relies
 -- on this function not to be parenthesized
