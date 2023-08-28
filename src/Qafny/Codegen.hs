@@ -7,8 +7,8 @@
   , ScopedTypeVariables
   , TupleSections
   , TypeApplications
-  , UndecidableInstances
   , TypeFamilies
+  , UndecidableInstances
   #-}
 
 module Qafny.Codegen where
@@ -37,7 +37,7 @@ import           Control.Monad
     , forM
     , forM_
     , unless
-    , when
+    , when, void
     )
 import           Data.Functor           ((<&>))
 import qualified Data.List              as List
@@ -49,6 +49,7 @@ import           Text.Printf            (printf)
 -- Qafny
 import           Control.Effect.Fail    (Fail)
 import           Control.Exception      (throw)
+import           Data.Bool              (bool)
 import           Data.Maybe             (listToMaybe, maybeToList)
 import           Qafny.AST
 import           Qafny.AST              (specPartitionQTys)
@@ -114,6 +115,17 @@ import           Qafny.Utils
 --------------------------------------------------------------------------------
 -- * Codegen
 --------------------------------------------------------------------------------
+
+
+-- put Stmt's anyway
+putPure :: Has (Reader Bool) sig m
+        => [Stmt'] -> m [Stmt']
+putPure = pure 
+
+-- put Stmt's only if it's allowed
+putOpt :: Has (Reader Bool) sig m => m [Stmt'] -> m [Stmt']
+putOpt s = do
+  bool (pure []) s =<< ask
 
 codegenAST
   :: ( Has (Reader Configs) sig m
@@ -209,6 +221,7 @@ codegenToplevel'Method q@(QMethod v bds rts rqs ens (Just block)) = runWithCallS
     codegenMethodBody =
       runReader initIEnv .  -- | TODO: propagate parameter constrains
       runReader TEN .       -- | resolve λ to EN on default
+      runReader True .
       codegenBlock
 
     -- | All __qreg__ parameters
@@ -250,6 +263,7 @@ codegenBlock
      , Has (Error String) sig m
      , Has (Gensym String) sig m
      , Has (Gensym RBinding) sig m
+     , Has (Reader Bool) sig m
      , Has (Reader IEnv) sig m
      , Has (Reader QTy) sig m
      , Has Trace sig m
@@ -263,6 +277,7 @@ codegenStmts
   :: ( Has (Reader TEnv) sig m
      , Has (State TState)  sig m
      , Has (Error String) sig m
+     , Has (Reader Bool) sig m
      , Has (Gensym String) sig m
      , Has (Gensym RBinding) sig m
      , Has (Reader IEnv) sig m
@@ -286,6 +301,7 @@ codegenStmt
   :: ( Has (Reader TEnv) sig m
      , Has (Reader IEnv) sig m
      , Has (Reader QTy) sig m
+     , Has (Reader Bool) sig m
      , Has (State TState)  sig m
      , Has (Error String) sig m
      , Has (Gensym String) sig m
@@ -308,6 +324,7 @@ runWithCallStack s =
 
 codegenStmt'
   :: ( Has (Reader TEnv) sig m
+     , Has (Reader Bool) sig m
      , Has (Reader IEnv) sig m
      , Has (Reader QTy) sig m
      , Has (State TState)  sig m
@@ -347,7 +364,7 @@ codegenStmt' stmt@(s@(Partition ranges) :*=: eLam@(EEmit (ELambda {}))) = do
   (st'@(STuple (_, _, qt')), corr) <- resolvePartition' s
   qtLambda <- ask
   checkSubtypeQ qt' qtLambda
-  (r@(Range _ erLower erUpper), (rSt@(Range _ esLower esUpper))) <- case ranges of
+  (r@(Range _ erLower erUpper), rSt@(Range _ esLower esUpper)) <- case ranges of
     []  -> throwError "Parser says no!"
     [x] -> maybe (throwError' "???") (return . (x,)) $ lookup x corr
     _   -> throwError errRangeGt1
@@ -356,7 +373,7 @@ codegenStmt' stmt@(s@(Partition ranges) :*=: eLam@(EEmit (ELambda {}))) = do
   -- | It's important not to use the fully resolved `s` here because the OP
   -- should only be applied to the sub-partition specified in the annotation.
   [vEmit] <- unpackPart s `forM` (`findEmitRangeQTy` qt)
-  case qtLambda of
+  putOpt $ case qtLambda of
     TEN -> return $ [ mkMapCall vEmit ]
     TEN01 -> do
       vInner <- gensym "lambda_x"
@@ -400,7 +417,7 @@ codegenStmt' (SFor idx boundl boundr eG invs seps body) = do
   stmtsBody <- local (++ substEnv) $ do
     stSep <- typingPartition seps -- check if `seps` clause is valid
     stmtsBody <- codegenFor'Body idx boundl boundr eG body stSep
-    codegenFinish
+    void codegenFinish
     return stmtsBody
 
   put statePreLoop
@@ -462,6 +479,7 @@ codegenStmt'If'Had
      , Has (Gensym RBinding) sig m
      , Has (Reader IEnv) sig m
      , Has (Reader QTy) sig m
+     , Has (Reader Bool) sig m
      , Has Trace sig m
      )
   => STuple -> STuple -> Block'
@@ -489,6 +507,7 @@ codegenFor'Body
   :: ( Has (Reader TEnv) sig m
      , Has (Reader IEnv) sig m
      , Has (Reader QTy) sig m
+     , Has (Reader Bool) sig m
      , Has (State TState)  sig m
      , Has (Error String) sig m
      , Has (Gensym String) sig m
@@ -526,7 +545,7 @@ codegenFor'Body idx boundl boundr eG body stSep@(STuple (_, Partition rsSep, qtS
          (stGSplited, schemeSMaybe) <- splitScheme stG rL
          stmtsSplitG <- codegenSplitEmitMaybe schemeSMaybe
          schemeC <- retypePartition stGSplited TEN
-         let CastScheme { schVsNewEmit=(~[vEmitG])} = schemeC
+         let CastScheme { schVsNewEmit=(~[vEmitG]) } = schemeC
          let cardVEmitG = EEmit . ECard . EVar $ vEmitG
          let stmtsInitG =
                [ qComment "Retype from Had to EN and initialize with 0"
@@ -554,15 +573,18 @@ codegenFor'Body idx boundl boundr eG body stSep@(STuple (_, Partition rsSep, qtS
       let installEmits bindings =
             forM_ bindings $ \((r, qt), v) -> modifyEmitRangeQTy r qt v
 
+      -- SOLVED?
       -- TODO: I need one way to duplicate generated emit symbols in the split
       -- and cast semantics so that executing the computation above twice will
       -- solve the problem.
       vsEmitSep <- forM rsSep (`findEmitRangeQTy` qtSep)
 
+      -- compile for the 'false' branch with non-essential statements suppressed 
       (stmtsFalse, vsFalse) <- do
         installEmits rqtvsEmitFalseG
-        codegenHalf psBody
+        local (const False) $ codegenHalf psBody
 
+      -- compile the if body for the 'true' branch
       (stmtsTrue, vsTrue)  <- do
         put stateIterBegin
         codegenHalf psBody
@@ -578,7 +600,7 @@ codegenFor'Body idx boundl boundr eG body stSep@(STuple (_, Partition rsSep, qtS
     _    -> throwError' $ printf "%s is not a supported guard type!" (show qtG)
   let innerFor = SEmit $ SForEmit idx boundl boundr [] $ Block stmtsBody
   return $ stmtsPrelude ++ [innerFor]
-  
+
   where
     codegenHalf psBody = do
       -- 2. generate the body statements with with that hint lambda should
@@ -604,6 +626,7 @@ codegenStmt'For'Had
   :: ( Has (Reader TEnv) sig m
      , Has (Reader IEnv) sig m
      , Has (Reader QTy) sig m
+     , Has (Reader Bool) sig m
      , Has (State TState)  sig m
      , Has (Error String) sig m
      , Has (Gensym String) sig m
