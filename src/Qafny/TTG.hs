@@ -8,7 +8,7 @@
 
 module Qafny.TTG where
 import           Data.Data
-import           Qafny.Token (SrcLoc (..))
+import           Qafny.Syntax.Token (SrcLoc (..))
 --------------------------------------------------------------------------------
 -- * Indexed Family for Extensible ADTs
 

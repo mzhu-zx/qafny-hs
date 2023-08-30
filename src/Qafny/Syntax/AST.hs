@@ -16,7 +16,7 @@
   , UndecidableInstances
   #-}
 
-module Qafny.AST where
+module Qafny.Syntax.AST where
 
 import           Qafny.TTG
 

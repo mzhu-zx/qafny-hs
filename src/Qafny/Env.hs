@@ -7,7 +7,7 @@ module Qafny.Env where
 import           Control.Lens
 import           Data.List       (intercalate)
 import qualified Data.Map.Strict as Map
-import           Qafny.AST
+import           Qafny.Syntax.AST
 import           Text.Printf     (printf)
 
 --------------------------------------------------------------------------------

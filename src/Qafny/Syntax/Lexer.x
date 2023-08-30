@@ -1,10 +1,10 @@
 {
-module Qafny.Lexer(
+module Qafny.Syntax.Lexer(
   runScanner,
-  module Qafny.Token
+  module Qafny.Syntax.Token
 ) where
 
-import Qafny.Token
+import Qafny.Syntax.Token
 }
 
 %wrapper "posn"

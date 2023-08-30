@@ -16,7 +16,7 @@ import           Effect.Gensym                (Gensym, gensym)
 import           Control.Effect.Trace
 import qualified Data.Map.Strict              as Map
 import qualified Data.Set                     as Set
-import           Qafny.AST
+import           Qafny.Syntax.AST
 import           Qafny.Env                    (TState, emitSt, sSt)
 import           Qafny.TypeUtils              (typingQEmit)
 import           Qafny.Variable               (Variable (variable))

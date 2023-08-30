@@ -1,6 +1,6 @@
-module Qafny.ASTFactory where
+module Qafny.Syntax.ASTFactory where
 
-import           Qafny.AST
+import           Qafny.Syntax.AST
 import           Qafny.Partial (reduce)
 
 --------------------------------------------------------------------------------

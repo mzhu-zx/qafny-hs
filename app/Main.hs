@@ -1,15 +1,15 @@
 module Main (main) where
 
 import           Qafny.Config
-import           Qafny.Emit         (texify)
-import           Qafny.Parser       (scanAndParse)
-import           Qafny.Runner       (Production (..), produceCodegen)
+import           Qafny.Runner        (Production (..), produceCodegen)
+import           Qafny.Syntax.Emit   (texify)
+import           Qafny.Syntax.Parser (scanAndParse)
 
-import qualified Data.Text.Lazy     as Txt
-import qualified Data.Text.Lazy.IO  as Txt.IO
+import qualified Data.Text.Lazy      as Txt
+import qualified Data.Text.Lazy.IO   as Txt.IO
 
-import           System.Environment (getArgs)
-import           System.Exit        (exitFailure)
+import           System.Environment  (getArgs)
+import           System.Exit         (exitFailure)
 
 
 

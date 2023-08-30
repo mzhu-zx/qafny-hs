@@ -7,7 +7,7 @@ module Qafny.Interval where
 
 import           Control.Applicative (Applicative (liftA2))
 import           Data.Bool           (bool)
-import           Qafny.AST           (Exp (..), Exp', Range (..), Var)
+import           Qafny.Syntax.AST           (Exp (..), Exp', Range (..), Var)
 import           Qafny.Partial       (evalPStatic, hasResidue)
 import           Text.Printf         (printf)
 

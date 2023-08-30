@@ -2,10 +2,10 @@
 {-# LANGUAGE TypeFamilies, FlexibleContexts, FlexibleInstances #-}
 
 
-module Qafny.Parser(scanAndParse) where
-import qualified Qafny.Lexer as L
-import           Qafny.ParserUtils
-import           Qafny.AST
+module Qafny.Syntax.Parser(scanAndParse) where
+import qualified Qafny.Syntax.Lexer as L
+import           Qafny.Syntax.ParserUtils
+import           Qafny.Syntax.AST
 import           Control.Monad
 import           Data.Sum
 }

@@ -4,9 +4,9 @@
   , GeneralizedNewtypeDeriving
   #-}
 
-module Qafny.Emit where
+module Qafny.Syntax.Emit where
 
-import           Qafny.AST
+import           Qafny.Syntax.AST
 
 import           Control.Arrow          (Arrow (first))
 import           Control.Monad.Reader

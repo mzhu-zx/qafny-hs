@@ -1,6 +1,6 @@
 module Qafny.TypeUtils where
 
-import           Qafny.AST (QTy (..), Ty (..))
+import           Qafny.Syntax.AST (QTy (..), Ty (..))
 
 -- | Type of the emitted value corresponding to its original quantum type.
 typingQEmit :: QTy -> Ty

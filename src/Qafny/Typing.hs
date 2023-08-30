@@ -24,7 +24,7 @@ import           Control.Effect.State          (State)
 import           Effect.Gensym                 (Gensym)
 
 -- Qafny
-import           Qafny.AST
+import           Qafny.Syntax.AST
 import           Qafny.Domain                  (NatInterval)
 import           Qafny.Env
 import           Qafny.Error                   (QError (..))

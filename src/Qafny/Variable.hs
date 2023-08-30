@@ -5,7 +5,7 @@
 
 module Qafny.Variable where
 
-import           Qafny.AST
+import           Qafny.Syntax.AST
 import           Text.Printf (printf)
 
 class Variable s where

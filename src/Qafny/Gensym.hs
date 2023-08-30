@@ -3,7 +3,7 @@ module Qafny.Gensym(resumeGensym) where
 
 import qualified Carrier.Gensym.Emit as GEmit
 import qualified Carrier.Gensym.Meta as GMeta
-import           Qafny.AST           (RBinding)
+import           Qafny.Syntax.AST           (RBinding)
 
 -- runGensym
 --   :: Monad m

@@ -1,6 +1,6 @@
-module Qafny.ParserUtils where
-import           Qafny.AST
-import qualified Qafny.Lexer as L
+module Qafny.Syntax.ParserUtils where
+import           Qafny.Syntax.AST
+import qualified Qafny.Syntax.Lexer as L
 import           Text.Printf (printf)
 
 type Parser a = Either String a

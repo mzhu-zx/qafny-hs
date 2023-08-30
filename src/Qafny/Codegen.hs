@@ -53,10 +53,10 @@ import           Control.Effect.Fail    (Fail)
 import           Control.Exception      (throw)
 import           Data.Bool              (bool)
 import           Data.Maybe             (listToMaybe, maybeToList)
-import           Qafny.AST
-import           Qafny.ASTFactory
+import           Qafny.Syntax.AST
+import           Qafny.Syntax.ASTFactory
 import           Qafny.Config
-import           Qafny.Emit
+import           Qafny.Syntax.Emit
     ( DafnyPrinter (build)
     , showEmit
     , showEmitI

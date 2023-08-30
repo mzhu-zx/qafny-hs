@@ -1,7 +1,7 @@
 {-# LANGUAGE
     DeriveDataTypeable
   #-}
-module Qafny.Token where
+module Qafny.Syntax.Token where
 import           Text.Printf (printf)
 import           Data.Data
 

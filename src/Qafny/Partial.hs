@@ -13,7 +13,7 @@ import           Data.Functor.Foldable
     )
 import qualified Data.Map.Strict       as Map
 import           Data.Maybe            (isJust)
-import           Qafny.AST
+import           Qafny.Syntax.AST
 
 --------------------------------------------------------------------------------
 -- $doc
