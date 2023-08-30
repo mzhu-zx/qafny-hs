@@ -21,6 +21,7 @@ module Qafny.AST where
 import           Qafny.TTG
 
 --------------------------------------------------------------------------------
+import           Data.Bifunctor
 import           Data.Data
 import           Data.Functor.Foldable
     ( Base
@@ -382,7 +383,6 @@ class Substitutable a where
   subst :: AEnv -> a -> a
   fVars :: a -> [Var]
 
-
 instance Substitutable (Exp ()) where
   subst = substE
   fVars = cata go
@@ -391,7 +391,6 @@ instance Substitutable (Exp ()) where
       go (EVarF x) = [x]
       go fvs       = concat fvs
 
-
 instance Substitutable Partition where
   subst = substP
   fVars = concatMap fVars . unpackPart
@@ -399,6 +398,24 @@ instance Substitutable Partition where
 instance Substitutable Range where
   subst = substR
   fVars (Range _ e1 e2) = fVars e1 ++ fVars e2
+
+instance (Substitutable a) => Substitutable [a] where
+  subst a = fmap (subst a)
+  fVars = concatMap fVars
+
+instance (Substitutable a, Substitutable b) => Substitutable (a, b) where
+  subst a = bimap (subst a) (subst a)
+  fVars = uncurry (++) . bimap fVars fVars
+
+instance Substitutable QTy where
+  subst = const id
+  fVars = const []
+
+instance Substitutable Loc where
+  subst = const id
+  fVars = const []
+
+
 
 substE :: AEnv -> Exp () -> Exp ()
 substE [] = id

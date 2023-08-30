@@ -416,8 +416,6 @@ codegenStmt' (SFor idx boundl boundr eG invs seps body) = do
   -- generate loop invariants
   newInvs <- forM invs codegenAssertion
 
-  let substEnv = [(idx, boundl :| [boundr - 1])]
-
   stmtsBody <- local (++ substEnv) $ do
     stSep <- typingPartition seps -- check if `seps` clause is valid
     stmtsBody <- codegenFor'Body idx boundl boundr eG body stSep (concat newInvs)
@@ -427,6 +425,8 @@ codegenStmt' (SFor idx boundl boundr eG invs seps body) = do
   put statePreLoop
   return $ concat stmtsPreGuard ++ stmtsBody
   where
+    substEnv = [(idx, boundl :| [boundr - 1])]
+
     errInvMtPart = "The invariants contains no partition."
     errInvPolypart p = printf
       "The loop invariants contains more than 1 partition.\n%s" (show p)
@@ -465,12 +465,18 @@ codegenStmt' (SFor idx boundl boundr eG invs seps body) = do
 
       -- | Do type inference with the loop invariant typing state
       stateLoop <- tStateFromPartitionQTys invPQts
-      return (stmtsPreGuard, statePreLoop, stateLoop)
+      trace $ printf "statePreLoop: %s\nstateLoop: %s"  (show statePreLoop) (show stateLoop)
+
+      -- | pass preLoop variables to loop ones
+      stmtsEquiv <- mkAssignment <$> matchStateCorr stateLoop statePreLoop
+
+      return (stmtsPreGuard ++ [stmtsEquiv], statePreLoop, stateLoop)
 
     codegenFinish =
       forM invPQtsPost (uncurry typingPartitionQTy)
 
-
+    mkAssignment :: (Var, Var) -> Stmt'
+    mkAssignment (v1, v2) = v1 ::=: EVar v2
 
 codegenStmt' (SAssert e@(ESpec{})) = do
   (SAssert <$>) <$> codegenAssertion e
@@ -607,12 +613,12 @@ codegenFor'Body idx boundl boundr eG body stSep@(STuple (_, Partition rsSep, qtS
       let stmtsUnsplit = zipWith3 merge3 vsEmitSep vsFalse vsTrue
       return ([], concat [ stmtsSaveFalse
                          , stmtsFocusTrue
-                         , [qComment "// begin false"]
+                         , [qComment "begin false"]
                          , stmtsFalse
-                         , [qComment "// end false"]
-                         , [qComment "// begin true"]
+                         , [qComment "end false"]
+                         , [qComment "begin true"]
                          , stmtsTrue
-                         , [qComment "// end true"]
+                         , [qComment "end true"]
                          , stmtsUnsplit
                          ])
     _    -> throwError' $ printf "%s is not a supported guard type!" (show qtG)
@@ -887,6 +893,13 @@ makeLoopRange s _ _ =
       ++ "` contains more than 1 range, this should be resolved at the typing stage"
 
 
+-- Given two states compute the correspondence of emitted varaible between two
+-- states 
+matchStateCorr
+  :: Has (Error String) sig m
+  => TState -> TState -> m [(Var, Var)]
+matchStateCorr = undefined  
+
 --------------------------------------------------------------------------------
 -- * Split Semantics
 --------------------------------------------------------------------------------
@@ -1110,6 +1123,7 @@ checkListCorr vsEmit eValues =
     throwError' $ printf
       "The number of elements doesn't agree with each other: %s %s"
       (show vsEmit) (show eValues)
+
 
 
 --------------------------------------------------------------------------------
