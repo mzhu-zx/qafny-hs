@@ -30,6 +30,7 @@ import           Data.Functor.Foldable
     )
 import           Data.Functor.Foldable.TH (makeBaseFunctor)
 import           Data.List.NonEmpty       (NonEmpty (..))
+import qualified Data.Map.Strict          as Map
 import           Data.Maybe               (fromMaybe)
 import           Data.Sum
 import           GHC.Generics             hiding ((:+:))
@@ -407,13 +408,17 @@ instance (Substitutable a, Substitutable b) => Substitutable (a, b) where
   subst a = bimap (subst a) (subst a)
   fVars = uncurry (++) . bimap fVars fVars
 
-instance Substitutable QTy where
-  subst = const id
-  fVars = const []
+instance (Ord k, Substitutable k) => Substitutable (Map.Map k v) where
+  subst a = Map.mapKeys (subst a)
+  fVars = fVars . Map.keys
 
-instance Substitutable Loc where
-  subst = const id
-  fVars = const []
+-- instance Substitutable QTy where
+--   subst = const id
+--   fVars = const []
+
+-- instance Substitutable Loc where
+--   subst = const id
+--   fVars = const []
 
 
 

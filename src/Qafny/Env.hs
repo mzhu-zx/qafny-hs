@@ -45,13 +45,13 @@ data TState = TState
 $(makeLenses ''TState)
 $(makeLenses ''TEnv)
 
-instance Substitutable TState where
-  subst aenv ts@TState{_sSt=sSt', _xSt=xSt'} =
-    ts { _sSt=subst aenv <$> sSt'
-       , _xSt=subst aenv <$> xSt'
-       }
-  fVars TState{_sSt=sSt', _xSt=xSt'} =
-    concatMap fVars sSt' ++ concatMap fVars xSt'
+-- instance Substitutable TState where
+--   subst aenv ts@TState{_sSt=sSt', _xSt=xSt'} =
+--     ts { _sSt=subst aenv <$> sSt'
+--        , _xSt=subst aenv <$> xSt'
+--        }
+--   fVars TState{_sSt=sSt', _xSt=xSt'} =
+--     concatMap fVars sSt' ++ concatMap fVars xSt'
 
 instance Show TState where
   show st = "\n  Partition Reference State:\n    " ++

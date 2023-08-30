@@ -229,8 +229,16 @@ instance DafnyPrinter EmitExp where
 -- | Warning: don't emit parentheses in `buildOp2` because `EOpChained` relies
 -- on this function not to be parenthesized
 buildOp2 :: Op2 -> Builder -> Builder -> Builder
-buildOp2 op = (<!>) . (<!> opSign)
+buildOp2 op b1 b2 =  parenOpt b1 <!> opSign <!> parenOpt b2
   where
+    parenOpt :: Builder -> Builder
+    parenOpt =
+      case op of
+        OAnd -> withParen
+        OOr  -> withParen
+        _    -> id
+        
+    opSign :: String
     opSign =
       case op of
         OAnd -> " && "

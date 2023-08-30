@@ -99,6 +99,7 @@ import           Qafny.Utils
     , rethrowMaybe
     , throwError'
     )
+import Control.Carrier.State.Strict (runState)
 
 --------------------------------------------------------------------------------
 -- * Introduction
@@ -425,7 +426,11 @@ codegenStmt' (SFor idx boundl boundr eG invs seps body) = do
   put statePreLoop
   return $ concat stmtsPreGuard ++ stmtsBody
   where
+    -- IEnv for loop constraints
     substEnv = [(idx, boundl :| [boundr - 1])]
+
+    -- AEnv for the precondition of the first iteration
+    initEnv = [(idx, boundl)]
 
     errInvMtPart = "The invariants contains no partition."
     errInvPolypart p = printf
@@ -468,8 +473,7 @@ codegenStmt' (SFor idx boundl boundr eG invs seps body) = do
       trace $ printf "statePreLoop: %s\nstateLoop: %s"  (show statePreLoop) (show stateLoop)
 
       -- | pass preLoop variables to loop ones
-      stmtsEquiv <- mkAssignment <$> matchStateCorr stateLoop statePreLoop
-
+      stmtsEquiv <- (mkAssignment <$>) <$> matchStateCorrLoop statePreLoop stateLoop [(idx, boundl)]
       return (stmtsPreGuard ++ [stmtsEquiv], statePreLoop, stateLoop)
 
     codegenFinish =
@@ -894,11 +898,23 @@ makeLoopRange s _ _ =
 
 
 -- Given two states compute the correspondence of emitted varaible between two
--- states 
-matchStateCorr
-  :: Has (Error String) sig m
-  => TState -> TState -> m [(Var, Var)]
-matchStateCorr = undefined  
+-- states where 'tsInit' refers to the state before iteration starts and
+-- 'tsLoop' is for the state during iteration.
+matchStateCorrLoop
+  :: ( Has (Error String) sig m
+     , Has Trace sig m
+     )
+  => TState -> TState -> AEnv -> m [(Var, Var)]
+matchStateCorrLoop tsInit tsLoop env = do
+  
+  trace $ printf "INIT: %s" (show esInit) 
+  trace $ printf "LOOP: %s" (show esLoop) 
+  pure . Map.elems $ Map.intersectionWith (,) esLoop esInit
+  where
+    ripLoc = Map.mapKeys (fst . unRBinding)
+    reduceKeys = Map.mapKeys reduce
+    esInit = reduceKeys . ripLoc $ tsInit ^. emitSt
+    esLoop = reduceKeys . subst env . ripLoc $ tsLoop ^. emitSt
 
 --------------------------------------------------------------------------------
 -- * Split Semantics
@@ -1099,16 +1115,20 @@ codegenSpecExp vrs p e =
     (TEN01, SESpecEN01 idxSum (Intv lSum rSum) idxTen (Intv lTen rTen) eValues) -> do
       -- todo: also emit bounds!
       checkListCorr vrs eValues
-      return $ do
+      return . concat $ do
         ((vE, Range _ el er), eV) <- bimap (second reduce) reduce <$> zip vrs eValues
         when (eV == EWildcard) mzero
         let eBoundSum = Just $ eIntv idxSum lSum rSum
-        let eBoundTen = Just $ eIntv idxTen 0 (reduce (er - el))
+        let cardSum = rSum `eEq` EEmit (ECard (EVar vE))
+        let rTen = reduce (er - el)
+        let eBoundTen = Just $ eIntv idxTen 0 rTen
+        let cardTen = rTen `eEq` EEmit (ECard (EVar vE `eAt` EVar idxSum))
         let eForallSum = EForall (natB idxSum) eBoundSum
         let eForallTen = EForall (natB idxTen) eBoundTen
         let eSel = (EVar vE `eAt` EVar idxSum) `eAt` EVar idxTen
-        let eBody = EOp2 OEq eSel eV
-        return . eForallSum . eForallTen $ eBody
+        let eBody = EOp2 OAnd cardTen (EOp2 OEq eSel eV)
+        return [ cardSum
+               , eForallSum . eForallTen $ eBody ]
     _ -> throwError' $ printf "%s is not compatible with the specification %s"
          (show p) (show e)
 
