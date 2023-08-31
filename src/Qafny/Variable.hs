@@ -15,7 +15,15 @@ instance Variable String where
   variable = id
 
 instance Variable Ty where
-  variable = typeTag
+  variable = if True then typeTag' else typeTag
+    where
+      typeTag' :: Ty -> String
+      typeTag' TNat     = "nat"
+      typeTag' TInt     = "int"
+      typeTag' TBool    = "bool"
+      typeTag' (TSeq t) = "seq'" ++ typeTag' t ++ "'"
+      typeTag' _        = "unsupported"
+
 
 instance Variable Int where
   variable = show
@@ -28,7 +36,7 @@ instance Variable Op2 where
 instance Variable (Exp ()) where
   variable (ENum n) = variable n
   variable (EVar v) = variable v
-  -- I need a way to specify compact vs full spec 
+  -- TODO: I need a way to specify compact vs full spec 
   variable (EOp2 op e1 e2) =
     if True
     then "compact"
@@ -37,7 +45,9 @@ instance Variable (Exp ()) where
 
 instance Variable Range where
   variable (Range x l r) =
-    printf "%s_%s_%s" (variable x) (variable l) (variable r)
+    if True
+    then variable x
+    else printf "%s_%s_%s" (variable x) (variable l) (variable r)
 
 instance Variable (Binding ()) where
   variable (Binding s t) = variable (s, t)
@@ -49,4 +59,7 @@ instance Variable Loc where
   variable = ("loc__" ++) . deref
 
 instance (Variable a, Variable b) => Variable (a, b) where
-  variable (a, b) = variable a ++ "__" ++ variable b
+  variable (a, b) =
+    if True
+    then variable a ++ "_" ++ variable b
+    else variable a ++ "__" ++ variable b

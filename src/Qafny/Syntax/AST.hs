@@ -104,6 +104,7 @@ data Op2
 
 data Op1
   = ONot
+  | ONeg
   deriving (Show, Eq, Ord, Data, Typeable)
 
 
