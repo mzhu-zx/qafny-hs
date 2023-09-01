@@ -56,7 +56,7 @@ import           Data.Maybe
     ( fromMaybe
     , isJust
     , listToMaybe
-    , maybeToList
+    , maybeToList, catMaybes
     )
 import qualified Data.Set                      as Set
 import           Data.Sum
@@ -592,15 +592,19 @@ mergeMatchedTState
 mergeMatchedTState
   ts1@TState {_emitSt=eSt1}
   ts2@TState {_emitSt=eSt2}
-  = forM matchedRangeAndVars $ \(r, (v1, v2)) -> do
+  = (catMaybes <$>) . forM matchedRangeAndVars $ \(r, (v1, v2)) -> do
   qt1 <- getQTy ts1 r
   qt2 <- getQTy ts2 r
   when (qt1 /= qt2) $ throwError' "How can they be different?"
-  pure . MEqual $ EqualStrategy { esRange = r
-                                , esQTy = qt1
-                                , esVMain = v1
-                                , esVAux = v2
-                                }
+  pure $ case qt1 of
+    _ | qt1 `elem` [ TEN, TEN01 ] -> Just . MEqual $
+        EqualStrategy
+        { esRange = r
+        , esQTy = qt1
+        , esVMain = v1
+        , esVAux = v2
+        }
+    _ -> Nothing  
   where
     matchedRangeAndVars = matchEmitStates eSt1 eSt2
     getQTy ts r = evalState ts $ inferRangeQTy r

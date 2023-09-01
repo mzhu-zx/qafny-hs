@@ -104,6 +104,7 @@ data MergeScheme
   = MJoin JoinStrategy  -- ^ Join a 'Range' into an existing 'Range' 
   | MMove
   | MEqual EqualStrategy -- ^ Join two copies of data of the same range
+  deriving Show
 
 data EqualStrategy = EqualStrategy
   { esRange :: Range -- the range
@@ -111,6 +112,7 @@ data EqualStrategy = EqualStrategy
   , esVMain :: Var   -- the var to stay 
   , esVAux  :: Var   -- the var to be absorbed
   }
+  deriving Show
 
 data JoinStrategy = JoinStrategy
   { jsRMain :: Range
@@ -119,4 +121,4 @@ data JoinStrategy = JoinStrategy
   , jsRMerged :: Range
   , jsQtMerged :: QTy
   }
-
+  deriving Show

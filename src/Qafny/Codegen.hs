@@ -1,5 +1,6 @@
 {-# LANGUAGE
     DataKinds
+  , CPP
   , FlexibleContexts
   , FlexibleInstances
   , IncoherentInstances
@@ -628,11 +629,17 @@ codegenFor'Body idx boundl boundr eG body stSep@(STuple (_, Partition rsSep, qtS
 
       -- compile the for body for the 'true' branch
       (tsTrue, (stmtsTrue, vsTrue))  <- runState stateIterBegin $ do
-        put stateIterBegin
         codegenHalf psBody
 
       -- compute what's needed to merge those 2 copies
-      mSchemes <- mergeMatchedTState tsFalse tsTrue
+      -- mSchemes <- mergeMatchedTState tsFalse tsTrue
+      
+      -- I need a way to merge two typing state here. 
+      put tsFalse
+
+      -- Next, I need to collect ranges/partitions from the invariant with
+      --   [ i := i + 1 ]
+      -- Use collected partitions to merge it with the absorbed typing state. 
 
       -- 4. put stashed part back
       let stmtsUnsplit = zipWith3 merge3 vsEmitSep vsFalse vsTrue
@@ -663,6 +670,7 @@ codegenFor'Body idx boundl boundr eG body stSep@(STuple (_, Partition rsSep, qtS
         stP <- resolvePartition p
         dumpSSt "premerge"
         schemes <- mergeScheme stSep stP
+        trace $ printf "What's the merge scheme here?\n %s" (show schemes)
         dumpSSt "postmerge"
         codegenMergeScheme schemes
       let (stmtsMerge, vsEmitMerge) = unzip stmtsAndVsMerge
