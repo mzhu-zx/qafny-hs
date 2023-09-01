@@ -56,7 +56,9 @@ method GHZ (q_seq'nat'_0__emit : seq<nat>) returns (q_seq'seq'nat''_4__emit : se
     q_seq'nat'_13__emit := q_seq'nat'_13__emit[0..0] + Map(x => x + 1 % 2, q_seq'nat'_13__emit[0..1]) + q_seq'nat'_13__emit[1..|q_seq'nat'_13__emit|];
     q_seq'seq'nat''_15__emit := Map(lambda_x_8 => lambda_x_8 + q_seq'nat'_13__emit, q_seq'seq'nat''_7__emit);
     // end true
-    q_seq'seq'nat''_7__emit := q_seq'seq'nat''_9__emit + q_seq'seq'nat''_7__emit;
+    // begin true-false
+    q_seq'seq'nat''_12__emit := q_seq'seq'nat''_12__emit + q_seq'seq'nat''_15__emit;
+    // end true-false
   }
 
 }

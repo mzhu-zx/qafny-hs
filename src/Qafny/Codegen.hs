@@ -495,7 +495,16 @@ codegenStmt' (SFor idx boundl boundr eG invs seps body) = do
       stmtsEquiv <- (mkAssignment <$>) <$> matchStateCorrLoop statePreLoop stateLoop [(idx, boundl)]
       return (stmtsPreGuard ++ [stmtsEquiv], statePreLoop, stateLoop)
 
-    codegenFinish =
+    codegenFinish = do
+      -- Next, I need to collect ranges/partitions from the invariant with
+      --   [ i := i + 1 ]
+      -- Match those ranges with those in [ i := i ] case to compute the
+      -- corresponding emitted variables
+      --
+      -- Use collected partitions and merge it with the absorbed typing state.
+      
+
+      -- I don't remember the purpose of this line, purely sanity check?
       forM invPQtsPost (uncurry typingPartitionQTy)
 
     mkAssignment :: (Var, Var) -> Stmt'
@@ -632,17 +641,13 @@ codegenFor'Body idx boundl boundr eG body stSep@(STuple (_, Partition rsSep, qtS
         codegenHalf psBody
 
       -- compute what's needed to merge those 2 copies
-      -- mSchemes <- mergeMatchedTState tsFalse tsTrue
-      
+      mSchemes <- mergeMatchedTState tsFalse tsTrue
+      stmtsVarsMergeMatched <- codegenMergeScheme mSchemes
+
       -- I need a way to merge two typing state here. 
       put tsFalse
 
-      -- Next, I need to collect ranges/partitions from the invariant with
-      --   [ i := i + 1 ]
-      -- Use collected partitions to merge it with the absorbed typing state. 
-
       -- 4. put stashed part back
-      let stmtsUnsplit = zipWith3 merge3 vsEmitSep vsFalse vsTrue
       return ([], concat [ stmtsSaveFalse
                          , stmtsFocusTrue
                          , [qComment "begin false"]
@@ -651,14 +656,15 @@ codegenFor'Body idx boundl boundr eG body stSep@(STuple (_, Partition rsSep, qtS
                          , [qComment "begin true"]
                          , stmtsTrue
                          , [qComment "end true"]
-                         , stmtsUnsplit
+                         , [qComment "begin true-false"]
+                         , fst <$> stmtsVarsMergeMatched
+                         , [qComment "end true-false"]
                          ])
     _    -> throwError' $ printf "%s is not a supported guard type!" (show qtG)
   let innerFor = SEmit $ SForEmit idx boundl boundr newInvs $ Block stmtsBody
   return $ stmtsPrelude ++ [innerFor]
 
   where
-    merge3 vS vRF vRT = vS ::=: (EVar vRF + EVar vRT)
 
     codegenHalf psBody = do
       -- 2. generate the body statements with the hint that lambda should
@@ -1032,9 +1038,14 @@ codegenMergeScheme = mapM $ \scheme -> do
           return (qComment "TNor has nothing to be merged!", v1)
         THad ->
           throwError' $ printf "This type (%s) cannot be handled: (%s)" (show qt) (show r)
-        TEN01 ->
-          undefined
-      
+        _ | qt `elem` [ TEN01, TEN ] ->
+          -- TEN01 is emitted as seq<seq<nat>> representing Sum . Tensor,
+          -- TEN   is emitted as seq<nat>      representing Sum . Tensor,
+          -- It suffices to simply concat them
+          pure $ (merge3 v1 v1 v2, v1)
+        _ -> throwError' "This pattern shoule be complete!" 
+  where
+    merge3 vS vRF vRT = vS ::=: (EVar vRF + EVar vRT)
 
 
 --------------------------------------------------------------------------------
