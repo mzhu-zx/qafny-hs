@@ -63,6 +63,8 @@ import           Data.Sum
 import           GHC.Stack                     (HasCallStack)
 import           Text.Printf                   (printf)
 import Control.Carrier.NonDet.Church (runNonDetA)
+import Qafny.Partial (Reducible(reduce))
+import Control.Carrier.State.Lazy (evalState)
 
 -- | Compute the type of the given expression
 typingExp
@@ -181,6 +183,15 @@ resolvePartitions
 resolvePartitions =
   resolvePartition . Partition . concatMap unpackPart
 
+
+inferRangeQTy
+  :: ( Has (State TState) sig m
+     , Has (Error String) sig m
+     , Has (Reader IEnv) sig m
+     , Has Trace sig m)
+  => Range -> m QTy
+inferRangeQTy r = (^. _3) . unSTup <$> resolvePartition (Partition [r])
+  
 --------------------------------------------------------------------------------
 -- | Split Typing
 --------------------------------------------------------------------------------
@@ -544,6 +555,56 @@ retypePartition = (snd <$>) .: castScheme
 --------------------------------------------------------------------------------
 -- * Merge Typing
 --------------------------------------------------------------------------------
+
+matchEmitStates
+  :: EmitState -> EmitState -> [(Range, (Var, Var))]
+matchEmitStates es1 es2 =
+  Map.toList $ Map.intersectionWith (,) em1 em2
+  where
+    ripLoc = Map.mapKeys (fst . unRBinding)
+    reduceKeys = Map.mapKeys reduce
+    reduceMap = reduceKeys . ripLoc
+    (em1, em2) = (reduceMap es1, reduceMap es2)
+
+
+-- Given two states compute the correspondence of emitted varaible between two
+-- states where 'tsInit' refers to the state before iteration starts and
+-- 'tsLoop' is for the state during iteration.
+matchStateCorrLoop
+  :: ( Has (Error String) sig m
+     , Has Trace sig m
+     )
+  => TState -> TState -> AEnv -> m [(Var, Var)]
+matchStateCorrLoop tsInit tsLoop env = do
+  pure $ snd <$> matchEmitStates esLoop esInit
+  where
+    esInit = tsInit ^. emitSt
+    esLoop = subst env $ tsLoop ^. emitSt
+
+
+-- | Take 2 type states, match emit variables by their ranges and output
+-- merge scheme for each of them.
+mergeMatchedTState
+  :: ( Has (Error String) sig m
+     , Has (Reader IEnv) sig m
+     , Has Trace sig m)
+  => TState -> TState -> m [MergeScheme]
+mergeMatchedTState
+  ts1@TState {_emitSt=eSt1}
+  ts2@TState {_emitSt=eSt2}
+  = forM matchedRangeAndVars $ \(r, (v1, v2)) -> do
+  qt1 <- getQTy ts1 r
+  qt2 <- getQTy ts2 r
+  when (qt1 /= qt2) $ throwError' "How can they be different?"
+  pure . MEqual $ EqualStrategy { esRange = r
+                                , esQTy = qt1
+                                , esVMain = v1
+                                , esVAux = v2
+                                }
+  where
+    matchedRangeAndVars = matchEmitStates eSt1 eSt2
+    getQTy ts r = evalState ts $ inferRangeQTy r
+
 
 -- | Merge the second STuple into the first one
 mergeScheme

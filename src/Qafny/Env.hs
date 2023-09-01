@@ -35,11 +35,13 @@ data TEnv = TEnv
   , _qnum :: Exp' -- assume each Q type variable is associated with a qubit num which is C type exp
   }
 
+type EmitState = Map.Map RBinding Var
+
 
 data TState = TState
   { _sSt    :: Map.Map Loc (Partition, QTy) -- partition type state
   , _xSt    :: Map.Map Var [(Range, Loc)] -- range reference state
-  , _emitSt :: Map.Map RBinding Var
+  , _emitSt :: EmitState
   }
 
 $(makeLenses ''TState)
@@ -100,8 +102,16 @@ data CastScheme = CastScheme
 
 data MergeScheme
   = MJoin JoinStrategy  -- ^ Join a 'Range' into an existing 'Range' 
-  | MMove 
-  
+  | MMove
+  | MEqual EqualStrategy -- ^ Join two copies of data of the same range
+
+data EqualStrategy = EqualStrategy
+  { esRange :: Range -- the range
+  , esQTy   :: QTy   -- QTy of the corresponding range
+  , esVMain :: Var   -- the var to stay 
+  , esVAux  :: Var   -- the var to be absorbed
+  }
+
 data JoinStrategy = JoinStrategy
   { jsRMain :: Range
   , jsQtMain :: QTy 

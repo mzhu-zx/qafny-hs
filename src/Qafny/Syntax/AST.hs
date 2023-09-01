@@ -413,6 +413,10 @@ instance (Ord k, Substitutable k) => Substitutable (Map.Map k v) where
   subst a = Map.mapKeys (subst a)
   fVars = fVars . Map.keys
 
+instance Substitutable RBinding where
+  subst a (RBinding (r, t)) = RBinding (subst a r, t)
+  fVars = fVars . fst . unRBinding
+
 -- instance Substitutable QTy where
 --   subst = const id
 --   fVars = const []

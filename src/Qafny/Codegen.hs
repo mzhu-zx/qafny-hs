@@ -16,20 +16,20 @@ module Qafny.Codegen where
 
 
 -- Effects
-import           Control.Carrier.Reader (runReader)
+import           Control.Carrier.Reader       (runReader)
 import           Control.Effect.Catch
-import           Control.Effect.Error   (Error, throwError)
+import           Control.Effect.Error         (Error, throwError)
 import           Control.Effect.Lens
 import           Control.Effect.Reader
-import           Control.Effect.State   (State, get, put)
+import           Control.Effect.State         (State, get, put)
 import           Control.Effect.Trace
-import           Effect.Gensym          (Gensym, gensym)
+import           Effect.Gensym                (Gensym, gensym)
 
 -- Handlers
-import           Qafny.Gensym           (resumeGensym)
+import           Qafny.Gensym                 (resumeGensym)
 
 -- Utils
-import           Control.Lens           (at, non, (%~), (?~), (^.))
+import           Control.Lens                 (at, non, (%~), (?~), (^.))
 import           Control.Lens.Tuple
 import           Control.Monad
     ( MonadPlus (mzero)
@@ -41,29 +41,30 @@ import           Control.Monad
     , when
     )
 import           Data.Bifunctor
-import           Data.Functor           ((<&>))
-import qualified Data.List              as List
-import           Data.List.NonEmpty     (NonEmpty (..))
-import qualified Data.Map.Strict        as Map
-import qualified Data.Sum               as Sum
-import           Text.Printf            (printf)
+import           Data.Functor                 ((<&>))
+import qualified Data.List                    as List
+import           Data.List.NonEmpty           (NonEmpty (..))
+import qualified Data.Map.Strict              as Map
+import qualified Data.Sum                     as Sum
+import           Text.Printf                  (printf)
 
 -- Qafny
-import           Control.Effect.Fail    (Fail)
-import           Control.Exception      (throw)
-import           Data.Bool              (bool)
-import           Data.Maybe             (listToMaybe, maybeToList)
+import           Control.Carrier.State.Strict (runState)
+import           Control.Effect.Fail          (Fail)
+import           Control.Exception            (throw)
+import           Data.Bool                    (bool)
+import           Data.Maybe                   (listToMaybe, maybeToList)
+import           Qafny.Config
+import           Qafny.Env
+import           Qafny.Partial                (Reducible (reduce), sizeOfRangeP)
 import           Qafny.Syntax.AST
 import           Qafny.Syntax.ASTFactory
-import           Qafny.Config
 import           Qafny.Syntax.Emit
     ( DafnyPrinter (build)
     , showEmit
     , showEmitI
     )
-import           Qafny.Env
-import           Qafny.Partial          (Reducible (reduce), sizeOfRangeP)
-import           Qafny.TypeUtils        (isEN)
+import           Qafny.TypeUtils              (isEN)
 import           Qafny.Typing
     ( appkEnvWithBds
     , castScheme
@@ -71,6 +72,8 @@ import           Qafny.Typing
     , checkSubtypeQ
     , collectMethodTypesM
     , extendTState
+    , matchStateCorrLoop
+    , mergeMatchedTState
     , mergeSTuples
     , mergeScheme
     , resolvePartition
@@ -99,7 +102,6 @@ import           Qafny.Utils
     , rethrowMaybe
     , throwError'
     )
-import Control.Carrier.State.Strict (runState)
 
 --------------------------------------------------------------------------------
 -- * Introduction
@@ -376,7 +378,7 @@ codegenStmt' stmt@(s@(Partition ranges) :*=: eLam@(EEmit (ELambda {}))) = do
   -- do the type cast and split first
   ((STuple (_, _, qt)), maySplit, mayCast) <- splitThenCastScheme st' qtLambda r
   stmts <- codegenSplitThenCastEmit maySplit mayCast
-  
+
   -- resolve again for consistency
   (_, corr') <- resolvePartition' s
 
@@ -620,14 +622,17 @@ codegenFor'Body idx boundl boundr eG body stSep@(STuple (_, Partition rsSep, qtS
       vsEmitSep <- forM rsSep (`findEmitRangeQTy` qtSep)
 
       -- compile for the 'false' branch with non-essential statements suppressed
-      (stmtsFalse, vsFalse) <- do
+      (tsFalse, (stmtsFalse, vsFalse)) <- runState stateIterBegin $ do
         installEmits rqtvsEmitFalseG
         local (const False) $ codegenHalf psBody
 
       -- compile the for body for the 'true' branch
-      (stmtsTrue, vsTrue)  <- do
+      (tsTrue, (stmtsTrue, vsTrue))  <- runState stateIterBegin $ do
         put stateIterBegin
         codegenHalf psBody
+
+      -- compute what's needed to merge those 2 copies
+      mSchemes <- mergeMatchedTState tsFalse tsTrue
 
       -- 4. put stashed part back
       let stmtsUnsplit = zipWith3 merge3 vsEmitSep vsFalse vsTrue
@@ -914,25 +919,6 @@ makeLoopRange s _ _ =
       ++ "` contains more than 1 range, this should be resolved at the typing stage"
 
 
--- Given two states compute the correspondence of emitted varaible between two
--- states where 'tsInit' refers to the state before iteration starts and
--- 'tsLoop' is for the state during iteration.
-matchStateCorrLoop
-  :: ( Has (Error String) sig m
-     , Has Trace sig m
-     )
-  => TState -> TState -> AEnv -> m [(Var, Var)]
-matchStateCorrLoop tsInit tsLoop env = do
-  
-  trace $ printf "INIT: %s" (show esInit) 
-  trace $ printf "LOOP: %s" (show esLoop) 
-  pure . Map.elems $ Map.intersectionWith (,) esLoop esInit
-  where
-    ripLoc = Map.mapKeys (fst . unRBinding)
-    reduceKeys = Map.mapKeys reduce
-    esInit = reduceKeys . ripLoc $ tsInit ^. emitSt
-    esLoop = reduceKeys . subst env . ripLoc $ tsLoop ^. emitSt
-
 --------------------------------------------------------------------------------
 -- * Split Semantics
 --------------------------------------------------------------------------------
@@ -961,7 +947,7 @@ codegenSplitEmit
     t | t `elem` [ TNor, THad, TEN01 ] -> do
       let offset e = reduce $ EOp2 OSub e left
       let stmtsSplit =
-            [ (::=:) vEmitNew $
+            [ (vEmitNew ::=:) $
               EEmit (ESlice (EVar (schVEmitOrigin ss)) (offset el) (offset er))
             | (vEmitNew, Range _ el er) <- zip (schVsEmitAll ss) (rTo : rsRem) ]
       return stmtsSplit
@@ -1029,6 +1015,18 @@ codegenMergeScheme = mapM $ \scheme -> do
               ef   = EEmit (ELambda vBind (EVar vBind + EVar vEmitMerged))
           return (stmt, vEmitMain)
         _             -> throwError' $ printf "No idea about %s to %s conversion."
+    MEqual EqualStrategy { esRange = r, esQTy = qt
+                         , esVMain = v1, esVAux = v2 } -> do
+      -- This is all about "unsplit".
+      case qt of
+        TNor ->
+          -- no "unsplit" should happen here!
+          return (qComment "TNor has nothing to be merged!", v1)
+        THad ->
+          throwError' $ printf "This type (%s) cannot be handled: (%s)" (show qt) (show r)
+        TEN01 ->
+          undefined
+      
 
 
 --------------------------------------------------------------------------------
