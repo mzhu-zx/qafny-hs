@@ -366,16 +366,27 @@ codegenStmt' stmt@(s@(Partition ranges) :*=: eLam@(EEmit (ELambda {}))) = do
   (st'@(STuple (_, _, qt')), corr) <- resolvePartition' s
   qtLambda <- ask
   checkSubtypeQ qt' qtLambda
-  (r@(Range _ erLower erUpper), rSt@(Range _ esLower esUpper)) <- case ranges of
+  -- compute the correspondence between range on surface ser and the range in
+  -- partition record
+  r@(Range _ erLower erUpper) <- case ranges of
     []  -> throwError "Parser says no!"
-    [x] -> maybe (throwError' "???") (return . (x,)) $ lookup x corr
+    [x] -> return x
     _   -> throwError errRangeGt1
-  (st@(STuple (_, _, qt)), maySplit, mayCast) <- splitThenCastScheme st' qtLambda r
+
+  -- do the type cast and split first
+  ((STuple (_, _, qt)), maySplit, mayCast) <- splitThenCastScheme st' qtLambda r
   stmts <- codegenSplitThenCastEmit maySplit mayCast
+  
+  -- resolve again for consistency
+  (_, corr') <- resolvePartition' s
+
+  rSt@(Range _ esLower esUpper) <- maybe (throwError' "???") return $ lookup r corr'
+
+  trace $ printf "LEFT: %s, RIGHT: %s" (show r) (show rSt)
   -- | It's important not to use the fully resolved `s` here because the OP
   -- should only be applied to the sub-partition specified in the annotation.
   [vEmit] <- unpackPart s `forM` (`findEmitRangeQTy` qt)
-  putOpt $ case qtLambda of
+  ((stmts ++) <$>) . putOpt $ case qtLambda of
     TEN -> return $ [ mkMapCall vEmit ]
     TEN01 -> do
       vInner <- gensym "lambda_x"
@@ -384,13 +395,18 @@ codegenStmt' stmt@(s@(Partition ranges) :*=: eLam@(EEmit (ELambda {}))) = do
       return [ vEmit ::=: callMap lambda (EVar vEmit) ]
     TNor -> do
       let offset = erLower - esLower
-      let body = bodySplit vEmit offset (erUpper - offset)
+      let body = bodySplit vEmit offset (erUpper - erLower + offset)
       return [ vEmit ::=: body ]
     _    -> throwError' "I have no idea what to do in this case ..."
   where
     errRangeGt1 :: String
     errRangeGt1 = printf "%s contains more than 1 range no!" (show ranges)
-    splitMap3 v el er f = EOpChained (sliceV v 0 el) $ (OAdd,) <$> [ callMap f (sliceV v el er), sliceV v er (cardV v)]
+    -- split a sequence into 3 parts and apply the operation 'f' to the second
+    -- one.
+    splitMap3 v el er f = EOpChained (sliceV v 0 el) $
+      (OAdd,) <$> [ callMap f (sliceV v el er)
+                  , sliceV v er (cardV v)
+                  ]
     bodySplit v el er =  EEmit $ splitMap3 v el er eLam
     lambdaSplit v el er = EEmit (ELambda v (bodySplit v el er))
     mkMapCall v = v ::=: callMap eLam (EVar v)
@@ -633,7 +649,7 @@ codegenFor'Body idx boundl boundr eG body stSep@(STuple (_, Partition rsSep, qtS
     merge3 vS vRF vRT = vS ::=: (EVar vRF + EVar vRT)
 
     codegenHalf psBody = do
-      -- 2. generate the body statements with with that hint lambda should
+      -- 2. generate the body statements with the hint that lambda should
       -- resolve to EN01 now
       stmtsBody <- local (const TNor) $ codegenBlock body
 
@@ -645,6 +661,7 @@ codegenFor'Body idx boundl boundr eG body stSep@(STuple (_, Partition rsSep, qtS
         dumpSSt "postmerge"
         codegenMergeScheme schemes
       let (stmtsMerge, vsEmitMerge) = unzip stmtsAndVsMerge
+
       return $ (inBlock stmtsBody ++ stmtsMerge, vsEmitMerge)
 
     errNoSep = "Insufficient knowledge to perform a separation for a EN01 partition "

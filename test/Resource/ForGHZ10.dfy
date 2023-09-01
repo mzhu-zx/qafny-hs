@@ -46,10 +46,14 @@ method GHZ (q_seq'nat'_0__emit : seq<nat>) returns (q_seq'seq'nat''_4__emit : se
     q_seq'seq'nat''_9__emit := q_seq'seq'nat''_7__emit[0..1];
     q_seq'seq'nat''_7__emit := q_seq'seq'nat''_7__emit[1..|q_seq'seq'nat''_7__emit|];
     // begin false
+    q_seq'nat'_10__emit := q_seq'nat'_8__emit[0..1];
+    q_seq'nat'_11__emit := q_seq'nat'_8__emit[1..9 - i];
     q_seq'seq'nat''_12__emit := Map(lambda_x_6 => lambda_x_6 + q_seq'nat'_10__emit, q_seq'seq'nat''_9__emit);
     // end false
     // begin true
-    q_seq'nat'_13__emit := q_seq'nat'_13__emit[0..0] + Map(x => x + 1 % 2, q_seq'nat'_13__emit[0..2 + i]) + q_seq'nat'_13__emit[2 + i..|q_seq'nat'_13__emit|];
+    q_seq'nat'_13__emit := q_seq'nat'_8__emit[0..1];
+    q_seq'nat'_14__emit := q_seq'nat'_8__emit[1..9 - i];
+    q_seq'nat'_13__emit := q_seq'nat'_13__emit[0..0] + Map(x => x + 1 % 2, q_seq'nat'_13__emit[0..1]) + q_seq'nat'_13__emit[1..|q_seq'nat'_13__emit|];
     q_seq'seq'nat''_15__emit := Map(lambda_x_8 => lambda_x_8 + q_seq'nat'_13__emit, q_seq'seq'nat''_7__emit);
     // end true
     q_seq'seq'nat''_7__emit := q_seq'seq'nat''_9__emit + q_seq'seq'nat''_7__emit;
