@@ -30,7 +30,7 @@ import           Effect.Gensym                (Gensym, gensym)
 import           Qafny.Gensym                 (resumeGensym)
 
 -- Utils
-import           Control.Lens                 (at, non, (%~), (?~), (^.))
+import           Control.Lens                 (at, non, (%~), (?~), (^.), equality)
 import           Control.Lens.Tuple
 import           Control.Monad
     ( MonadPlus (mzero)
@@ -1004,17 +1004,26 @@ codegenSplitEmit
                  , schROrigin=rOrigin@(Range x left _)
                  , schRTo=rTo
                  , schRsRem=rsRem
+                 , schVEmitOrigin=vEmitOrigin
+                 , schVsEmitAll=vEmitAll
                  } =
   -- trace ("codegenSplitEmit: " ++ show ss) >>
   case qty of
     t | t `elem` [ TNor, THad, TEN01 ] -> do
       let offset e = reduce $ EOp2 OSub e left
       let stmtsSplit =
-            [ (vEmitNew ::=:) $
-              EEmit (ESlice (EVar (schVEmitOrigin ss)) (offset el) (offset er))
+            [ [ (vEmitNew ::=:) $
+                EEmit (ESlice (EVar vEmitOrigin) (offset el) (offset er))
+              , infoWeirdAssertionNeeded
+              , SAssert (EOp2 OEq
+                          (EEmit (ESlice (EVar vEmitOrigin) (offset el) (offset er)))
+                          (EEmit (ESlice (EVar vEmitNew) 0 (reduce (er - el)))))
+              ]
             | (vEmitNew, Range _ el er) <- zip (schVsEmitAll ss) (rTo : rsRem) ]
-      return stmtsSplit
+      return . concat $ stmtsSplit
     _    -> throwError @String $ printf "Splitting a %s partition is unsupported." (show qty)
+  where
+    infoWeirdAssertionNeeded = qComment "I have no idea why this assertion about equality is necessary...."
 
 --------------------------------------------------------------------------------
 -- * Split & Cast Semantics
