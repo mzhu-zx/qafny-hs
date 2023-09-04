@@ -61,6 +61,7 @@ token :-
   "∈"              { emit $  TUnicodeIn          }
   "\in"            { emit $  TUnicodeIn          }
   "Σ"              { emit $  TUnicodeSum         }
+  "∑"              { emit $  TUnicodeSum         }
   "\Sum"           { emit $  TUnicodeIn          }
   "⊗"              { emit $  TUnicodeTensor      }
   "\otimes"        { emit $  TUnicodeIn          }

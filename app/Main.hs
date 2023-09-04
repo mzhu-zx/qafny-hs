@@ -21,7 +21,7 @@ pipeline s =
   -- do parsing, rethrow error if any
   withAST <$> scanAndParse s
   where
-    configs = Configs { stdlibPath = "../../external/" }
+    configs = defaultConfigs
     -- withAST :: AST -> IO (Production Txt.Text)
     withAST ast = do
       let prod = produceCodegen configs ast

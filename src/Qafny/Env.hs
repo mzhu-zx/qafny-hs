@@ -1,14 +1,18 @@
 {-# LANGUAGE
-    LambdaCase
+    FlexibleInstances
+  , LambdaCase
   , TemplateHaskell
+  , TypeApplications
   #-}
 module Qafny.Env where
 
 import           Control.Lens
-import           Data.List       (intercalate)
-import qualified Data.Map.Strict as Map
+import           Data.Bifunctor
+import           Data.List        (intercalate)
+import qualified Data.Map.Strict  as Map
+import           Qafny.Partial
 import           Qafny.Syntax.AST
-import           Text.Printf     (printf)
+import           Text.Printf      (printf)
 
 --------------------------------------------------------------------------------
 -- High-Order Types
@@ -37,15 +41,33 @@ data TEnv = TEnv
 
 type EmitState = Map.Map RBinding Var
 
-
 data TState = TState
   { _sSt    :: Map.Map Loc (Partition, QTy) -- partition type state
-  , _xSt    :: Map.Map Var [(Range, Loc)] -- range reference state
+  , _xSt    :: Map.Map Var [(Range, Loc)]   -- range reference state
   , _emitSt :: EmitState
   }
 
+instance Substitutable TState where
+  subst a (TState{ _sSt = s, _xSt = x, _emitSt = es }) =
+    TState { _sSt = first (subst a) <$> s
+           , _xSt = (first (subst a) <$>) <$> x
+           , _emitSt = Map.mapKeys (subst a) es
+           }
+  fVars (TState{ _sSt = s, _xSt = x, _emitSt = es }) =
+    concatMap (fVars . fst) s
+    ++ fVarMapKeys es
+    ++ concatMap (concatMap $ fVars . fst) (Map.elems x)
+
+instance Reducible TState where
+  reduce (TState{ _sSt = s, _xSt = x, _emitSt = es }) =
+    TState { _sSt = first reduce <$> s
+           , _xSt = (first reduce <$>) <$> x
+           , _emitSt = Map.mapKeys reduce es
+           }
+
 $(makeLenses ''TState)
 $(makeLenses ''TEnv)
+
 
 -- instance Substitutable TState where
 --   subst aenv ts@TState{_sSt=sSt', _xSt=xSt'} =
@@ -101,7 +123,7 @@ data CastScheme = CastScheme
   deriving Show
 
 data MergeScheme
-  = MJoin JoinStrategy  -- ^ Join a 'Range' into an existing 'Range' 
+  = MJoin JoinStrategy  -- ^ Join a 'Range' into an existing 'Range'
   | MMove
   | MEqual EqualStrategy -- ^ Join two copies of data of the same range
   deriving Show
@@ -109,16 +131,16 @@ data MergeScheme
 data EqualStrategy = EqualStrategy
   { esRange :: Range -- the range
   , esQTy   :: QTy   -- QTy of the corresponding range
-  , esVMain :: Var   -- the var to stay 
+  , esVMain :: Var   -- the var to stay
   , esVAux  :: Var   -- the var to be absorbed
   }
   deriving Show
 
 data JoinStrategy = JoinStrategy
-  { jsRMain :: Range
-  , jsQtMain :: QTy 
-  , jsRResult :: Range 
-  , jsRMerged :: Range
+  { jsRMain    :: Range
+  , jsQtMain   :: QTy
+  , jsRResult  :: Range
+  , jsRMerged  :: Range
   , jsQtMerged :: QTy
   }
   deriving Show

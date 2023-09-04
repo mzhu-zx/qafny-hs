@@ -61,3 +61,7 @@ callMap f e = EEmit (ECall "Map" [f, e])
 
 cardV :: Var -> Exp'
 cardV = EEmit . ECard . EVar
+
+mkAssignment ::  Var -> Var -> Stmt'
+mkAssignment v1 v2 = v1 ::=: EVar v2
+

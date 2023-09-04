@@ -6,6 +6,7 @@
   #-}
 
 module Qafny.Partial where
+import           Data.Bifunctor
 import           Data.Bool             (bool)
 import           Data.Functor.Foldable
     ( Corecursive (embed)
@@ -51,9 +52,9 @@ instance PEval Exp' where
   reflectP (m, i) =
     let m' = Map.filter (/= 0) m
     in case (Map.toList m', i) of
-      ([], _) -> ENum i
+      ([], _)    -> ENum i
       (h : t, 0) -> foldr go' id t $ opChoice1 (snd h) (uncurry addExps h)
-      (l, i) -> foldr go' id l $ ENum i
+      (l, i)     -> foldr go' id l $ ENum i
     where
       opChoice :: Int -> Exp' -> Exp' -> Exp'
       opChoice cnt e eKont = EOp2 (if cnt >=0 then OAdd else OSub) eKont e
@@ -94,6 +95,9 @@ instance Reducible Range where
 
 instance Reducible Partition where
   reduce = Partition . reduce . unpackPart
+
+instance Reducible RBinding where
+  reduce = RBinding . first reduce . unRBinding
 
 -- | Union two residual maps with the given operator and remove zero-coefficient
 -- variables

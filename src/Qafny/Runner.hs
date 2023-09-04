@@ -5,10 +5,11 @@ import qualified Control.Carrier.Error.Either    as ErrE (runError)
 import           Control.Carrier.Reader          (runReader)
 import           Control.Carrier.State.Strict    (runState)
 import           Control.Carrier.Trace.Returning (runTrace)
-import           Qafny.Syntax.AST                       (AST)
 import           Qafny.Codegen                   (codegenAST)
 import           Qafny.Config                    (Configs)
 import           Qafny.Env
+import           Qafny.Syntax.AST                (AST)
+import           Qafny.Syntax.Parser             (scanAndParse)
 
 --------------------------------------------------------------------------------
 -- Wrapper
@@ -55,3 +56,10 @@ produceCodegen conf ast =
                 }
   where
     sep = replicate 80 '=' ++ "\n"
+
+-- Load a source file (specified by its name w/o the extension) and parse it
+-- into an AST
+loadFileIO :: String -> IO AST
+loadFileIO prog = do
+  file <- readFile $ "./test/Resource/" ++ prog ++ ".qfy"
+  either fail return $ scanAndParse file

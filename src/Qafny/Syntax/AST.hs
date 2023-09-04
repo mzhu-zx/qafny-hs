@@ -409,13 +409,19 @@ instance (Substitutable a, Substitutable b) => Substitutable (a, b) where
   subst a = bimap (subst a) (subst a)
   fVars = uncurry (++) . bimap fVars fVars
 
-instance (Ord k, Substitutable k) => Substitutable (Map.Map k v) where
-  subst a = Map.mapKeys (subst a)
-  fVars = fVars . Map.keys
-
 instance Substitutable RBinding where
   subst a (RBinding (r, t)) = RBinding (subst a r, t)
   fVars = fVars . fst . unRBinding
+
+instance Substitutable (Map.Map RBinding Var) where
+  subst = substMapKeys
+  fVars = fVarMapKeys
+
+substMapKeys :: (Ord k, Substitutable k) => AEnv -> Map.Map k v -> Map.Map k v
+substMapKeys a = Map.mapKeys (subst a)
+
+fVarMapKeys :: Substitutable k => Map.Map k v -> [Var]
+fVarMapKeys = fVars . Map.keys
 
 -- instance Substitutable QTy where
 --   subst = const id

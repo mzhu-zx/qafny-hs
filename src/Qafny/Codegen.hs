@@ -22,7 +22,7 @@ import           Control.Effect.Catch
 import           Control.Effect.Error         (Error, throwError)
 import           Control.Effect.Lens
 import           Control.Effect.Reader
-import           Control.Effect.State         (State, get, put)
+import           Control.Effect.State         (State, get, put, modify)
 import           Control.Effect.Trace
 import           Effect.Gensym                (Gensym, gensym)
 
@@ -88,7 +88,7 @@ import           Qafny.Typing
     , typingExp
     , typingGuard
     , typingPartition
-    , typingPartitionQTy
+    , typingPartitionQTy, matchEmitStates
     )
 import           Qafny.Utils
     ( dumpSSt
@@ -431,6 +431,8 @@ codegenStmt' (SIf e seps b) = do
   return $ stmtsCastB ++ stmts
 
 codegenStmt' (SFor idx boundl boundr eG invs seps body) = do
+  -- statePreLoop: the state before the loop starts
+  -- stateLoop:    the state for each iteration
   (stmtsPreGuard, statePreLoop, stateLoop) <- codegenInit
   put stateLoop
   -- generate loop invariants
@@ -439,21 +441,24 @@ codegenStmt' (SFor idx boundl boundr eG invs seps body) = do
   stmtsBody <- local (++ substEnv) $ do
     stSep <- typingPartition seps -- check if `seps` clause is valid
     stmtsBody <- codegenFor'Body idx boundl boundr eG body stSep (concat newInvs)
-    void codegenFinish
-    return stmtsBody
+  
+    -- update the post-loop typing state
+    trace $ "stateLoop:\n" ++ show stateLoop
+    codegenFinish stateLoop 
+    get @TState >>= trace . ("staetLoop (subst):\n" ++) . show
+    pure $ stmtsBody
 
-  put statePreLoop
   return $ concat stmtsPreGuard ++ stmtsBody
   where
     -- IEnv for loop constraints
     substEnv = [(idx, boundl :| [boundr - 1])]
 
     -- AEnv for the precondition of the first iteration
-    initEnv = [(idx, boundl)]
+    -- initEnv = [(idx, boundl)]
 
-    errInvMtPart = "The invariants contains no partition."
-    errInvPolypart p = printf
-      "The loop invariants contains more than 1 partition.\n%s" (show p)
+    -- errInvMtPart = "The invariants contains no partition."
+    -- errInvPolypart p = printf
+    --   "The loop invariants contains more than 1 partition.\n%s" (show p)
 
     -- | Partitions and their types collected from the loop invariants
     invPQts = specPartitionQTys invs
@@ -464,7 +469,7 @@ codegenStmt' (SFor idx boundl boundr eG invs seps body) = do
 
     -- | the postcondtion of one iteration can be computed bys setting the upper
     -- bound to be the index plus one
-    invPQtsPost = first (reduce . substP [(idx, EVar idx + 1)]) <$> invPQts
+    -- invPQtsPost = first (reduce . substP [(idx, EVar idx + 1)]) <$> invPQts
 
     -- | Generate code and state for the precondition after which
     -- | we only need to concern those mentioned by the loop invariants
@@ -474,15 +479,16 @@ codegenStmt' (SFor idx boundl boundr eG invs seps body) = do
           stInv <- resolvePartition sInv
           (sInvSplit, maySplit, mayCast) <- splitThenCastScheme stInv qtInv rInv
           codegenSplitThenCastEmit maySplit mayCast
-        -- Q: What is a reasonable split if there are 2 ranges? Would this have
-        --    a slightly different meaning? For example, consider a EN partition
-        --
-        --       { q[0..i], p[0..i] } ↦ { Σ_i . ket(i, i) }
-        --
-        --    In this case, split will also requires a non-trivial merge?
-        --    How to do this?
-        --
-        _                -> throwError' $ printf "More than 1 range %s" (show sInv)
+        _                ->
+          -- Q: What is a reasonable split if there are 2 ranges? Would this have
+          --    a slightly different meaning? For example, consider a EN partition
+          --
+          --       { q[0..i], p[0..i] } ↦ { Σ_i . ket(i, i) }
+          --
+          --    In this case, split will also requires a non-trivial merge?
+          --    How to do this?
+          --
+          throwError' $ printf "More than 1 range %s" (show sInv)
       -- | This is important because we will generate a new state from the loop
       -- invariant and perform both typing and codegen in the new state!
       statePreLoop <- get @TState
@@ -492,23 +498,41 @@ codegenStmt' (SFor idx boundl boundr eG invs seps body) = do
       trace $ printf "statePreLoop: %s\nstateLoop: %s"  (show statePreLoop) (show stateLoop)
 
       -- | pass preLoop variables to loop ones
-      stmtsEquiv <- (mkAssignment <$>) <$> matchStateCorrLoop statePreLoop stateLoop [(idx, boundl)]
+      stmtsEquiv <- (uncurry mkAssignment <$>) <$> matchStateCorrLoop statePreLoop stateLoop [(idx, boundl)]
       return (stmtsPreGuard ++ [stmtsEquiv], statePreLoop, stateLoop)
 
-    codegenFinish = do
-      -- Next, I need to collect ranges/partitions from the invariant with
-      --   [ i := i + 1 ]
-      -- Match those ranges with those in [ i := i ] case to compute the
-      -- corresponding emitted variables
-      --
-      -- Use collected partitions and merge it with the absorbed typing state.
-      
+    -- update the typing state by plugging the right bound into the index
+    -- parameter 
+  
+    -- [ASSIGN A TICKET HERE]
+    -- FIXME: there's a bug here though, if we have something like
+    -- 
+    --   for i := 0 to 10
+    --      invariant i != 10 ==> <some partition>
+    -- 
+    -- This logically valid predicate will cause a problem in generating the
+    -- post-condition of the entire loop statement because I only blindly
+    -- collect all partitions mentioned by the invariants without considering
+    -- the semantics of the logic.
+    --
+    -- Type states depend solely on those invariant partitions to work
+    -- correctly. 
+    --
+    -- Here's an (unimplemented) workaround
+    -- - SpecExpressions cannot be mixed with &&, || or not
+    -- - SpecExpressions can only appear on the positive position in logical
+    --   implication
+    -- - The negative position must be a simple propositions about only linear
+    --   arithmetic
+    --
+    -- With those restrictions, I can collect negative position propositions and
+    -- solve and decide when to include predicates using the PE engine.
+    -- 
+    codegenFinish tsLoop = do
+      trace $ show (idx, boundr)
+      put . reduce $ subst [(idx, boundr)] tsLoop
 
-      -- I don't remember the purpose of this line, purely sanity check?
-      forM invPQtsPost (uncurry typingPartitionQTy)
 
-    mkAssignment :: (Var, Var) -> Stmt'
-    mkAssignment (v1, v2) = v1 ::=: EVar v2
 
 codegenStmt' (SAssert e@(ESpec{})) = do
   (SAssert <$>) <$> codegenAssertion e
@@ -572,7 +596,7 @@ codegenFor'Body
   -> Block' -- ^ body
   -> STuple -- ^ the partition to be merged into
   -> [Exp'] -- ^ emitted invariants
-  -> m [Stmt']
+  -> m ([Stmt'])
 codegenFor'Body idx boundl boundr eG body stSep@(STuple (_, Partition rsSep, qtSep)) newInvs = do
   let psBody = leftPartitions . inBlock $ body
   stG@(STuple (_, sG, qtG)) <- typingGuard eG
@@ -593,6 +617,7 @@ codegenFor'Body idx boundl boundr eG body stSep@(STuple (_, Partition rsSep, qtS
 
       -- FIXME: for now, I discard the env for the Had case for backward
       -- compatibility
+      stateIterBegin <- get @TState
       local (const initIEnv) $ do
          (stGSplited, schemeSMaybe) <- splitScheme stG rL
          stmtsSplitG <- codegenSplitEmitMaybe schemeSMaybe
@@ -606,7 +631,8 @@ codegenFor'Body idx boundl boundr eG body stSep@(STuple (_, Partition rsSep, qtS
          stG' <- resolvePartition (unSTup stGSplited ^. _2)
          stmtsCGHad <- codegenStmt'For'Had stB stG' vEmitG idx body
          return $ ( stmtsCastB ++ stmtsDupG ++ stmtsInitG
-                  , stmtsSplitG ++ stmtsCGHad)
+                  , stmtsSplitG ++ stmtsCGHad
+                  )
     TEN01 -> do
       eSep <- case eG of
         GEPartition _ (Just eSep) -> return eSep
@@ -647,25 +673,30 @@ codegenFor'Body idx boundl boundr eG body stSep@(STuple (_, Partition rsSep, qtS
       -- I need a way to merge two typing state here. 
       put tsFalse
 
+      let inferTsLoopEnd =  subst [(idx, EVar idx + 1)]
+      stmtsMatchLoopBeginEnd <- codegenMatchLoopBeginEnd . inferTsLoopEnd $ stateIterBegin ^. emitSt
+      
       -- 4. put stashed part back
-      return ([], concat [ stmtsSaveFalse
-                         , stmtsFocusTrue
-                         , [qComment "begin false"]
-                         , stmtsFalse
-                         , [qComment "end false"]
-                         , [qComment "begin true"]
-                         , stmtsTrue
-                         , [qComment "end true"]
-                         , [qComment "begin true-false"]
-                         , fst <$> stmtsVarsMergeMatched
-                         , [qComment "end true-false"]
-                         ])
+      return ( []
+             , concat [ stmtsSaveFalse
+                      , stmtsFocusTrue
+                      , [qComment "begin false"]
+                      , stmtsFalse
+                      , [qComment "end false"]
+                      , [qComment "begin true"]
+                      , stmtsTrue
+                      , [qComment "end true"]
+                      , [qComment "begin true-false"]
+                      , fst <$> stmtsVarsMergeMatched
+                      , [qComment "end true-false"]
+                      , [ qComment "Match Begin-End"]
+                      , stmtsMatchLoopBeginEnd
+                      ]
+             )
     _    -> throwError' $ printf "%s is not a supported guard type!" (show qtG)
   let innerFor = SEmit $ SForEmit idx boundl boundr newInvs $ Block stmtsBody
   return $ stmtsPrelude ++ [innerFor]
-
   where
-
     codegenHalf psBody = do
       -- 2. generate the body statements with the hint that lambda should
       -- resolve to EN01 now
@@ -682,6 +713,19 @@ codegenFor'Body idx boundl boundr eG body stSep@(STuple (_, Partition rsSep, qtS
       let (stmtsMerge, vsEmitMerge) = unzip stmtsAndVsMerge
 
       return $ (inBlock stmtsBody ++ stmtsMerge, vsEmitMerge)
+
+    codegenMatchLoopBeginEnd emitStBegin = do
+      -- Next, I need to collect ranges/partitions from the invariant with
+      --   [ i := i + 1 ]
+      -- Match those ranges with those in [ i := i ] case to compute the
+      -- corresponding emitted variables
+      --
+      -- Use collected partitions and merge it with the absorbed typing state.
+      emitStEnd <- (^. emitSt) <$> get @TState
+      let corrBeginEnd = matchEmitStates emitStBegin emitStEnd
+      -- I don't remember the purpose of this line, purely sanity check?
+      pure $ uncurry mkAssignment . snd <$> corrBeginEnd 
+
 
     errNoSep = "Insufficient knowledge to perform a separation for a EN01 partition "
     stmtAssignSlice el er idTo idFrom = (::=:) idTo (sliceV idFrom el er)
