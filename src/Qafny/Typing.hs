@@ -123,7 +123,7 @@ resolvePartition'
      , Has Trace sig m
      )
   => Partition -> m (STuple, [(Range, Range)])
-resolvePartition' se@(Partition rs) = do
+resolvePartition' se' = do
   rsResolved <- rs `forM` resolveRange
   let locs = [ ((rSe, rSt), loc) | (rSe, rSt, ans, loc) <- concat rsResolved, included ans ]
   constraints <- ask @IEnv
@@ -138,6 +138,7 @@ resolvePartition' se@(Partition rs) = do
       return (STuple (x, p, qt), fst <$> locs)
     ss -> throwError $ errNonunique ss related
   where
+    se@(Partition rs) = reduce se'
     included :: NonEmpty (Maybe Bool, AEnv) -> Bool
     included = all ((== Just True) . fst)
     errNonunique :: [Loc] -> String -> String

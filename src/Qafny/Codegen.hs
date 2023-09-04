@@ -103,6 +103,7 @@ import           Qafny.Utils
     , rethrowMaybe
     , throwError'
     )
+import Data.List (find)
 
 --------------------------------------------------------------------------------
 -- * Introduction
@@ -128,7 +129,7 @@ putPure :: Has (Reader Bool) sig m
 putPure = pure
 
 -- put Stmt's only if it's allowed
-putOpt :: Has (Reader Bool) sig m => m [Stmt'] -> m [Stmt']
+putOpt :: Has (Reader Bool) sig m => m [a] -> m [a]
 putOpt s = do
   bool (pure []) s =<< ask
 
@@ -383,7 +384,9 @@ codegenStmt' stmt@(s@(Partition ranges) :*=: eLam@(EEmit (ELambda {}))) = do
   -- resolve again for consistency
   (_, corr') <- resolvePartition' s
 
-  rSt@(Range _ esLower esUpper) <- maybe (throwError' "???") return $ lookup r corr'
+  rSt@(Range _ esLower esUpper) <-
+    maybe (throwError' (errNotInCorr r corr')) return
+    $ lookup (reduce r) (first reduce <$> corr')  
 
   trace $ printf "LEFT: %s, RIGHT: %s" (show r) (show rSt)
   -- | It's important not to use the fully resolved `s` here because the OP
@@ -402,6 +405,7 @@ codegenStmt' stmt@(s@(Partition ranges) :*=: eLam@(EEmit (ELambda {}))) = do
       return [ vEmit ::=: body ]
     _    -> throwError' "I have no idea what to do in this case ..."
   where
+    errNotInCorr r corr = printf "%s is not in the corr. %s" (show r) (show corr)
     errRangeGt1 :: String
     errRangeGt1 = printf "%s contains more than 1 range no!" (show ranges)
     -- split a sequence into 3 parts and apply the operation 'f' to the second
@@ -1110,7 +1114,7 @@ codegenRequires rqs = forM rqs $ \rq ->
   case rq of
     ESpec s qt espec -> do
       vsEmit <- extendTState s qt
-      ands <$> codegenSpecExp (zip vsEmit (unpackPart s)) qt espec
+      (ands <$>) . runReader True $ codegenSpecExp (zip vsEmit (unpackPart s)) qt espec
     _ -> return rq
 
 codegenEnsures
@@ -1120,13 +1124,14 @@ codegenEnsures
      )
   => [Exp'] -> m [Exp']
 codegenEnsures ens =
-  (ands <$>) <$> forM ens (runReader initIEnv . codegenAssertion)
+  (ands <$>) <$> forM ens (runReader initIEnv . runReader True  . codegenAssertion)
 
 
 codegenAssertion
   :: ( Has (State TState)  sig m
      , Has (Error String) sig m
      , Has (Reader IEnv) sig m
+     , Has (Reader Bool) sig m
      , Has Trace sig m
      )
   => Exp' -> m [Exp']
@@ -1140,6 +1145,7 @@ codegenAssertion'
   :: ( Has (State TState)  sig m
      , Has (Error String) sig m
      , Has (Reader IEnv) sig m
+     , Has (Reader Bool) sig m
      , Has Trace sig m
      )
   => Exp' -> m [Exp']
@@ -1153,9 +1159,11 @@ codegenAssertion' e = return [e]
 -- | Take in the emit variable corresponding to each range in the partition and the
 -- partition type; with which, generate expressions (predicates)
 codegenSpecExp
-  :: ( Has (Error String) sig m )
+  :: ( Has (Error String) sig m
+     , Has (Reader Bool) sig m
+     )
   => [(Var, Range)] -> QTy -> SpecExp' -> m [Exp']
-codegenSpecExp vrs p e =
+codegenSpecExp vrs p e = putOpt $
   case (p, e) of
     (_, SEWildcard) -> return []
     (TNor, SESpecNor idx es) -> do

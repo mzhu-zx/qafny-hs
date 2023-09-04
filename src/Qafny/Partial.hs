@@ -75,6 +75,11 @@ instance PEval Exp' where
 class Reducible a where
   reduce :: a -> a
 
+
+(==&) :: (Eq a, Reducible a) => a -> a -> Bool
+a ==& b = reduce a == reduce b
+
+
 instance Reducible a => Reducible [a] where
   reduce = fmap reduce
 

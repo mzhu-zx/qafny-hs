@@ -55,6 +55,8 @@ method GHZ (q_seq'nat'_0__emit : seq<nat>) returns (q_seq'seq'nat''_7__emit : se
     q_seq'nat'_13__emit := q_seq'nat'_8__emit[0..1];
     q_seq'nat'_14__emit := q_seq'nat'_8__emit[1..9 - i];
     q_seq'nat'_13__emit := q_seq'nat'_13__emit[0..0] + Map(x => x + 1 % 2, q_seq'nat'_13__emit[0..1]) + q_seq'nat'_13__emit[1..|q_seq'nat'_13__emit|];
+    assert 8 - i == |q_seq'nat'_14__emit|;
+    assert (forall k : nat | 0 <= k < 8 - i :: q_seq'nat'_14__emit[k] == 0);
     q_seq'seq'nat''_15__emit := Map(lambda_x_8 => lambda_x_8 + q_seq'nat'_13__emit, q_seq'seq'nat''_7__emit);
     // end true
     // begin true-false
@@ -65,8 +67,6 @@ method GHZ (q_seq'nat'_0__emit : seq<nat>) returns (q_seq'seq'nat''_7__emit : se
     q_seq'nat'_8__emit := q_seq'nat'_11__emit;
   }
 
-  assert 2 == |q_seq'seq'nat''_7__emit|;
-  assert (forall j : nat | 0 <= j < 2 :: (forall k : nat | 0 <= k < 10 :: (10 == |q_seq'seq'nat''_7__emit[j]|) && (q_seq'seq'nat''_7__emit[j][k] == j)));
 }
 
 }

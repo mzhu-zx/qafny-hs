@@ -14,14 +14,15 @@ import           Effect.Gensym                (Gensym, gensym)
 
 --
 import           Control.Effect.Trace
+import           Control.Monad                (forM)
 import qualified Data.Map.Strict              as Map
 import qualified Data.Set                     as Set
-import           Qafny.Syntax.AST
 import           Qafny.Env                    (TState, emitSt, sSt)
+import           Qafny.Partial                (Reducible (reduce))
+import           Qafny.Syntax.AST
 import           Qafny.TypeUtils              (typingQEmit)
 import           Qafny.Variable               (Variable (variable))
 import           Text.Printf                  (printf)
-import Control.Monad (forM)
 
 throwError'
   :: ( Has (Error String) sig m )
@@ -53,7 +54,7 @@ gensymLoc = (Loc <$>) . gensym . variable . Loc
 -- $doc
 --------------------------------------------------------------------------------
 rbindingOfRangeQTy :: Range -> QTy -> RBinding
-rbindingOfRangeQTy r qty = RBinding (r, typingQEmit qty)
+rbindingOfRangeQTy r qty = RBinding (reduce r, typingQEmit qty)
 
 -- | Generate a varaible from a 'Range' and its 'QTy' and add the corresponding
 -- 'Binding' into 'emitSt'
