@@ -219,6 +219,7 @@ codegenToplevel'Method q@(QMethod v bds rts rqs ens (Just block)) = runWithCallS
   let blockStmts = concat
         [ return $ qComment "Forward Declaration"
         , stmtsDeclare
+        , [ SDafny "reveal Map();" ] -- TODO: any optimization can be done here?
         , [ SDafny "" , qComment "Method Definition"]
         , inBlock blockCG
         ]
@@ -772,7 +773,7 @@ codegenStmt'For'Had stB stG vEmitG vIdx b = do
   -- 5. (Compromised) double the counter
   let stmtAdd1 = addENHad1 vEmitG vIdx
   mergeSTuples stB stG
-  return $ stmtsDupB ++ [stmtB] ++ stmtsMergeB ++ [stmtAdd1]
+  return $ stmtsDupB ++ [stmtB] ++ stmtsMergeB ++ [ stmtAdd1 ]
 
 
 
@@ -1212,9 +1213,10 @@ codegenSpecExp vrs p e = putOpt $
         let eForallSum = EForall (natB idxSum) eBoundSum
         let eForallTen = EForall (natB idxTen) eBoundTen
         let eSel = (EVar vE `eAt` EVar idxSum) `eAt` EVar idxTen
-        let eBody = EOp2 OAnd cardTen (EOp2 OEq eSel eV)
-        return [ cardSum
-               , eForallSum . eForallTen $ eBody ]
+        let eBodys = [ cardTen
+                     , (EOp2 OEq eSel eV)
+                     ]
+        return $ cardSum : ((eForallSum . eForallTen) <$> eBodys)
     _ -> throwError' $ printf "%s is not compatible with the specification %s"
          (show p) (show e)
 
