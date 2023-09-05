@@ -378,7 +378,6 @@ initAEnv = []
 initIEnv :: IEnv
 initIEnv = []
 
-
 -- | Perform expression subtitution
 --
 class Substitutable a where

@@ -88,7 +88,7 @@ import           Qafny.Typing
     , typingExp
     , typingGuard
     , typingPartition
-    , typingPartitionQTy, matchEmitStates
+    , typingPartitionQTy, matchEmitStates, collectConstraints
     )
 import           Qafny.Utils
     ( dumpSSt
@@ -104,6 +104,7 @@ import           Qafny.Utils
     , throwError'
     )
 import Data.List (find)
+import Qafny.Interval (Interval(Interval))
 
 --------------------------------------------------------------------------------
 -- * Introduction
@@ -204,9 +205,14 @@ codegenToplevel'Method
 -- convention
 codegenToplevel'Method q@(QMethod v bds rts rqs ens Nothing) = return q
 codegenToplevel'Method q@(QMethod v bds rts rqs ens (Just block)) = runWithCallStack q $ do
+  boundConstraints <- collectConstraints rqs
+  trace $ printf "Constraint Sets:\n%s\n" (show boundConstraints)
+  let iEnv = Map.foldMapWithKey vIntv2IEnv boundConstraints
+
   (countMeta, (countEmit, (rbdvsEmitR', rbdvsEmitB), (rqsCG, blockCG))) <-
     local (appkEnvWithBds bds) $
-    codegenRequires rqs `resumeGensym` codegenMethodBody block
+    codegenRequires rqs `resumeGensym` codegenMethodBody iEnv block
+
 
   mapFinalEmits <- use emitSt
   ensCG <- codegenEnsures ens
@@ -225,9 +231,11 @@ codegenToplevel'Method q@(QMethod v bds rts rqs ens (Just block)) = runWithCallS
         ]
   return $ QMethod v bdsCG (rts ++ bdRets) rqsCG ensCG (Just . Block $ blockStmts)
   where
-    codegenMethodBody =
-      runReader initIEnv .  -- | TODO: propagate parameter constrains
-      runReader TEN .       -- | resolve λ to EN on default
+    vIntv2IEnv v' (Interval l r) = [(v', l :| [r])]
+
+    codegenMethodBody iEnv =
+      runReader iEnv . -- | TODO: propagate parameter constraints
+      runReader TEN .  -- | resolve λ to EN on default
       runReader True .
       codegenBlock
 

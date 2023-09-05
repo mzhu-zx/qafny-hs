@@ -6,9 +6,10 @@
 module Qafny.Interval where
 
 import           Control.Applicative (Applicative (liftA2))
+import           Control.Monad       (forM)
 import           Data.Bool           (bool)
-import           Qafny.Syntax.AST           (Exp (..), Exp', Range (..), Var)
 import           Qafny.Partial       (evalPStatic, hasResidue)
+import           Qafny.Syntax.AST    (Exp (..), Exp', Range (..), Var, AEnv)
 import           Text.Printf         (printf)
 
 --------------------------------------------------------------------------------
@@ -37,6 +38,16 @@ simpleGlb a b = bool b a <$> a ⊑ b
 class SemiLattice a => Lattice a where
   isTop :: a -> Maybe Bool
   isBot :: a -> Maybe Bool
+
+
+lub1 :: SemiLattice a => [a] -> Maybe a
+lub1 (a : as) = foldr (\x rst -> (x ⊔) =<< rst) (pure a) as
+lub1 _        = Nothing
+
+glb1 :: SemiLattice a => [a] -> Maybe a
+glb1 (a : as) = foldr (\x rst -> (x ⊓) =<< rst) (pure a) as
+glb1 _        = Nothing
+
 
 --------------------------------------------------------------------------------
 -- * Interval

@@ -1,0 +1,25 @@
+method GHZ(n : nat, q : qreg[n])
+  requires n >= 10
+  requires { q[0  .. n] : nor ↦ ⊗ i . (0) }
+  ensures  { q[0  .. 10] : en01 ↦ ∑ j ∈ [0 .. 2] . ⊗ k ∈ [0 .. 10] . ( j ) }
+  ensures  { q[10 .. (n - 10)] : nor ↦ ⊗ i . (0) }
+{
+  // induce superposition on the first qubit
+  q[0..1] *= H;
+  assert { q [0..1] : had ↦ _ };
+
+  // always take the ith qubit as the controller 
+  for i in [0 .. (n - 1)] with q[i .. (i + 1)] split at 1
+    // provide hints on how to perform separation
+    separates q[0 .. (i + 1)]
+    invariant {
+      q [0 .. (i + 1)] : en01 ↦ ∑ j ∈ [0 .. 2] . ⊗ k ∈ [0 .. j] . ( j )
+    }
+    invariant {
+      q [(i + 1) .. 10] : nor ↦ ⊗ k . ( 0 )
+    }
+    invariant { q[10 .. (n - 10)] : nor ↦ ⊗ i . (0) }
+  {
+    q[(i + 1) .. (i + 2)] *= λ (x => (x + 1) % 2);
+  }
+}

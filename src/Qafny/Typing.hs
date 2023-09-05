@@ -6,6 +6,7 @@
   , ScopedTypeVariables
   , TupleSections
   , TypeApplications
+  , TypeFamilies
   #-}
 
 module Qafny.Typing where
@@ -14,21 +15,20 @@ module Qafny.Typing where
 
 -- Effects
 import           Control.Carrier.Reader        (runReader)
-import qualified Control.Carrier.State.Strict  as State
 import           Control.Effect.Catch
 import           Control.Effect.Error          (Error, throwError)
 import           Control.Effect.Lens
 import           Control.Effect.NonDet
 import           Control.Effect.Reader
-import           Control.Effect.State          (State)
+import           Control.Effect.State          (State, modify)
 import           Effect.Gensym                 (Gensym)
 
 -- Qafny
-import           Qafny.Syntax.AST
 import           Qafny.Domain                  (NatInterval)
 import           Qafny.Env
 import           Qafny.Error                   (QError (..))
 import           Qafny.Interval
+import           Qafny.Syntax.AST
 import           Qafny.TypeUtils
 import           Qafny.Utils
     ( exp2AExp
@@ -41,6 +41,8 @@ import           Qafny.Utils
     )
 
 -- Utils
+import           Control.Carrier.NonDet.Church (runNonDetA)
+import           Control.Carrier.State.Lazy    (execState, evalState)
 import           Control.Effect.Trace
 import           Control.Lens                  (at, (%~), (.~), (?~), (^.))
 import           Control.Lens.Tuple
@@ -53,18 +55,17 @@ import           Data.List.NonEmpty            (NonEmpty (..))
 import qualified Data.List.NonEmpty            as NE
 import qualified Data.Map.Strict               as Map
 import           Data.Maybe
-    ( fromMaybe
+    ( catMaybes
+    , fromMaybe
     , isJust
     , listToMaybe
-    , maybeToList, catMaybes
+    , maybeToList, mapMaybe
     )
 import qualified Data.Set                      as Set
 import           Data.Sum
 import           GHC.Stack                     (HasCallStack)
+import           Qafny.Partial                 (Reducible (reduce))
 import           Text.Printf                   (printf)
-import Control.Carrier.NonDet.Church (runNonDetA)
-import Qafny.Partial (Reducible(reduce))
-import Control.Carrier.State.Lazy (evalState)
 
 -- | Compute the type of the given expression
 typingExp
@@ -192,7 +193,7 @@ inferRangeQTy
      , Has Trace sig m)
   => Range -> m QTy
 inferRangeQTy r = (^. _3) . unSTup <$> resolvePartition (Partition [r])
-  
+
 --------------------------------------------------------------------------------
 -- | Split Typing
 --------------------------------------------------------------------------------
@@ -605,7 +606,7 @@ mergeMatchedTState
         , esVMain = v1
         , esVAux = v2
         }
-    _ -> Nothing  
+    _ -> Nothing
   where
     matchedRangeAndVars = matchEmitStates eSt1 eSt2
     getQTy ts r = evalState ts $ inferRangeQTy r
@@ -628,7 +629,7 @@ mergeScheme
     -- fetch the latest 'rsMain'
     let fetchMain = uses sSt (^. at locMain)
     (Partition rsMain, _) <- rethrowMaybe fetchMain "WTF?"
-    -- decide how to merge based on the if there's an adjacent range match 
+    -- decide how to merge based on the if there's an adjacent range match
     rsMergeTo <- lookupAdjacentRange rsMain rAux
     case rsMergeTo of
       [] -> do
@@ -658,7 +659,7 @@ mergeScheme
   where
     redirectX rAndLoc = do
       (r, locR) <- oneOf rAndLoc
-      let locRNew = if locR == locAux then locMain else locR 
+      let locRNew = if locR == locAux then locMain else locR
       return (r, locRNew)
     revampX rCandidate rAux rNew rAndLoc = do
       self@(r, locR) <- oneOf rAndLoc
@@ -666,7 +667,7 @@ mergeScheme
                then (rNew, locMain)
                else self
 
--- | check if there exists a range that's adjacent to another. 
+-- | check if there exists a range that's adjacent to another.
 lookupAdjacentRange
   :: ( Has (Reader IEnv) sig m
      )
@@ -674,7 +675,7 @@ lookupAdjacentRange
 lookupAdjacentRange rs r@(Range id el er) = do
   (≡?) <- (allI .:) <$> liftIEnv2 (≡)
   return  [ r' | r'@(Range x' el' er') <- rs, er' ≡? el ]
-  
+
 
 -- Merge two given partition tuples if both of them are of EN type.
 mergeSTuples
@@ -695,7 +696,7 @@ mergeSTuples
     -- let vsMetaAux =  varFromPartition sAux
     -- let newAuxLocs = Map.fromList $ [(v, locMain) | v <- vsMetaAux]
     -- xSt %= Map.union newAuxLocs -- use Main's loc for aux
-    -- change all range reference to the merged location 
+    -- change all range reference to the merged location
     xSt %= Map.map
       (\rLoc -> [ (r, loc')
                 | (r, loc) <- rLoc,
@@ -705,6 +706,39 @@ mergeSTuples
       (at locMain ?~ (newPartition, TEN))        -- update main's state
     return ()
 
+
+--------------------------------------------------------------------------------
+-- | Constraints
+--------------------------------------------------------------------------------
+collectConstraints
+  :: ( Has (Error String) sig m )
+  => [Exp'] -> m (Map.Map Var (Interval Exp'))
+collectConstraints es = (Map.mapMaybe glb1 <$>) . execState Map.empty $ forM normalizedEs collectIntv
+  where
+    collectIntv e@(op, v1, e2) = do
+      intv :: Interval Exp' <- case op of
+            OLt -> pure $ Interval 0 (e2 - 1)
+            OLe -> pure $ Interval 0 e2
+            OGt -> pure $ Interval (e2 + 1) maxE
+            OGe -> pure $ Interval e2 maxE
+            _   -> failUninterp e
+      modify $ Map.insertWith (++) v1 [intv]
+
+    maxE = fromInteger $ toInteger (maxBound @Int)
+
+    failUninterp e = throwError' $ printf "(%s) is left uninterpreted" (show e)
+
+    normalize e@(EOp2 op (EVar v1) e2) = pure (op , v1, e2)
+    normalize (EOp2 op e2 (EVar v1))   = (, v1, e2) <$> flipLOp op
+    normalize _                        = Nothing
+
+    normalizedEs = mapMaybe normalize es
+
+    flipLOp OLt = pure OGt
+    flipLOp OLe = pure OGe
+    flipLOp OGe = pure OLe
+    flipLOp OGt = pure OLt
+    flipLOp _   = Nothing
 
 --------------------------------------------------------------------------------
 -- | Helpers
@@ -732,7 +766,7 @@ tStateFromPartitionQTys
      , Has (Gensym Var) sig m
      )
   => [(Partition, QTy)] -> m TState
-tStateFromPartitionQTys pqts = State.execState initTState $ do
+tStateFromPartitionQTys pqts = execState initTState $ do
   forM_ pqts $ uncurry extendTState
 
 -- | Extend the typing state with a partition and its type, generate emit
