@@ -228,6 +228,7 @@ instance (Injection q (QMethod x :+: QDafny)) => Injection q (Toplevel x) where
 data Intv = Intv (Exp ()) (Exp ())
   deriving (Eq, Show, Ord, Data, Typeable)
 
+-- Range includes the left but exclude the right 
 data Range = Range Var (Exp ()) (Exp ())
   deriving (Eq, Ord, Data, Typeable)
 

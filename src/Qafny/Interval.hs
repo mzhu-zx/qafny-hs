@@ -77,8 +77,6 @@ instance SemiLattice (Exp ()) where
   (⊔) = simpleLub
   (⊓) = simpleGlb
 
--- newtype PRange = PRange { unPRange :: Range }
-
 instance PartialOrd Range where
   (⊑) = fRangeInterval (const (⊑))
 

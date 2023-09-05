@@ -193,9 +193,6 @@ instance DafnyPrinter (Stmt ()) where
       buildEmit (SIfDafny e b) = "if " <!> withParen (build e) <!> b
       buildEmit _              = error "Should have been handled!!"
 
-instance DafnyPrinter Partition where
-  build p = build $ show p
-
 instance DafnyPrinter GuardExp where
   build (GEPartition p _) = build p
 
@@ -225,6 +222,16 @@ instance DafnyPrinter EmitExp where
     foldl (\el (op, er) -> buildOp2 op el (build er)) (build e) eos
   build (ECard e) = "|" <!> e <!> build "|"
   build (ECall e es) = e <!> withParen (byComma es)
+
+instance DafnyPrinter Range where
+  build rr@(Range v l r) = debugOnly rr $ build (ESlice (EVar v) l r)
+
+instance DafnyPrinter Partition where
+  build pp@(Partition p) = debugOnly pp $ "[" <!> byComma p <!> "]"
+
+instance (Show a, Show b, DafnyPrinter a, DafnyPrinter b) => DafnyPrinter (a, b) where
+  build t@(a, b) = debugOnly t $ withParen . byComma $ [build a, build b]
+
 
 -- | Warning: don't emit parentheses in `buildOp2` because `EOpChained` relies
 -- on this function not to be parenthesized
@@ -266,6 +273,6 @@ texify = runBuilder 0 False
 showEmit :: DafnyPrinter a => a -> String
 showEmit = unpack . texify
 
+-- Debug mode
 showEmitI :: DafnyPrinter a => Int -> a -> String
 showEmitI i = unpack . runBuilder i True
-

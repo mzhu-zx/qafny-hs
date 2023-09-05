@@ -42,7 +42,7 @@ import           Qafny.Utils
 
 -- Utils
 import           Control.Carrier.NonDet.Church (runNonDetA)
-import           Control.Carrier.State.Lazy    (execState, evalState)
+import           Control.Carrier.State.Lazy    (evalState, execState)
 import           Control.Effect.Trace
 import           Control.Lens                  (at, (%~), (.~), (?~), (^.))
 import           Control.Lens.Tuple
@@ -59,12 +59,18 @@ import           Data.Maybe
     , fromMaybe
     , isJust
     , listToMaybe
-    , maybeToList, mapMaybe
+    , mapMaybe
+    , maybeToList
     )
 import qualified Data.Set                      as Set
 import           Data.Sum
 import           GHC.Stack                     (HasCallStack)
 import           Qafny.Partial                 (Reducible (reduce))
+import           Qafny.Syntax.Emit
+    ( DafnyPrinter (build)
+    , byComma
+    , showEmitI
+    )
 import           Text.Printf                   (printf)
 
 -- | Compute the type of the given expression
@@ -152,14 +158,15 @@ resolvePartition' se' = do
     errInternal = printf
       ("Type Error: " ++
        "The partition `%s` is not a sub-partition of any existing ones!\n%s")
-      (show se)
+      (showEmitI 2 se)
     mkRelOp :: Maybe Bool -> String
-    mkRelOp (Just True)  = "⊑"
-    mkRelOp (Just False) = "⋢"
+    mkRelOp (Just True)  = " ⊑ "
+    mkRelOp (Just False) = " ⋢ "
     mkRelOp Nothing      = "?⊑?"
     showRel :: Range -> Range -> NonEmpty (Maybe Bool, AEnv) -> [String]
     showRel r1 r2 ne = NE.toList $ ne
-      <&> \(rel, env) -> printf "%s %s %s at %s" (show r1) (mkRelOp rel) (show r2) (show env)
+      <&> \(rel, env) ->
+            printf "%s %s %s at %s" (showEmitI 0 r1) (mkRelOp rel) (showEmitI 0 r2) (showEmitI 0 $ byComma env)
 
 -- | Query all ranges related to the given range.
 resolveRange
@@ -232,9 +239,12 @@ contractRange r = do
   case botHuh of
     _ | all (== Just True) botHuh -> return []
     _ | all isJust botHuh         -> return [r] -- may or may not be, therefore leave it there
-    _                             -> err
+    _                             -> err botHuh
   where
-    err = throwError' $ printf "Cannot decide if %s is empty." (show r)
+    err reason = do
+      ienv <- ask @IEnv
+      throwError' $ printf "Cannot decide if %s is empty; context: %s"
+        (show r) (show ienv)
 
 -- TODO1: Pass in an environment and perform substitution before doing value
 -- checking
@@ -328,7 +338,8 @@ getRangeSplits s@(STuple (loc, p, qt)) rSplitTo@(Range to rstL rstR) = do
   case botHuh of
     _ | all (== Just True)  botHuh -> throwError' errBotRx
     _ | all (== Just False) botHuh -> return ()
-    _ -> throwError' $ printf "Cannot decide if %s is empty." (show rSplitTo)
+    _ -> do ienv <- ask @IEnv
+            throwError' $ printf "Cannot decide if %s is empty.\nEnv: %s" (show rSplitTo) (show ienv)
   (⊑??) <- (⊑?)
   case matched (⊑??) of
     Nothing -> throwError' errImproperRx
@@ -717,8 +728,8 @@ collectConstraints es = (Map.mapMaybe glb1 <$>) . execState Map.empty $ forM nor
   where
     collectIntv e@(op, v1, e2) = do
       intv :: Interval Exp' <- case op of
-            OLt -> pure $ Interval 0 (e2 - 1)
-            OLe -> pure $ Interval 0 e2
+            OLt -> pure $ Interval 0 e2
+            OLe -> pure $ Interval 0 (e2 + 1)
             OGt -> pure $ Interval (e2 + 1) maxE
             OGe -> pure $ Interval e2 maxE
             _   -> failUninterp e
@@ -786,19 +797,25 @@ extendTState p  qt = do
   xSt %= Map.unionWith (++) (Map.fromListWith (++) xMap)
   return $ fst <$> vsREmit
 
+
 -- * Lattice and Ordering Operators lifted to IEnv
 -- | Perform substitution on both ranges and compute with the (⊑) predicate
-
 liftIEnv2
   :: ( Has (Reader IEnv) sig m, Substitutable b )
   => (b -> b -> a) -> m (b -> b -> NonEmpty (a, AEnv))
 liftIEnv2 (<?>) = do
-  ienv <- ask
+  ienv <- ask @IEnv
   return $ \r1 r2 ->
-    let fvs = fVars r1 ++ fVars r2
+    let fvs = fVars r1 ++ fVars r2 ++ concatMap (concatMap fVars . NE.toList . snd) ienv
         aenvs = nondetIEnv $ filterIEnv fvs ienv
-        subst' r'' = (`subst` r'') <$> aenvs
+        subst' r'' = (\aenv -> fixN (subst aenv) (length aenv) r'') <$> aenvs
     in NE.zipWith (\(r1', r2') -> (r1' <?> r2',)) (NE.zip (subst' r1) (subst' r2)) aenvs
+
+fixN ::  (a -> a) -> Int -> (a -> a)
+fixN f = go
+  where
+    go 0 = id
+    go n = go (n - 1) . f 
 
 (⊑/)
   :: ( Has (Reader IEnv) sig m )
@@ -818,6 +835,6 @@ isBotI
   => m (Range -> NonEmpty (Maybe Bool))
 isBotI = do
   ienv <- ask
-  return $ \r -> isBot . (`substR` r) <$> nondetIEnv ienv
+  return $ \r -> isBot . (\env -> fixN (substR env) (length env) r) <$> nondetIEnv ienv
 
 

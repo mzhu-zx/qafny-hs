@@ -452,6 +452,7 @@ codegenStmt' (SFor idx boundl boundr eG invs seps body) = do
   newInvs <- forM invs codegenAssertion
 
   stmtsBody <- local (++ substEnv) $ do
+    ask @IEnv >>= trace . printf "Augmented IENV: %s" . show
     stSep <- typingPartition seps -- check if `seps` clause is valid
     stmtsBody <- codegenFor'Body idx boundl boundr eG body stSep (concat newInvs)
   
