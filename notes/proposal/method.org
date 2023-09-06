@@ -1,0 +1,85 @@
+#+TITLE: Proposal: Method Calling Convention
+#+OPTIONS: toc:nil date:nil H:4 author:nil
+
+* Synopsis
+
+To encode frame conditions, the pillar of conditionals, a straightforward
+approach is compile statements in a new frame as a new Dafny =method=.
+# 
+Here'e a challenge:
+
+=qreg=​s are expanded into its pure data representation such as =seq<nat>= and
+=seq<seq<nat>>= after compilation without using heap-allocated objects.
+# 
+A method where the users assumed that they passed a reference to the =qreg=
+object needs to emit a return value for the post-state of the =qreg= passed
+in.
+# 
+The type of the =qreg= passed to the method could change through the execution
+of the body, the return value needs to be calculated based on the final type
+accordingly.
+
+
+** Example 
+The following method 
+
+#+begin_src csharp
+  method GHZ(q : qreg[10])
+    requires { q[0  .. 10] : nor ↦ ⊗ i . (0) }
+    ensures  { q[0  .. 10] : en01 ↦ ∑ j ∈ [0 .. 2] . ⊗ k ∈ [0 .. 10] . ( j ) }
+  {
+    ...
+  }
+#+end_src
+#
+should be compiled into something like
+# 
+#+begin_src csharp
+  method GHZ_Compiled(q_in : seq<nat>) returns (q_out : seq<seq<nat>>)
+    requires { q_in[0  .. 10] : ⟦ nor ↦ ⊗ i . (0) ⟧ }
+    ensures  { q_out[0  .. 10] : ⟦ en01 ↦ ∑ j ∈ [0 .. 2] . ⊗ k ∈ [0 .. 10] . ( j ) ⟧ }
+  {
+    ...
+  }
+#+end_src
+
+
+* Proposal
+
+Methods can in fact have multiple parameter, therefore it's important to have a
+uniformed order to compile those input and return parameters.
+
+** Input
+#+begin_src racket
+  (define-metafunction qafny
+    call-conv : x ... -> x ...
+    [(call-conv (n x ...))
+     (n x' ...)
+     (where (x' ...) (call-conv x ...))
+     (where n (not (is-qreg n)))]
+    [(call-conv (q x ...))
+     (y' ... x' ...)
+     (where (x' ...) (call-conv x ...))
+     (where (y' ...) (call-conv-q/env q))])
+#+end_src
+#
+where =call-conv-q/env= resolves emit symbols based on the =type= information
+encoded in the *pre*-condition.
+
+** Output
+#+begin_src racket
+  (define-metafunction qafny
+    call-conv-ret : x ... -> x ...
+    [(call-conv-ret (n x ...))
+     (x' ...)
+     (where (x' ...) (call-conv-ret x ...))
+     (where n (not (is-qreg n)))]
+    [(call-conv-ret (q x ...))
+     (y' ... x' ...)
+     (where (x' ...) (call-conv-ret x ...))
+     (where (y' ...) (call-conv-q/env q))])
+#+end_src
+#
+where =call-conv-q/env= resolves emit symbols based on the =type= information
+encoded in the *post*-condition.
+

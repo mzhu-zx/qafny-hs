@@ -122,10 +122,10 @@ In the new standard, =function= is now =function method= by default, and
 =ghost function= represents =function= in Dafny 3.
 
 ** =abstract module=
-Dafny 4.0 introduced the notation =abstract module= which are modules not to be
-compiled. The upstream libraries seems to be adapted for that. (That's exactly
-what we need.) To conform to the standard, =Codegen= now generates a default
-abstract module wrapper to enable us to use those functions. 
+Dafny 4.0 introduced the notation of =abstract module= which are modules not to
+be compiled. The upstream libraries seems to be adapted for that. (That's
+exactly what we need.) To conform to the standard, =Codegen= now generates a
+default abstract module wrapper to so that we can use those functions.
 
 * Compilation
 
@@ -151,19 +151,19 @@ The =separates= side condition asserts that only the sequence of *states* in =x=
 between =i= and =j= actually satisfies =f (x [0 .. n])=.
 I will need to insert assertions when implementing assertion translations.
 
-** CH Biview
-=CH= is now expected to have two views: =bitvector= versus =nat=.
+** EN Biview
+=EN= is now expected to have two views: =bitvector= versus =nat=.
 
 I think it's unnecessary to track views by installing a new state field.
-A tentative solution is to make 2 =CH= types, =CHb= and =CHn=, to distinguish
+A tentative solution is to make 2 =EN= types, =EN01= and =EN=, to distinguish
 those two views.
 
 ** Biview Preference
-From previous implementations, the GHZ one favors =CHb= and the Shor's one
-favors =CHn=.  I think there's a pattern: in GHZ, the guard is of =CH= type and
-the λ oracle is /flip/ (a very bit-level operation), while in Shor's, the guard
-is =Had= type and the λ oracle is modulo multiplication which is on =nat=.
-
+From previous implementations, the GHZ one favors =EN01= and the Shor's one
+favors =EN=.  I think there's a pattern: in GHZ, the guard is of =CH= type and
+the λ oracle is essentially a /flip/ (a very bit-level operation), while in
+Shor's, the guard is =Had= type and the λ oracle is modulo multiplication which
+is on =nat=.
 
 ** Placeholder for Phase Calculus
 The following instance is responsible for mapping a session type to its emission
