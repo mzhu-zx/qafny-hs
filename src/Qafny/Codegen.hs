@@ -120,10 +120,8 @@ import Qafny.Interval (Interval(Interval))
 --------------------------------------------------------------------------------
 
 --------------------------------------------------------------------------------
--- * Codegen
+-- * Splits
 --------------------------------------------------------------------------------
-
-
 -- put Stmt's anyway
 putPure :: Has (Reader Bool) sig m
         => [Stmt'] -> m [Stmt']
@@ -134,6 +132,9 @@ putOpt :: Has (Reader Bool) sig m => m [a] -> m [a]
 putOpt s = do
   bool (pure []) s =<< ask
 
+--------------------------------------------------------------------------------
+-- * Codegen
+--------------------------------------------------------------------------------
 codegenAST
   :: ( Has (Reader Configs) sig m
      , Has (Reader TEnv) sig m
@@ -353,11 +354,56 @@ codegenStmt'
 codegenStmt' s@(SVar (Binding v t) Nothing)  = return [s]
 codegenStmt' s@(SVar (Binding v t) (Just e)) = do
   te <- typingExp e
-
   -- check if `t` agrees with the type of `e`
   checkSubtype t te
   codegenAlloc v e t <&> (: [])
-codegenStmt' ((:*=:) s EHad) = do
+
+codegenStmt' s@(_ :*=: _) =
+  codegenStmt'Apply s
+
+codegenStmt' (SIf e seps b) = do
+  -- resolve the type of the guard
+  stG@(STuple (_, _, qtG)) <- typingGuard e
+  -- resolve the body partition
+  stB'@(STuple( _, sB, qtB)) <- resolvePartitions . leftPartitions . inBlock $ b
+  let annotateCastB = qComment $
+        printf "Cast Body Partition %s => %s" (show qtB) (show TEN)
+  (stmtsCastB, stB) <- case qtB of
+    TEN -> return ([], stB')
+    _   -> (,) . (annotateCastB :) <$> castPartitionEN stB' <*> resolvePartition sB
+  -- act based on the type of the guard
+  stmts <- case qtG of
+    THad -> codegenStmt'If'Had stG stB b
+    _    -> undefined
+  return $ stmtsCastB ++ stmts
+
+codegenStmt' s@(SFor {}) =
+  codegenStmt'For s
+
+codegenStmt' (SAssert e@(ESpec{})) =
+  (SAssert <$>) <$> codegenAssertion e
+
+codegenStmt' s = error $ "Unimplemented:\n\t" ++ show s ++ "\n"
+
+
+--------------------------------------------------------------------------------
+-- * Application
+--------------------------------------------------------------------------------
+-- TODO: make this typesafe by using DataKinds
+codegenStmt'Apply
+  :: ( Has (Reader TEnv) sig m
+     , Has (Reader Bool) sig m
+     , Has (Reader IEnv) sig m
+     , Has (Reader QTy) sig m
+     , Has (State TState)  sig m
+     , Has (Error String) sig m
+     , Has (Gensym String) sig m
+     , Has (Gensym RBinding) sig m
+     , Has Trace sig m
+     )
+  => Stmt'
+  -> m [Stmt']
+codegenStmt'Apply ((:*=:) s EHad) = do
   r <- case unpackPart s of
     [r] -> return r
     _   -> throwError "TODO: support non-singleton partition in `*=`"
@@ -374,8 +420,7 @@ codegenStmt' ((:*=:) s EHad) = do
     opCastHad TNor = return "CastNorHad"
     opCastHad t = throwError $ "type `" ++ show t ++ "` cannot be casted to Had type"
 
-
-codegenStmt' stmt@(s@(Partition ranges) :*=: eLam@(EEmit (ELambda {}))) = do
+codegenStmt'Apply stmt@(s@(Partition ranges) :*=: eLam@(EEmit (ELambda {}))) = do
   (st'@(STuple (_, _, qt')), corr) <- resolvePartition' s
   qtLambda <- ask
   checkSubtypeQ qt' qtLambda
@@ -427,7 +472,26 @@ codegenStmt' stmt@(s@(Partition ranges) :*=: eLam@(EEmit (ELambda {}))) = do
     lambdaSplit v el er = EEmit (ELambda v (bodySplit v el er))
     mkMapCall v = v ::=: callMap eLam (EVar v)
 
-codegenStmt' (SIf e seps b) = do
+codegenStmt'Apply _ = fail "What could possibly go wrong?"
+
+--------------------------------------------------------------------------------
+-- * Conditional
+--------------------------------------------------------------------------------
+codegenStmt'If
+  :: ( Has (Reader TEnv) sig m
+     , Has (Reader Bool) sig m
+     , Has (Reader IEnv) sig m
+     , Has (Reader QTy) sig m
+     , Has (State TState)  sig m
+     , Has (Error String) sig m
+     , Has (Gensym String) sig m
+     , Has (Gensym RBinding) sig m
+     , Has Trace sig m
+     )
+  => Stmt'
+  -> m [Stmt']
+
+codegenStmt'If (SIf e seps b) = do
   -- resolve the type of the guard
   stG@(STuple (_, _, qtG)) <- typingGuard e
   -- resolve the body partition
@@ -443,7 +507,55 @@ codegenStmt' (SIf e seps b) = do
     _    -> undefined
   return $ stmtsCastB ++ stmts
 
-codegenStmt' (SFor idx boundl boundr eG invs seps body) = do
+codegenStmt'If _ = fail "What could go wrong?"
+
+-- | Code Generation of an `If` statement with a Had partition
+codegenStmt'If'Had
+  :: ( Has (Reader TEnv) sig m
+     , Has (State TState)  sig m
+     , Has (Error String) sig m
+     , Has (Gensym String) sig m
+     , Has (Gensym RBinding) sig m
+     , Has (Reader IEnv) sig m
+     , Has (Reader QTy) sig m
+     , Has (Reader Bool) sig m
+     , Has Trace sig m
+     )
+  => STuple -> STuple -> Block'
+  -> m [Stmt']
+codegenStmt'If'Had stG stB' b = do
+  -- 0. extract partition, this will not be changed
+  let sB = unSTup stB' ^. _2
+  -- 1. cast the guard and duplicate the body partition
+  (stmtsDupB, corr) <- dupState sB
+  -- 2. codegen the body
+  stmtB <- SEmit . SBlock <$> codegenBlock b
+  -- TODO: left vs right merge strategy
+  (cardMain, cardStash) <- cardStatesCorr corr
+  -- 3. merge duplicated body partitions and merge the body with the guard
+  stB <- resolvePartition sB
+  stmtsG <- mergeHadGuard stG stB cardMain cardStash
+  let stmtsMerge = mergeEmitted corr
+  return $ stmtsDupB ++ [stmtB] ++ stmtsMerge ++ stmtsG
+
+--------------------------------------------------------------------------------
+-- * Loop
+--------------------------------------------------------------------------------
+codegenStmt'For
+    :: ( Has (Reader TEnv) sig m
+     , Has (Reader Bool) sig m
+     , Has (Reader IEnv) sig m
+     , Has (Reader QTy) sig m
+     , Has (State TState)  sig m
+     , Has (Error String) sig m
+     , Has (Gensym String) sig m
+     , Has (Gensym RBinding) sig m
+     , Has Trace sig m
+     )
+  => Stmt'
+  -> m [Stmt']
+
+codegenStmt'For (SFor idx boundl boundr eG invs seps body) = do
   -- statePreLoop: the state before the loop starts
   -- stateLoop:    the state for each iteration
   (stmtsPreGuard, statePreLoop, stateLoop) <- codegenInit
@@ -546,51 +658,10 @@ codegenStmt' (SFor idx boundl boundr eG invs seps body) = do
       trace $ show (idx, boundr)
       put . reduce $ subst [(idx, boundr)] tsLoop
 
+codegenStmt'For _ = fail "What could possibly go wrong?"
 
 
-codegenStmt' (SAssert e@(ESpec{})) = do
-  (SAssert <$>) <$> codegenAssertion e
-  -- check type or cast here
 
-codegenStmt' s = error $ "Unimplemented:\n\t" ++ show s ++ "\n"
-
-
---------------------------------------------------------------------------------
--- * Conditional
---------------------------------------------------------------------------------
-
--- | Code Generation of an `If` statement with a Had partition
-codegenStmt'If'Had
-  :: ( Has (Reader TEnv) sig m
-     , Has (State TState)  sig m
-     , Has (Error String) sig m
-     , Has (Gensym String) sig m
-     , Has (Gensym RBinding) sig m
-     , Has (Reader IEnv) sig m
-     , Has (Reader QTy) sig m
-     , Has (Reader Bool) sig m
-     , Has Trace sig m
-     )
-  => STuple -> STuple -> Block'
-  -> m [Stmt']
-codegenStmt'If'Had stG stB' b = do
-  -- 0. extract partition, this will not be changed
-  let sB = unSTup stB' ^. _2
-  -- 1. cast the guard and duplicate the body partition
-  (stmtsDupB, corr) <- dupState sB
-  -- 2. codegen the body
-  stmtB <- SEmit . SBlock <$> codegenBlock b
-  -- TODO: left vs right merge strategy
-  (cardMain, cardStash) <- cardStatesCorr corr
-  -- 3. merge duplicated body partitions and merge the body with the guard
-  stB <- resolvePartition sB
-  stmtsG <- mergeHadGuard stG stB cardMain cardStash
-  let stmtsMerge = mergeEmitted corr
-  return $ stmtsDupB ++ [stmtB] ++ stmtsMerge ++ stmtsG
-
---------------------------------------------------------------------------------
--- * Loop
---------------------------------------------------------------------------------
 -- | Code generation of the body statements of a for loop construct
 codegenFor'Body
   :: ( Has (Reader TEnv) sig m
@@ -818,9 +889,9 @@ hadGuardMergeExp vEmit tEmit cardMain cardStash eBase =
   let ~(TSeq tInSeq) = tEmit
   in [ qComment "Merge: Body partition + the Guard partition."
      , (vEmit ::=:) $
-       (EEmit $ EMakeSeq tInSeq cardMain $
+       (EEmit . EMakeSeq tInSeq cardMain $
           constExp $ EOp2 OAdd eBase (ENum 1)) +
-       (EEmit $ EMakeSeq tInSeq cardStash $ constExp eBase)
+       (EEmit . EMakeSeq tInSeq cardStash $ constExp eBase)
      ]
 
 -- Emit two expressions representing the number of kets in two states in

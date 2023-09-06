@@ -14,6 +14,7 @@
   , TypeFamilies
   , TypeOperators
   , UndecidableInstances
+  , GADTs
   #-}
 
 module Qafny.Syntax.AST where
@@ -251,18 +252,18 @@ instance Show Partition where
       showPP []       = "∅"
       showPP (r : rs) = foldr (\r' s -> show r' ++ " ⊎ " ++ s) (show r) rs
 
-data Stmt x
-  = SAssert (XRec x (Exp x))
-  | SCall (XRec x (Exp x)) [(XRec x (Exp x))]
-  | SVar (XRec x (Binding x)) (Maybe (XRec x (Exp x)))
-  | Var ::=: (XRec x (Exp x))
-  | Partition :*=: (XRec x (Exp x))
-  | SDafny String
-  | SIf GuardExp Partition (Block x)
+data Stmt x where
+  SAssert :: (XRec x (Exp x)) -> Stmt x
+  SCall :: (XRec x (Exp x)) -> [(XRec x (Exp x))] -> Stmt x
+  SVar :: (XRec x (Binding x)) -> (Maybe (XRec x (Exp x))) -> Stmt x
+  (::=:) :: Var -> (XRec x (Exp x)) -> Stmt x
+  (:*=:) :: Partition -> (XRec x (Exp x)) -> Stmt x
+  SDafny :: String -> Stmt x
+  SIf :: GuardExp -> Partition -> (Block x) -> Stmt x
   -- TODO: Refactor 'For' with a record
   --     id  left             right            guard    invarants          separates Body
-  | SFor Var (XRec x (Exp x)) (XRec x (Exp x)) GuardExp [(XRec x (Exp x))] Partition (Block x)
-  | SEmit EmitStmt
+  SFor :: Var ->  (XRec x (Exp x)) -> (XRec x (Exp x)) -> GuardExp -> [(XRec x (Exp x))] -> Partition -> (Block x) -> Stmt x
+  SEmit :: EmitStmt -> Stmt x
 
 deriving instance Show (Stmt ())
 deriving instance Show (Stmt Source)
