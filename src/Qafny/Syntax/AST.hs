@@ -44,6 +44,10 @@ data AExp
   | AVar Var
   deriving (Show, Eq, Ord, Data, Typeable)
 
+aexpToExp :: AExp -> Exp ()
+aexpToExp (ANat i) = ENum i
+aexpToExp (AVar v) = EVar v 
+
 data Ty
   = TNat
   | TInt
@@ -53,6 +57,20 @@ data Ty
   | TMethod [Ty] [Ty] -- parameter and return types
   | TEmit EmitTy
   deriving (Show, Eq, Ord, Data, Typeable)
+
+data MethodElem
+  = MTyPure Var Ty
+  | MTyQuantum Range
+  deriving Show
+
+data MethodType = MethodType
+  -- Parameters for the source method (Type resolution level)
+  { mtSrcParams :: [MethodElem]
+  , mtSrcReturns :: [MethodElem]
+  -- Parameters for emitted method (Dafny level)
+  -- , mtTgtParams :: [MethodElem]
+  -- , mtTgtReturns :: [MethodElem]
+  }
 
 -- | EmitExp : Unchecked Types for Codegen Only
 data EmitTy

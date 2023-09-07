@@ -113,7 +113,9 @@ instance DafnyPrinter Ty where
   build TBool     = build "bool"
   build (TQReg n) = "qreg" <+> n
   build (TSeq t)  = "seq<" <!> t <!> ">"
-  build _         = undefined
+  build t@(TMethod ts ts') = debugOnly t $
+    withParen (byComma ts) <+> "->" <+> withParen (byComma ts')
+  build t@(TEmit (TAny s)) = debugOnly t $ build s
 
 instance DafnyPrinter AExp where
   build (ANat n) = build n

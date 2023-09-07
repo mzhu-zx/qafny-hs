@@ -102,8 +102,8 @@ typingExp (EOp2 op2 e1 e2) =
     typingOp2 OLt  = return (TNat, TNat, TBool)
     typingOp2 OLe  = return (TNat, TNat, TBool)
     typingOp2 ONor = exp2AExp e1 >>= \ae -> return (TNat, TNat, TQReg ae)
-
--- typing e = throwError $ "Typing for "  ++ show e ++ " is unimplemented!"
+typingExp e = throwError' $
+  printf "Expression %s has no proper type." (showEmitI 0 e)
 
 
 -- | Compute the quantum type of a given (possibly incomplete) partition
@@ -284,8 +284,6 @@ splitScheme' s@(STuple (loc, p, qt)) rSplitTo@(Range to rstL rstR) = do
             -- "new range -> new loc"
             [ (rAux, locAux) | rAux <- rsAux ] ++
             -- "split ranges -> old loc"
-
-            -- "split ranges -> old loc"
             [ (rMainNew, loc) | rMainNew <- rsRem ] ++
             -- "the rest with the old range removed"
             List.filter ((/= rOrigin) . fst) xRangeLocs
@@ -458,6 +456,16 @@ typingPartition s = do
 --------------------------------------------------------------------------------
 -- * Subtyping
 --------------------------------------------------------------------------------
+checkTypeEq
+  :: Has (Error String) sig m
+  => Ty -> Ty -> m ()
+checkTypeEq t1 t2 =
+  unless (t1 == t2)
+    (throwError @String $
+      printf "Type mismatch: `%s` is not a subtype of `%s`"
+      (showEmitI 0 t1)
+      (showEmitI 0 t2))
+
 checkSubtype
   :: Has (Error String) sig m
   => Ty -> Ty -> m ()
@@ -717,6 +725,57 @@ mergeSTuples
       (at locMain ?~ (newPartition, TEN))        -- update main's state
     return ()
 
+--------------------------------------------------------------------------------
+-- * Method Typing
+--------------------------------------------------------------------------------
+
+-- Generate a method type signature through pre-&post- conditions and the
+-- origianl signature following the calling convention.
+-- 
+analyzeMethodType
+  ::  ( Has (Error String) sig m )
+  => QMethod ()
+  -> m (Var, MethodType)
+analyzeMethodType (QMethod v bds rts rqs ens _) = do
+  let srcParams = collectRange <$> bds
+  let srcReturns = collectRange <$> rts
+  return $ (v, MethodType { mtSrcParams=srcParams, mtSrcReturns=srcReturns })
+  where
+    collectRange :: Binding () -> MethodElem
+    collectRange (Binding vq (TQReg a)) = MTyQuantum (Range vq 0 (aexpToExp a))
+    collectRange (Binding _ t)       = MTyPure v t
+
+
+
+-- Check if the given argument expressions are consistent with the types in the
+-- signature
+typeCheckMethodApplication
+  ::  ( Has (Error String) sig m
+      , Has (Reader TEnv) sig m
+      , Has (State TState) sig m
+      )
+  => [Exp']
+  -> MethodType
+  -> m ()
+typeCheckMethodApplication es
+  MethodType { mtSrcParams=srcParams
+             -- skip return parameters for now
+             } = do
+  unless (length es == length srcParams) $ arityMismatch srcParams
+  mapM_ (uncurry checkEachParameter) $ zip es srcParams
+  where
+    arityMismatch prs = throwError' $
+      "The number of arguments given doesn't match the number of parameters expected by the method."
+      ++ printf "Given:\n%s\nExpected:\n%s" (show es) (show prs)
+
+    -- typecheck an argument against type definition
+    checkEachParameter earg (MTyPure v ty) = do
+      tyArg <- typingExp earg
+      checkTypeEq tyArg ty
+      
+    checkEachParameter earg ty = undefined
+    
+
 
 --------------------------------------------------------------------------------
 -- | Constraints
@@ -756,8 +815,10 @@ collectConstraints es = (Map.mapMaybe glb1 <$>) . execState Map.empty $ forM nor
 --------------------------------------------------------------------------------
 -- Compute types of methods from the toplevel
 collectMethodTypes :: AST -> [(Var, Ty)]
-collectMethodTypes a = [ (idt, TMethod (bdTypes ins) (bdTypes outs))
-                       | Toplevel (Inl (QMethod idt ins outs _ _ _)) <- a]
+collectMethodTypes a =
+  [ (idt, TMethod (bdTypes ins) (bdTypes outs))
+  | Toplevel (Inl (QMethod idt ins outs _ _ _)) <- a
+  ]
 
 collectMethodTypesM :: AST -> Map.Map Var Ty
 collectMethodTypesM = Map.fromList . collectMethodTypes
@@ -768,7 +829,6 @@ appkEnvWithBds bds = kEnv %~ appBds
 
 bdTypes :: Bindings () -> [Ty]
 bdTypes b = [t | Binding _ t <- b]
-
 
 
 -- | Construct from a scratch a new TState containing the given partitons.

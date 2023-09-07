@@ -1,6 +1,6 @@
 {-# LANGUAGE
-    DataKinds
-  , CPP
+    CPP
+  , DataKinds
   , FlexibleContexts
   , FlexibleInstances
   , IncoherentInstances
@@ -22,7 +22,7 @@ import           Control.Effect.Catch
 import           Control.Effect.Error         (Error, throwError)
 import           Control.Effect.Lens
 import           Control.Effect.Reader
-import           Control.Effect.State         (State, get, put, modify)
+import           Control.Effect.State         (State, get, modify, put)
 import           Control.Effect.Trace
 import           Effect.Gensym                (Gensym, gensym)
 
@@ -30,7 +30,14 @@ import           Effect.Gensym                (Gensym, gensym)
 import           Qafny.Gensym                 (resumeGensym)
 
 -- Utils
-import           Control.Lens                 (at, non, (%~), (?~), (^.), equality)
+import           Control.Lens
+    ( at
+    , equality
+    , non
+    , (%~)
+    , (?~)
+    , (^.)
+    )
 import           Control.Lens.Tuple
 import           Control.Monad
     ( MonadPlus (mzero)
@@ -54,9 +61,11 @@ import           Control.Carrier.State.Strict (runState)
 import           Control.Effect.Fail          (Fail)
 import           Control.Exception            (throw)
 import           Data.Bool                    (bool)
+import           Data.List                    (find)
 import           Data.Maybe                   (listToMaybe, maybeToList)
 import           Qafny.Config
 import           Qafny.Env
+import           Qafny.Interval               (Interval (Interval))
 import           Qafny.Partial                (Reducible (reduce), sizeOfRangeP)
 import           Qafny.Syntax.AST
 import           Qafny.Syntax.ASTFactory
@@ -71,8 +80,10 @@ import           Qafny.Typing
     , castScheme
     , checkSubtype
     , checkSubtypeQ
+    , collectConstraints
     , collectMethodTypesM
     , extendTState
+    , matchEmitStates
     , matchStateCorrLoop
     , mergeMatchedTState
     , mergeSTuples
@@ -88,7 +99,7 @@ import           Qafny.Typing
     , typingExp
     , typingGuard
     , typingPartition
-    , typingPartitionQTy, matchEmitStates, collectConstraints
+    , typingPartitionQTy
     )
 import           Qafny.Utils
     ( dumpSSt
@@ -103,8 +114,6 @@ import           Qafny.Utils
     , rethrowMaybe
     , throwError'
     )
-import Data.List (find)
-import Qafny.Interval (Interval(Interval))
 
 --------------------------------------------------------------------------------
 -- * Introduction
@@ -383,6 +392,9 @@ codegenStmt' s@(SFor {}) =
 codegenStmt' (SAssert e@(ESpec{})) =
   (SAssert <$>) <$> codegenAssertion e
 
+codegenStmt' (SCall x eargs) =
+  undefined
+
 codegenStmt' s = error $ "Unimplemented:\n\t" ++ show s ++ "\n"
 
 
@@ -440,7 +452,7 @@ codegenStmt'Apply stmt@(s@(Partition ranges) :*=: eLam@(EEmit (ELambda {}))) = d
 
   rSt@(Range _ esLower esUpper) <-
     maybe (throwError' (errNotInCorr r corr')) return
-    $ lookup (reduce r) (first reduce <$> corr')  
+    $ lookup (reduce r) (first reduce <$> corr')
 
   trace $ printf "LEFT: %s, RIGHT: %s" (show r) (show rSt)
   -- | It's important not to use the fully resolved `s` here because the OP
@@ -567,10 +579,10 @@ codegenStmt'For (SFor idx boundl boundr eG invs seps body) = do
     ask @IEnv >>= trace . printf "Augmented IENV: %s" . show
     stSep <- typingPartition seps -- check if `seps` clause is valid
     stmtsBody <- codegenFor'Body idx boundl boundr eG body stSep (concat newInvs)
-  
+
     -- update the post-loop typing state
     trace $ "stateLoop:\n" ++ show stateLoop
-    codegenFinish stateLoop 
+    codegenFinish stateLoop
     get @TState >>= trace . ("staetLoop (subst):\n" ++) . show
     pure $ stmtsBody
 
@@ -628,21 +640,21 @@ codegenStmt'For (SFor idx boundl boundr eG invs seps body) = do
       return (stmtsPreGuard ++ [stmtsEquiv], statePreLoop, stateLoop)
 
     -- update the typing state by plugging the right bound into the index
-    -- parameter 
-  
+    -- parameter
+
     -- [ASSIGN A TICKET HERE]
     -- FIXME: there's a bug here though, if we have something like
-    -- 
+    --
     --   for i := 0 to 10
     --      invariant i != 10 ==> <some partition>
-    -- 
+    --
     -- This logically valid predicate will cause a problem in generating the
     -- post-condition of the entire loop statement because I only blindly
     -- collect all partitions mentioned by the invariants without considering
     -- the semantics of the logic.
     --
     -- Type states depend solely on those invariant partitions to work
-    -- correctly. 
+    -- correctly.
     --
     -- Here's an (unimplemented) workaround
     -- - SpecExpressions cannot be mixed with &&, || or not
@@ -653,7 +665,7 @@ codegenStmt'For (SFor idx boundl boundr eG invs seps body) = do
     --
     -- With those restrictions, I can collect negative position propositions and
     -- solve and decide when to include predicates using the PE engine.
-    -- 
+    --
     codegenFinish tsLoop = do
       trace $ show (idx, boundr)
       put . reduce $ subst [(idx, boundr)] tsLoop
@@ -755,12 +767,12 @@ codegenFor'Body idx boundl boundr eG body stSep@(STuple (_, Partition rsSep, qtS
       mSchemes <- mergeMatchedTState tsFalse tsTrue
       stmtsVarsMergeMatched <- codegenMergeScheme mSchemes
 
-      -- I need a way to merge two typing state here. 
+      -- I need a way to merge two typing state here.
       put tsFalse
 
       let inferTsLoopEnd =  subst [(idx, EVar idx + 1)]
       stmtsMatchLoopBeginEnd <- codegenMatchLoopBeginEnd . inferTsLoopEnd $ stateIterBegin ^. emitSt
-      
+
       -- 4. put stashed part back
       return ( []
              , concat [ stmtsSaveFalse
@@ -809,7 +821,7 @@ codegenFor'Body idx boundl boundr eG body stSep@(STuple (_, Partition rsSep, qtS
       emitStEnd <- (^. emitSt) <$> get @TState
       let corrBeginEnd = matchEmitStates emitStBegin emitStEnd
       -- I don't remember the purpose of this line, purely sanity check?
-      pure $ uncurry mkAssignment . snd <$> corrBeginEnd 
+      pure $ uncurry mkAssignment . snd <$> corrBeginEnd
 
 
     errNoSep = "Insufficient knowledge to perform a separation for a EN01 partition "
@@ -1181,7 +1193,7 @@ codegenMergeScheme = mapM $ \scheme -> do
           -- TEN   is emitted as seq<nat>      representing Sum . Tensor,
           -- It suffices to simply concat them
           pure $ (merge3 v1 v1 v2, v1)
-        _ -> throwError' "This pattern shoule be complete!" 
+        _ -> throwError' "This pattern shoule be complete!"
   where
     merge3 vS vRF vRT = vS ::=: (EVar vRF + EVar vRT)
 

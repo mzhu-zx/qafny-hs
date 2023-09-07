@@ -83,3 +83,11 @@ encoded in the *pre*-condition.
 where =call-conv-q/env= resolves emit symbols based on the =type= information
 encoded in the *post*-condition.
 
+
+* Implementation
+
+** Pass =qreg=
+How to pass a =qreg= argument? Pass the =qreg= seems suffices, but it's not
+enough because chances are that method requires less qubits than what the caller
+could provide. Therefore, the syntax should allow the caller to pass a slice of
+qubits, which can be of exactly the same syntax as passing a range.
