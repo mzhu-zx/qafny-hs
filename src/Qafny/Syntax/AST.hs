@@ -60,13 +60,14 @@ data Ty
 
 data MethodElem
   = MTyPure Var Ty
-  | MTyQuantum Range
+  | MTyQuantum Var Exp' Ty
   deriving Show
 
 data MethodType = MethodType
   -- Parameters for the source method (Type resolution level)
   { mtSrcParams :: [MethodElem]
   , mtSrcReturns :: [MethodElem]
+  , mtInstantiate :: Map.Map Var Range -> [(Partition, QTy)]
   -- Parameters for emitted method (Dafny level)
   -- , mtTgtParams :: [MethodElem]
   -- , mtTgtReturns :: [MethodElem]

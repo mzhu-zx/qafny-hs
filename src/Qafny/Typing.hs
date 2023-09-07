@@ -15,6 +15,7 @@ module Qafny.Typing where
 
 -- Effects
 import           Control.Carrier.Reader        (runReader)
+import           Control.Carrier.State.Lazy    (execState)
 import           Control.Effect.Catch
 import           Control.Effect.Error          (Error, throwError)
 import           Control.Effect.Lens
@@ -44,9 +45,9 @@ import           Qafny.Utils
 import           Control.Carrier.NonDet.Church (runNonDetA)
 import           Control.Carrier.State.Lazy    (evalState, execState)
 import           Control.Effect.Trace
-import           Control.Lens                  (at, (%~), (.~), (?~), (^.))
+import           Control.Lens                  (at, (%~), (.~), (?~), (^.), Identity (runIdentity))
 import           Control.Lens.Tuple
-import           Control.Monad                 (forM, forM_, unless, when)
+import           Control.Monad                 (forM, forM_, unless, when, zipWithM)
 import           Data.Bool                     (bool)
 import           Data.Function                 ((&))
 import           Data.Functor                  ((<&>))
@@ -739,13 +740,42 @@ analyzeMethodType
 analyzeMethodType (QMethod v bds rts rqs ens _) = do
   let srcParams = collectRange <$> bds
   let srcReturns = collectRange <$> rts
-  return $ (v, MethodType { mtSrcParams=srcParams, mtSrcReturns=srcReturns })
+  let instantiate (r :: Map.Map Var Range) = runIdentity $ runReader r $
+        forM (mapMaybe collectSignature rqs) go
+
+  return $ (v, MethodType { mtSrcParams=srcParams
+                          , mtSrcReturns=srcReturns
+                          , mtInstantiate = instantiate
+                          })
   where
     collectRange :: Binding () -> MethodElem
-    collectRange (Binding vq (TQReg a)) = MTyQuantum (Range vq 0 (aexpToExp a))
-    collectRange (Binding _ t)       = MTyPure v t
+    collectRange (Binding vq (TQReg a)) = MTyQuantum vq (aexpToExp a)
+    collectRange (Binding _ t)          = MTyPure v t
 
+    collectSignature :: Exp' -> Maybe (Partition, QTy)
+    collectSignature (ESpec s qt _) = pure (s, qt)
+    collectSignature _              = Nothing
 
+    go
+      :: (Has (Reader (Map.Map Var Range)) sig' m')
+      => (Partition, QTy) -> m' (Partition, QTy)
+    go (s, qt) = (,qt) <$> instPart s 
+
+    -- instantiate a Type expression with a given mapping from variable to Range
+    instPart
+      :: (Has (Reader (Map.Map Var Range)) sig' m')
+      => Partition -> m' Partition
+    instPart (Partition rs) = Partition <$> mapM instRange rs
+
+    instRange
+      :: ( Has (Reader (Map.Map Var Range)) sig' m' )
+      => Range -> m' Range
+    instRange rr@(Range x l _) = do
+      -- Q: What to do with the right
+      rMaybe <- asks (Map.!? x)
+      pure $ case rMaybe of
+        Just (Range x' l' r') -> reduce $ Range x' (reduce (l + l')) (reduce (l + r'))
+        Nothing               -> rr
 
 -- Check if the given argument expressions are consistent with the types in the
 -- signature
@@ -759,23 +789,47 @@ typeCheckMethodApplication
   -> m ()
 typeCheckMethodApplication es
   MethodType { mtSrcParams=srcParams
-             -- skip return parameters for now
+             , mtInstantiate=instantiator
              } = do
   unless (length es == length srcParams) $ arityMismatch srcParams
-  mapM_ (uncurry checkEachParameter) $ zip es srcParams
+  envArgs <- execState @(Map.Map Var Range) Map.empty $ zipWithM checkEachParameter es srcParams
+  let inst = instantiator envArgs
+  -- perform qtype check for each argument 
+  mapM_ (uncurry typingPartitionQTy) inst
   where
     arityMismatch prs = throwError' $
       "The number of arguments given doesn't match the number of parameters expected by the method."
       ++ printf "Given:\n%s\nExpected:\n%s" (show es) (show prs)
 
-    -- typecheck an argument against type definition
+    checkEachParameter
+      :: ( Has (Error String) sig m'
+         , Has (State (Map.Map Var Range)) sig m'
+         , Has (State TState) sig m'
+         , Has (Reader TEnv) sig m'
+         )
+      => Exp' -> MethodElem -> m' ()
+    -- for simple types, check it immediately
     checkEachParameter earg (MTyPure v ty) = do
       tyArg <- typingExp earg
       checkTypeEq tyArg ty
-      
-    checkEachParameter earg ty = undefined
-    
+    -- for quantum types, collect the qreg correspondence instead 
+    checkEachParameter earg (MTyQuantum v cardinality) = do
+      qRange@(Range x el er) <-
+        case earg of
+          EVar varg -> pure $ Range varg 0 cardinality
+          EPartition (Partition [r]) -> pure r
+          _ -> nonQArgument earg
+      -- check if the cardinality is fine
+      let eCard :: Exp' = er - el
+      eq <- (allI .:) <$> liftIEnv2 (≡)
+      unless (eq 0 (er - el - cardinality)) $
+        throwError' $ cardinalityMismatch eCard cardinality
+      modify (Map.insert v qRange)
 
+    nonQArgument arg = fail $ printf "%s is not a valid qreg parameter" (showEmitI 0 arg)
+    cardinalityMismatch cardGiven cardReq = fail $
+      printf "the cardinality of the qreg passed %s doesn't match the required: %s"
+      (showEmitI 0 cardGiven) (showEmitI 0 cardReq)
 
 --------------------------------------------------------------------------------
 -- | Constraints
@@ -877,6 +931,7 @@ fixN f = go
     go 0 = id
     go n = go (n - 1) . f 
 
+-- some permutations
 (⊑/)
   :: ( Has (Reader IEnv) sig m )
   => m (Range -> Range -> NonEmpty (Maybe Bool, AEnv))
@@ -885,6 +940,7 @@ fixN f = go
 allI :: NonEmpty (Maybe Bool, a) -> Bool
 allI = all ((== Just True) . fst)
 
+-- All hold?
 (⊑?)
   :: ( Has (Reader IEnv) sig m )
   => m (Range -> Range -> Bool)

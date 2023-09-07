@@ -554,7 +554,7 @@ codegenStmt'If'Had stG stB' b = do
 -- * Loop
 --------------------------------------------------------------------------------
 codegenStmt'For
-    :: ( Has (Reader TEnv) sig m
+  :: ( Has (Reader TEnv) sig m
      , Has (Reader Bool) sig m
      , Has (Reader IEnv) sig m
      , Has (Reader QTy) sig m
@@ -1256,7 +1256,6 @@ codegenAssertion' (ESpec s qt espec) = do
   vsEmit <- unpackPart s `forM` (`findEmitRangeQTy` qt)
   codegenSpecExp (zip vsEmit (unpackPart s)) qt espec
 codegenAssertion' e = return [e]
-
 
 -- | Take in the emit variable corresponding to each range in the partition and the
 -- partition type; with which, generate expressions (predicates)
