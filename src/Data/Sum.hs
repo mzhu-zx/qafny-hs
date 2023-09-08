@@ -22,3 +22,12 @@ instance Injection f (f :+: g) where
 
 instance Injection g (f :+: g) where
   inj = Inr
+
+projLeft :: (f :+: g) -> Maybe f
+projLeft (Inl f) = Just f
+projLeft _       = Nothing
+
+projRight :: (f :+: g) -> Maybe g
+projRight (Inr g) = Just g
+projRight _       = Nothing
+

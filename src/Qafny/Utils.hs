@@ -5,7 +5,7 @@ module Qafny.Utils where
 
 --
 import           Control.Carrier.State.Church (State)
-import           Control.Effect.Error         (Error, Has, throwError)
+import           Control.Effect.Error         (Error, throwError)
 import           Control.Effect.Lens
 import           Control.Lens                 (at, (?~), (^.))
 

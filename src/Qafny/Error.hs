@@ -2,14 +2,13 @@ module Qafny.Error where
 
 import qualified Data.Map.Strict  as Map
 
-import           Qafny.Syntax.AST (Loc, Partition, Range, Ty, Var)
+import           Qafny.Syntax.AST (Loc, Partition, Range, MTy, Var)
 import           Text.Printf      (printf)
 
-data QError = UnknownVariableError Var (Map.Map Var Ty)
+data QError = UnknownVariableError Var (Map.Map Var MTy)
             | UnknownPartitionError Partition
             | UnknownRangeError Range
             | UnknownLocError Loc
-  deriving Eq
 
 instance Show QError where
   show (UnknownVariableError v env) =

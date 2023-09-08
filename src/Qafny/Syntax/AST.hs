@@ -1,6 +1,5 @@
 {-# LANGUAGE
     DeriveAnyClass
-  , DeriveDataTypeable
   , DeriveFoldable
   , DeriveFunctor
   , DeriveGeneric
@@ -23,7 +22,7 @@ import           Qafny.TTG
 
 --------------------------------------------------------------------------------
 import           Data.Bifunctor
-import           Data.Data
+-- import           Data.Data
 import           Data.Functor.Foldable
     ( Base
     , Corecursive (embed)
@@ -42,7 +41,8 @@ import           Text.Printf              (printf)
 data AExp
   = ANat Int
   | AVar Var
-  deriving (Show, Eq, Ord, Data, Typeable)
+  deriving (Show, Eq, Ord-- , Data, Typeable
+           )
 
 aexpToExp :: AExp -> Exp ()
 aexpToExp (ANat i) = ENum i
@@ -54,14 +54,14 @@ data Ty
   | TBool
   | TSeq Ty
   | TQReg AExp
-  | TMethod [Ty] [Ty] -- parameter and return types
+  -- | TMethod [Ty] [Ty] -- parameter and return types
   | TEmit EmitTy
-  deriving (Show, Eq, Ord, Data, Typeable)
+  deriving (Show, Eq, Ord)
 
 data MethodElem
   = MTyPure Var Ty
   | MTyQuantum Var Exp'
-  deriving Show
+  deriving (Show, Eq, Ord)
 
 data MethodType = MethodType
   -- Parameters for the source method (Type resolution level)
@@ -73,27 +73,55 @@ data MethodType = MethodType
   -- , mtTgtReturns :: [MethodElem]
   }
 
+instance Show MethodType where
+  show MethodType {mtSrcParams=ts, mtSrcReturns=ts'} =
+    show ts ++ "\n" ++ show ts'
+
 -- | EmitExp : Unchecked Types for Codegen Only
 data EmitTy
   = TAny String
-  deriving (Show, Eq, Ord, Data, Typeable)
+  deriving (Show, Eq, Ord-- , Data, Typeable
+           )
 
 data QTy
   = TNor
   | THad
   | TEN
   | TEN01
-  deriving (Show, Eq, Ord, Data, Typeable)
+  deriving (Show, Eq, Ord-- , Data, Typeable
+           )
 
 type Var = String
+
+newtype MTy = MTy { unMTy :: Ty :+: MethodType }
+
+instance Show MTy where
+  show (MTy (Inl t)) = show t
+  show (MTy (Inr m)) = show (mtSrcParams m) ++ show (mtSrcReturns m)
+  
+projTy :: MTy -> Maybe Ty
+projTy = projLeft . unMTy 
+
+projMethodTy :: MTy -> Maybe Ty
+projMethodTy = projLeft . unMTy 
+
+instance Injection Ty MTy where
+  inj = MTy . inj
+
+instance Injection MethodType MTy where
+  inj = MTy . inj
+
+
 
 data Binding x
   = Binding (XRec x Var) (XRec x Ty)
 
-deriving instance (Typeable (Binding Source))
-deriving instance (Typeable (Binding ()))
-deriving instance (Data (Binding Source))
-deriving instance (Data (Binding ()))
+
+
+-- deriving instance (Typeable (Binding Source))
+-- deriving instance (Typeable (Binding ()))
+-- deriving instance (Data (Binding Source))
+-- deriving instance (Data (Binding ()))
 
 deriving instance (Show (XRec x Var), Show (XRec x Ty)) => Show (Binding x)
 deriving instance (Eq (XRec x Var), Eq (XRec x Ty)) => Eq (Binding x)
@@ -120,12 +148,14 @@ data Op2
   | OGt
   | OGe
   | OEq
-  deriving (Show, Eq, Ord, Data, Typeable)
+  deriving (Show, Eq, Ord-- , Data, Typeable
+           )
 
 data Op1
   = ONot
   | ONeg
-  deriving (Show, Eq, Ord, Data, Typeable)
+  deriving (Show, Eq, Ord-- , Data, Typeable
+           )
 
 
 data GuardExp
@@ -156,10 +186,10 @@ data Exp x
   -- | RLt Exp Exp Var Exp -- compare exp < exp and store the value in var[exp], var must be Q type
 
 
-deriving instance (Typeable (Exp ()))
-deriving instance (Data (Exp ()))
-deriving instance (Typeable (Exp Source))
-deriving instance (Data (Exp Source))
+-- deriving instance (Typeable (Exp ()))
+-- deriving instance (Data (Exp ()))
+-- deriving instance (Typeable (Exp Source))
+-- deriving instance (Data (Exp Source))
 deriving instance (Generic (Exp ()))
 deriving instance (Show (Exp ()))
 deriving instance (Show (Exp Source))
@@ -182,10 +212,10 @@ data SpecExp x
 deriving instance (Show (XRec x (Exp x))) => Show (SpecExp x)
 deriving instance (Eq (XRec x (Exp x))) => Eq (SpecExp x)
 deriving instance (Ord (XRec x (Exp x))) => Ord (SpecExp x)
-deriving instance (Typeable (SpecExp ()))
-deriving instance (Data (SpecExp ()))
-deriving instance (Typeable (SpecExp Source))
-deriving instance (Data (SpecExp Source))
+-- deriving instance (Typeable (SpecExp ()))
+-- deriving instance (Data (SpecExp ()))
+-- deriving instance (Typeable (SpecExp Source))
+-- deriving instance (Data (SpecExp Source))
 
 showExp :: Exp () -> String
 showExp (ENum n) = show n
@@ -211,7 +241,8 @@ data EmitExp
   | ESlice (Exp ()) (Exp ()) (Exp ())
   | EDafnyVar Var
   | EOpChained (Exp ()) [(Op2, Exp ())]
-  deriving  (Show, Eq, Ord, Data, Typeable)
+  deriving  (Show, Eq, Ord-- , Data, Typeable
+            )
 
 data Conds
   = Requires (Exp ())
@@ -246,11 +277,13 @@ instance (Injection q (QMethod x :+: QDafny)) => Injection q (Toplevel x) where
   inj = Toplevel . inj
 
 data Intv = Intv (Exp ()) (Exp ())
-  deriving (Eq, Show, Ord, Data, Typeable)
+  deriving (Eq, Show, Ord-- , Data, Typeable
+           )
 
 -- Range includes the left but exclude the right 
 data Range = Range Var (Exp ()) (Exp ())
-  deriving (Eq, Ord, Data, Typeable)
+  deriving (Eq, Ord-- , Data, Typeable
+           )
 
 instance Show Range where
   show (Range x y z) = printf "%s[%s .. %s]" x (showExp y) (showExp z)
@@ -262,7 +295,8 @@ instance Show Loc where
   show = deref
 
 newtype Partition = Partition { unpackPart :: [Range] }
-  deriving (Eq, Ord, Data, Typeable)
+  deriving (Eq, Ord-- , Data, Typeable
+           )
 
 
 instance Show Partition where

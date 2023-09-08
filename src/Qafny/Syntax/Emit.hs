@@ -113,9 +113,17 @@ instance DafnyPrinter Ty where
   build TBool     = build "bool"
   build (TQReg n) = "qreg" <+> n
   build (TSeq t)  = "seq<" <!> t <!> ">"
-  build t@(TMethod ts ts') = debugOnly t $
-    withParen (byComma ts) <+> "->" <+> withParen (byComma ts')
   build t@(TEmit (TAny s)) = debugOnly t $ build s
+
+instance DafnyPrinter MethodType where
+  build t@MethodType {mtSrcParams=ts, mtSrcReturns=ts'} = debugOnly t $
+    withParen (byComma ts) <+> "->" <+> withParen (byComma ts')
+
+instance DafnyPrinter MethodElem where
+  build t = debugOnly t $ buildSub t
+    where
+      buildSub (MTyPure x ty) = debugOnly t $ x <+> ":" <+> ty
+      buildSub (MTyQuantum x e) = x <!> "[" <!> e <!> "]"
 
 instance DafnyPrinter AExp where
   build (ANat n) = build n

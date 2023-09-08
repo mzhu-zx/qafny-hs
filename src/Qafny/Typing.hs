@@ -14,20 +14,19 @@ module Qafny.Typing where
 -- | Typing though Fused Effects
 
 -- Effects
-import           Control.Carrier.Reader        (runReader)
-import           Control.Carrier.State.Lazy    (execState)
+import           Control.Carrier.Reader     (runReader)
+import           Control.Carrier.State.Lazy (execState)
 import           Control.Effect.Catch
-import           Control.Effect.Error          (Error, throwError)
+import           Control.Effect.Error       (Error, throwError)
 import           Control.Effect.Lens
 import           Control.Effect.NonDet
 import           Control.Effect.Reader
-import           Control.Effect.State          (State, modify)
-import           Effect.Gensym                 (Gensym)
+import           Control.Effect.State       (State, modify)
+import           Effect.Gensym              (Gensym)
 
 -- Qafny
-import           Qafny.Domain                  (NatInterval)
 import           Qafny.Env
-import           Qafny.Error                   (QError (..))
+import           Qafny.Error                (QError (..))
 import           Qafny.Interval
 import           Qafny.Syntax.AST
 import           Qafny.TypeUtils
@@ -42,19 +41,29 @@ import           Qafny.Utils
     )
 
 -- Utils
-import           Control.Carrier.NonDet.Church (runNonDetA)
-import           Control.Carrier.State.Lazy    (evalState, execState)
+import           Control.Carrier.State.Lazy (evalState)
 import           Control.Effect.Trace
-import           Control.Lens                  (at, (%~), (.~), (?~), (^.), Identity (runIdentity))
+import           Control.Lens
+    ( Identity (runIdentity)
+    , at
+    , (%~)
+    , (?~)
+    , (^.)
+    )
 import           Control.Lens.Tuple
-import           Control.Monad                 (forM, forM_, unless, when, zipWithM)
-import           Data.Bool                     (bool)
-import           Data.Function                 ((&))
-import           Data.Functor                  ((<&>))
-import qualified Data.List                     as List
-import           Data.List.NonEmpty            (NonEmpty (..))
-import qualified Data.List.NonEmpty            as NE
-import qualified Data.Map.Strict               as Map
+import           Control.Monad
+    ( forM
+    , forM_
+    , unless
+    , when
+    , zipWithM
+    )
+import           Data.Bool                  (bool)
+import           Data.Functor               ((<&>))
+import qualified Data.List                  as List
+import           Data.List.NonEmpty         (NonEmpty (..))
+import qualified Data.List.NonEmpty         as NE
+import qualified Data.Map.Strict            as Map
 import           Data.Maybe
     ( catMaybes
     , fromMaybe
@@ -63,18 +72,19 @@ import           Data.Maybe
     , mapMaybe
     , maybeToList
     )
-import qualified Data.Set                      as Set
+import qualified Data.Set                   as Set
 import           Data.Sum
-import           GHC.Stack                     (HasCallStack)
-import           Qafny.Partial                 (Reducible (reduce))
+import           Data.Sum                   (projLeft)
+import           GHC.Stack                  (HasCallStack)
+import           Qafny.Partial              (Reducible (reduce))
 import           Qafny.Syntax.Emit
     ( DafnyPrinter (build)
     , byComma
     , showEmitI
     )
-import           Text.Printf                   (printf)
+import           Text.Printf                (printf)
 
--- | Compute the type of the given expression
+-- | Compute the simple type of the given expression
 typingExp
   :: ( Has (State TState) sig m
      , Has (Reader TEnv) sig m
@@ -85,7 +95,7 @@ typingExp
 typingExp (ENum _)  = return TNat
 typingExp (EVar x)  = do
   env <- view kEnv
-  return (env ^. at x) `rethrowMaybe` (show $ UnknownVariableError x env)
+  return ((env ^. at x) >>= projTy) `rethrowMaybe` (show $ UnknownVariableError x env)
 typingExp (EOp2 op2 e1 e2) =
   do top <- typingOp2 op2
      t1 <- typingExp e1
@@ -732,21 +742,17 @@ mergeSTuples
 
 -- Generate a method type signature through pre-&post- conditions and the
 -- origianl signature following the calling convention.
--- 
-analyzeMethodType
-  ::  ( Has (Error String) sig m )
-  => QMethod ()
-  -> m (Var, MethodType)
+--
+analyzeMethodType :: QMethod () -> (Var, MethodType)
 analyzeMethodType (QMethod v bds rts rqs ens _) = do
   let srcParams = collectRange <$> bds
-  let srcReturns = collectRange <$> rts
-  let instantiate (r :: Map.Map Var Range) = runIdentity $ runReader r $
-        forM (mapMaybe collectSignature rqs) go
-
-  return $ (v, MethodType { mtSrcParams=srcParams
-                          , mtSrcReturns=srcReturns
-                          , mtInstantiate = instantiate
-                          })
+      srcReturns = collectRange <$> rts
+      instantiate (r :: Map.Map Var Range) = runIdentity $ runReader r $
+                                             forM (mapMaybe collectSignature rqs) go
+    in (v, MethodType { mtSrcParams=srcParams
+                      , mtSrcReturns=srcReturns
+                      , mtInstantiate = instantiate
+                      })
   where
     collectRange :: Binding () -> MethodElem
     collectRange (Binding vq (TQReg a)) = MTyQuantum vq (aexpToExp a)
@@ -759,7 +765,7 @@ analyzeMethodType (QMethod v bds rts rqs ens _) = do
     go
       :: (Has (Reader (Map.Map Var Range)) sig' m')
       => (Partition, QTy) -> m' (Partition, QTy)
-    go (s, qt) = (,qt) <$> instPart s 
+    go (s, qt) = (,qt) <$> instPart s
 
     -- instantiate a Type expression with a given mapping from variable to Range
     instPart
@@ -796,7 +802,7 @@ typeCheckMethodApplication es
   unless (length es == length srcParams) $ arityMismatch srcParams
   envArgs <- execState @(Map.Map Var Range) Map.empty $ zipWithM checkEachParameter es srcParams
   let inst = instantiator envArgs
-  -- perform qtype check for each argument 
+  -- perform qtype check for each argument
   mapM_ (uncurry typingPartitionQTy) inst
   where
     arityMismatch prs = throwError' $
@@ -815,13 +821,13 @@ typeCheckMethodApplication es
     checkEachParameter earg (MTyPure v ty) = do
       tyArg <- typingExp earg
       checkTypeEq tyArg ty
-    -- for quantum types, collect the qreg correspondence instead 
+    -- for quantum types, collect the qreg correspondence instead
     checkEachParameter earg (MTyQuantum v cardinality) = do
       qRange@(Range x el er) <-
         case earg of
-          EVar varg -> pure $ Range varg 0 cardinality
+          EVar varg                  -> pure $ Range varg 0 cardinality
           EPartition (Partition [r]) -> pure r
-          _ -> nonQArgument earg
+          _                          -> nonQArgument earg
       -- check if the cardinality is fine
       let eCard :: Exp' = er - el
       eq <- (allI .:) <$> liftIEnv2 (≡)
@@ -870,19 +876,23 @@ collectConstraints es = (Map.mapMaybe glb1 <$>) . execState Map.empty $ forM nor
 --------------------------------------------------------------------------------
 -- | Helpers
 --------------------------------------------------------------------------------
+
 -- Compute types of methods from the toplevel
-collectMethodTypes :: AST -> [(Var, Ty)]
+collectMethodTypes :: AST -> [(Var, MethodType)]
 collectMethodTypes a =
-  [ (idt, TMethod (bdTypes ins) (bdTypes outs))
-  | Toplevel (Inl (QMethod idt ins outs _ _ _)) <- a
+  [ analyzeMethodType q
+  | Toplevel (Inl q@(QMethod {})) <- a
   ]
 
-collectMethodTypesM :: AST -> Map.Map Var Ty
+collectMethodTypesM :: AST -> Map.Map Var MethodType
 collectMethodTypesM = Map.fromList . collectMethodTypes
 
 appkEnvWithBds :: Bindings () -> TEnv -> TEnv
-appkEnvWithBds bds = kEnv %~ appBds
-  where appBds = Map.union $ Map.fromList [(v, t) | Binding v t <- bds]
+appkEnvWithBds bds = undefined
+
+-- appkEnvWithBds :: Bindings () -> TEnv -> TEnv
+-- appkEnvWithBds bds = kEnv %~ appBds
+--   where appBds = Map.union $ Map.fromList [(v, inj t) | Binding v t <- bds]
 
 bdTypes :: Bindings () -> [Ty]
 bdTypes b = [t | Binding _ t <- b]
@@ -932,7 +942,7 @@ fixN ::  (a -> a) -> Int -> (a -> a)
 fixN f = go
   where
     go 0 = id
-    go n = go (n - 1) . f 
+    go n = go (n - 1) . f
 
 -- some permutations
 (⊑/)

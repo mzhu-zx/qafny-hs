@@ -32,7 +32,6 @@ import           Qafny.Gensym                 (resumeGensym)
 -- Utils
 import           Control.Lens
     ( at
-    , equality
     , non
     , (%~)
     , (?~)
@@ -48,6 +47,7 @@ import           Control.Monad
     , void
     , when
     )
+
 import           Data.Bifunctor
 import           Data.Functor                 ((<&>))
 import qualified Data.List                    as List
@@ -156,7 +156,8 @@ codegenAST
 codegenAST ast = do
   path <- asks stdlibPath
   let prelude = (mkIncludes path <$> includes) ++ imports
-  let methods = collectMethodTypesM ast
+  -- let methods = collectMethodTypesM ast
+  let methods = undefined
   main <- local (kEnv %~ Map.union methods) $ mapM codegenToplevel ast
   return $ injQDafny prelude ++ main ++ injQDafny finale
   where
@@ -317,7 +318,7 @@ codegenStmts (stmt : stmts) = do
   (stmts' ++) <$>
     case stmt of
       SVar (Binding v t) eM -> do
-        local (kEnv %~ at v ?~ t) $ codegenStmts stmts
+        local (kEnv %~ at v ?~ Sum.inj t) $ codegenStmts stmts
       _ -> do
         codegenStmts stmts
 

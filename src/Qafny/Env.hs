@@ -3,6 +3,7 @@
   , LambdaCase
   , TemplateHaskell
   , TypeApplications
+  , TypeOperators
   #-}
 module Qafny.Env where
 
@@ -31,7 +32,7 @@ data CtxMode
   | CtxQ
   deriving Show
 
-type KEnv = Map.Map Var Ty
+type KEnv = Map.Map Var MTy
 
 data TEnv = TEnv
   { _kEnv :: KEnv
