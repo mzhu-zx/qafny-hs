@@ -9,7 +9,7 @@ import           Control.Applicative (Applicative (liftA2))
 import           Control.Monad       (forM)
 import           Data.Bool           (bool)
 import           Qafny.Partial       (evalPStatic, hasResidue)
-import           Qafny.Syntax.AST    (Exp (..), Exp', Range (..), Var, AEnv)
+import           Qafny.Syntax.AST    (AEnv, Exp (..), Exp', Range (..), Var)
 import           Text.Printf         (printf)
 
 --------------------------------------------------------------------------------

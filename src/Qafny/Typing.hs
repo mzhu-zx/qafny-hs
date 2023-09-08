@@ -747,8 +747,8 @@ analyzeMethodType :: QMethod () -> (Var, MethodType)
 analyzeMethodType (QMethod v bds rts rqs ens _) = do
   let srcParams = collectRange <$> bds
       srcReturns = collectRange <$> rts
-      instantiate (r :: Map.Map Var Range) = runIdentity $ runReader r $
-                                             forM (mapMaybe collectSignature rqs) go
+      instantiate (r :: Map.Map Var Range) =
+        runIdentity $ runReader r $ forM (mapMaybe collectSignature rqs) go
     in (v, MethodType { mtSrcParams=srcParams
                       , mtSrcReturns=srcReturns
                       , mtInstantiate = instantiate
@@ -878,21 +878,17 @@ collectConstraints es = (Map.mapMaybe glb1 <$>) . execState Map.empty $ forM nor
 --------------------------------------------------------------------------------
 
 -- Compute types of methods from the toplevel
-collectMethodTypes :: AST -> [(Var, MethodType)]
-collectMethodTypes a =
-  [ analyzeMethodType q
-  | Toplevel (Inl q@(QMethod {})) <- a
-  ]
-
-collectMethodTypesM :: AST -> Map.Map Var MethodType
-collectMethodTypesM = Map.fromList . collectMethodTypes
+collectMethodTypes :: AST -> Map.Map Var MethodType
+collectMethodTypes a = run $ execState Map.empty $
+  forM_ a go
+  where
+    go (Toplevel (Inl q@(QMethod {}))) =
+      modify (uncurry Map.insert (analyzeMethodType q))
+    go _ = pure ()
 
 appkEnvWithBds :: Bindings () -> TEnv -> TEnv
-appkEnvWithBds bds = undefined
-
--- appkEnvWithBds :: Bindings () -> TEnv -> TEnv
--- appkEnvWithBds bds = kEnv %~ appBds
---   where appBds = Map.union $ Map.fromList [(v, inj t) | Binding v t <- bds]
+appkEnvWithBds bds = kEnv %~ appBds
+  where appBds = Map.union $ Map.fromList [(v, inj t) | Binding v t <- bds]
 
 bdTypes :: Bindings () -> [Ty]
 bdTypes b = [t | Binding _ t <- b]

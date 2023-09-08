@@ -81,7 +81,7 @@ import           Qafny.Typing
     , checkSubtype
     , checkSubtypeQ
     , collectConstraints
-    , collectMethodTypesM
+    , collectMethodTypes
     , extendTState
     , matchEmitStates
     , matchStateCorrLoop
@@ -114,6 +114,7 @@ import           Qafny.Utils
     , rethrowMaybe
     , throwError'
     )
+import Data.Sum (Injection(inj))
 
 --------------------------------------------------------------------------------
 -- * Introduction
@@ -156,9 +157,8 @@ codegenAST
 codegenAST ast = do
   path <- asks stdlibPath
   let prelude = (mkIncludes path <$> includes) ++ imports
-  -- let methods = collectMethodTypesM ast
-  let methods = undefined
-  main <- local (kEnv %~ Map.union methods) $ mapM codegenToplevel ast
+  let methodMap = collectMethodTypes ast
+  main <- local (kEnv %~ Map.union (inj <$> methodMap)) $ mapM codegenToplevel ast
   return $ injQDafny prelude ++ main ++ injQDafny finale
   where
     injQDafny = (Sum.inj <$>)

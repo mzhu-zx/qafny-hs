@@ -41,8 +41,7 @@ import           Text.Printf              (printf)
 data AExp
   = ANat Int
   | AVar Var
-  deriving (Show, Eq, Ord-- , Data, Typeable
-           )
+  deriving (Show, Eq, Ord)
 
 aexpToExp :: AExp -> Exp ()
 aexpToExp (ANat i) = ENum i
@@ -80,16 +79,14 @@ instance Show MethodType where
 -- | EmitExp : Unchecked Types for Codegen Only
 data EmitTy
   = TAny String
-  deriving (Show, Eq, Ord-- , Data, Typeable
-           )
+  deriving (Show, Eq, Ord)
 
 data QTy
   = TNor
   | THad
   | TEN
   | TEN01
-  deriving (Show, Eq, Ord-- , Data, Typeable
-           )
+  deriving (Show, Eq, Ord)
 
 type Var = String
 
