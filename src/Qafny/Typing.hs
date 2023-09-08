@@ -782,7 +782,9 @@ analyzeMethodType (QMethod v bds rts rqs ens _) = do
 typeCheckMethodApplication
   ::  ( Has (Error String) sig m
       , Has (Reader TEnv) sig m
+      , Has (Reader IEnv) sig m
       , Has (State TState) sig m
+      , Has Trace sig m
       )
   => [Exp']
   -> MethodType
@@ -805,6 +807,7 @@ typeCheckMethodApplication es
       :: ( Has (Error String) sig m'
          , Has (State (Map.Map Var Range)) sig m'
          , Has (State TState) sig m'
+         , Has (Reader IEnv) sig m'
          , Has (Reader TEnv) sig m'
          )
       => Exp' -> MethodElem -> m' ()
@@ -826,7 +829,7 @@ typeCheckMethodApplication es
         throwError' $ cardinalityMismatch eCard cardinality
       modify (Map.insert v qRange)
 
-    nonQArgument arg = fail $ printf "%s is not a valid qreg parameter" (showEmitI 0 arg)
+    nonQArgument arg = throwError' $ printf "%s is not a valid qreg parameter" (showEmitI 0 arg)
     cardinalityMismatch cardGiven cardReq = fail $
       printf "the cardinality of the qreg passed %s doesn't match the required: %s"
       (showEmitI 0 cardGiven) (showEmitI 0 cardReq)

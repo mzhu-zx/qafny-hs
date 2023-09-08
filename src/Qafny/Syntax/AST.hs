@@ -60,7 +60,7 @@ data Ty
 
 data MethodElem
   = MTyPure Var Ty
-  | MTyQuantum Var Exp' Ty
+  | MTyQuantum Var Exp'
   deriving Show
 
 data MethodType = MethodType
