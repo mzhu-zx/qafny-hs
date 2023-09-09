@@ -41,7 +41,7 @@ import           Qafny.Utils
     )
 
 -- Utils
-import           Control.Carrier.State.Lazy (evalState)
+import           Control.Carrier.State.Lazy (evalState, runState)
 import           Control.Effect.Trace
 import           Control.Lens
     ( Identity (runIdentity)
@@ -56,7 +56,7 @@ import           Control.Monad
     , forM_
     , unless
     , when
-    , zipWithM
+    , zipWithM, void
     )
 import           Data.Bool                  (bool)
 import           Data.Functor               ((<&>))
@@ -702,7 +702,7 @@ lookupAdjacentRange
   :: ( Has (Reader IEnv) sig m
      )
   => [Range] -> Range -> m [Range]
-lookupAdjacentRange rs r@(Range id el er) = do
+lookupAdjacentRange rs r@(Range _ el er) = do
   (≡?) <- (allI .:) <$> liftIEnv2 (≡)
   return  [ r' | r'@(Range x' el' er') <- rs, er' ≡? el ]
 
@@ -739,6 +739,7 @@ mergeSTuples
 --------------------------------------------------------------------------------
 -- * Method Typing
 --------------------------------------------------------------------------------
+
 
 -- Generate a method type signature through pre-&post- conditions and the
 -- origianl signature following the calling convention.
@@ -784,7 +785,7 @@ analyzeMethodType (QMethod v bds rts rqs ens _) = do
         Nothing               -> rr
 
 -- Check if the given argument expressions are consistent with the types in the
--- signature
+-- signature, returns resolved arguments w.r.t. the calling convention.
 typeCheckMethodApplication
   ::  ( Has (Error String) sig m
       , Has (Reader TEnv) sig m
@@ -794,16 +795,17 @@ typeCheckMethodApplication
       )
   => [Exp']
   -> MethodType
-  -> m ()
+  -> m [Exp']
 typeCheckMethodApplication es
   MethodType { mtSrcParams=srcParams
              , mtInstantiate=instantiator
              } = do
   unless (length es == length srcParams) $ arityMismatch srcParams
-  envArgs <- execState @(Map.Map Var Range) Map.empty $ zipWithM checkEachParameter es srcParams
+  (envArgs, pureArgs) <- runState @(Map.Map Var Range) Map.empty $ catMaybes <$> zipWithM checkEachParameter es srcParams
   let inst = instantiator envArgs
   -- perform qtype check for each argument
-  mapM_ (uncurry typingPartitionQTy) inst
+  qArgs <- concat <$> mapM (uncurry getEmitVarsAfterTyCheck) inst
+  pure (pureArgs ++ qArgs)
   where
     arityMismatch prs = throwError' $
       "The number of arguments given doesn't match the number of parameters expected by the method."
@@ -816,11 +818,12 @@ typeCheckMethodApplication es
          , Has (Reader IEnv) sig m'
          , Has (Reader TEnv) sig m'
          )
-      => Exp' -> MethodElem -> m' ()
+      => Exp' -> MethodElem -> m' (Maybe Exp')
     -- for simple types, check it immediately
     checkEachParameter earg (MTyPure v ty) = do
       tyArg <- typingExp earg
       checkTypeEq tyArg ty
+      pure (Just earg)
     -- for quantum types, collect the qreg correspondence instead
     checkEachParameter earg (MTyQuantum v cardinality) = do
       qRange@(Range x el er) <-
@@ -834,6 +837,11 @@ typeCheckMethodApplication es
       unless (eq 0 (er - el - cardinality)) $
         throwError' $ cardinalityMismatch eCard cardinality
       modify (Map.insert v qRange)
+      pure Nothing
+
+    getEmitVarsAfterTyCheck part q = do
+      void $ typingPartitionQTy part q
+      forM (unpackPart part) $ (EVar <$>) . (`findEmitRangeQTy` q)
 
     nonQArgument arg = throwError' $ printf "%s is not a valid qreg parameter" (showEmitI 0 arg)
     cardinalityMismatch cardGiven cardReq = fail $

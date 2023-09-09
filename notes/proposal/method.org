@@ -49,6 +49,30 @@ should be compiled into something like
 Methods can in fact have multiple parameter, therefore it's important to have a
 uniformed order to compile those input and return parameters.
 
+** Method Type, Reworked
+To get a deterministc description of methods, the new method type is defined
+as followed.
+
+#+begin_src haskell
+data MethodType = MethodType
+  { mtSrcParams :: [MethodElem]
+  , mtSrcReturns :: [MethodElem]
+  , mtInstantiate :: Map.Map Var Range -> [(Partition, QTy)]
+  }
+
+data MethodElem
+  = MTyPure Var Ty
+  | MTyQuantum Var Exp'
+  deriving (Show, Eq, Ord)
+#+end_src
+
+The spotlight here is =mtInstantiate= which takes a correspondence between
+=qreg= variables used in definition and the =qreg= slices passed by the caller
+and returns partition-level typing requirements to be satisfied.
+#
+The instantiator is deterministic, and therefore can determine the order of
+quantum states to be passed into the compiled method. 
+
 ** Input
 #+begin_src racket
   (define-metafunction qafny
@@ -58,13 +82,19 @@ uniformed order to compile those input and return parameters.
      (where (x' ...) (call-conv x ...))
      (where n (not (is-qreg n)))]
     [(call-conv (q x ...))
-     (y' ... x' ...)
+     (x' ... y' ...)
      (where (x' ...) (call-conv x ...))
      (where (y' ...) (call-conv-q/env q))])
 #+end_src
 #
 where =call-conv-q/env= resolves emit symbols based on the =type= information
 encoded in the *pre*-condition.
+# 
+Passed qubits are compiled as emit variables corresponding to each range decided
+by the type information provided by the instantiatd instance.
+# 
+For convenience, those variables are put after non-quantum parameters.
+#
 
 ** Output
 #+begin_src racket

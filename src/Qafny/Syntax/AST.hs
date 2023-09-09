@@ -99,8 +99,8 @@ instance Show MTy where
 projTy :: MTy -> Maybe Ty
 projTy = projLeft . unMTy 
 
-projMethodTy :: MTy -> Maybe Ty
-projMethodTy = projLeft . unMTy 
+projMethodTy :: MTy -> Maybe MethodType
+projMethodTy = projRight . unMTy 
 
 instance Injection Ty MTy where
   inj = MTy . inj

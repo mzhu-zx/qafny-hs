@@ -99,7 +99,7 @@ import           Qafny.Typing
     , typingExp
     , typingGuard
     , typingPartition
-    , typingPartitionQTy
+    , typingPartitionQTy, typeCheckMethodApplication
     )
 import           Qafny.Utils
     ( dumpSSt
@@ -393,8 +393,16 @@ codegenStmt' s@(SFor {}) =
 codegenStmt' (SAssert e@(ESpec{})) =
   (SAssert <$>) <$> codegenAssertion e
 
-codegenStmt' (SCall x eargs) =
-  undefined
+codegenStmt' (SCall (EVar x) eargs) = do
+  mtyMaybe <- asks @TEnv (^. kEnv . at x) <&> (>>= projMethodTy)
+  mty <- maybe errNoAMethod return mtyMaybe
+  resolvedArgs <- typeCheckMethodApplication eargs mty
+  where
+    errNoAMethod = throwError' $
+      printf "The variable %s is not referring to a method." x
+
+codegenStmt' (SCall e eargs) = do
+  fail $ printf "Expecting a reference to a method, but found %s." (showEmitI 0 e)
 
 codegenStmt' s = error $ "Unimplemented:\n\t" ++ show s ++ "\n"
 
