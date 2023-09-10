@@ -1,4 +1,4 @@
-method GHZ(q : qreg[10])
+method GHZ(q : qreg[15])
   requires { q[0  .. 15] : nor ↦ ⊗ i . (0) }
   ensures  { q[0  .. 10] : en01 ↦ ∑ j ∈ [0 .. 2] . ⊗ k ∈ [0 .. 10] . ( j ) }
   ensures  { q[10 .. 15] : nor ↦ ⊗ i . (0) }

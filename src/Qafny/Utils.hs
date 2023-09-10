@@ -1,5 +1,7 @@
 {-# LANGUAGE
-    TypeApplications
+    ScopedTypeVariables
+  , TypeApplications
+  , TupleSections
   #-}
 module Qafny.Utils where
 
@@ -7,6 +9,7 @@ module Qafny.Utils where
 import           Control.Carrier.State.Church (State)
 import           Control.Effect.Error         (Error, throwError)
 import           Control.Effect.Lens
+import           Control.Effect.Reader
 import           Control.Lens                 (at, (?~), (^.))
 
 --
@@ -15,11 +18,15 @@ import           Effect.Gensym                (Gensym, gensym)
 --
 import           Control.Effect.Trace
 import           Control.Monad                (forM)
+import           Data.Functor                 ((<&>))
 import qualified Data.Map.Strict              as Map
 import qualified Data.Set                     as Set
-import           Qafny.Env                    (TState, emitSt, sSt)
+import           Data.Sum
+import           Qafny.Env                    (TEnv, TState, emitSt, kEnv, sSt)
+import           Qafny.Error                  (QError (UnknownVariableError))
 import           Qafny.Partial                (Reducible (reduce))
 import           Qafny.Syntax.AST
+import           Qafny.Syntax.Emit            (showEmitI)
 import           Qafny.TypeUtils              (typingQEmit)
 import           Qafny.Variable               (Variable (variable))
 import           Text.Printf                  (printf)
@@ -94,6 +101,25 @@ findEmitRangeQTy r qty = do
       (show rb)
       (show st)
 
+findEmitBindingsFromPartition
+  :: ( Has (State TState) sig m
+     , Has (Error String) sig m
+     )
+  => Partition -> QTy -> m [Binding']
+findEmitBindingsFromPartition part q =
+  forM (unpackPart part) $ (uncurry Binding . (, typingQEmit q) <$>) . (`findEmitRangeQTy` q)
+
+
+findEmitVarsFromPartition
+  :: ( Has (State TState) sig m
+     , Has (Error String) sig m
+     )
+  => Partition -> QTy -> m [Var]
+findEmitVarsFromPartition part q =
+  forM (unpackPart part) $ (`findEmitRangeQTy` q)
+
+
+
 modifyEmitRangeQTy
   :: ( Has (State TState) sig m )
   => Range -> QTy -> Var -> m ()
@@ -128,3 +154,20 @@ dumpSSt str = do
   trace $ printf "[info] Dumped sSt (%s):%s" str (show s)
 
 --------------------------------------------------------------------------------
+-- * Method Types
+
+getMethodType
+  :: ( Has (Error String) sig m
+     , Has (Reader TEnv) sig m
+     )
+  => Var -> m MethodType
+getMethodType v = do
+  tyM :: Maybe MTy  <- asks (^. kEnv . at v)
+  case tyM of
+    Just mty ->
+      case unMTy mty of
+        Inl ty -> throwError' $ printf "%s is not a method but a %s" v (showEmitI 0 ty)
+        Inr mty -> pure mty
+    _             -> asks (^. kEnv) >>= throwError' . show . UnknownVariableError v
+
+

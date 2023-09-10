@@ -33,6 +33,7 @@ import           Qafny.TypeUtils
 import           Qafny.Utils
     ( exp2AExp
     , findEmitRangeQTy
+    , findEmitVarsFromPartition
     , gensymEmitRangeQTy
     , gensymLoc
     , removeEmitRangeQTys
@@ -55,8 +56,9 @@ import           Control.Monad
     ( forM
     , forM_
     , unless
+    , void
     , when
-    , zipWithM, void
+    , zipWithM
     )
 import           Data.Bool                  (bool)
 import           Data.Functor               ((<&>))
@@ -757,7 +759,7 @@ analyzeMethodType (QMethod v bds rts rqs ens _) = do
   where
     collectRange :: Binding () -> MethodElem
     collectRange (Binding vq (TQReg a)) = MTyQuantum vq (aexpToExp a)
-    collectRange (Binding _ t)          = MTyPure v t
+    collectRange (Binding varg t)          = MTyPure varg t
 
     collectSignature :: Exp' -> Maybe (Partition, QTy)
     collectSignature (ESpec s qt _) = pure (s, qt)
@@ -801,7 +803,8 @@ typeCheckMethodApplication es
              , mtInstantiate=instantiator
              } = do
   unless (length es == length srcParams) $ arityMismatch srcParams
-  (envArgs, pureArgs) <- runState @(Map.Map Var Range) Map.empty $ catMaybes <$> zipWithM checkEachParameter es srcParams
+  (envArgs, pureArgs) <- runState Map.empty $
+    catMaybes <$> zipWithM checkEachParameter es srcParams
   let inst = instantiator envArgs
   -- perform qtype check for each argument
   qArgs <- concat <$> mapM (uncurry getEmitVarsAfterTyCheck) inst
@@ -841,12 +844,13 @@ typeCheckMethodApplication es
 
     getEmitVarsAfterTyCheck part q = do
       void $ typingPartitionQTy part q
-      forM (unpackPart part) $ (EVar <$>) . (`findEmitRangeQTy` q)
+      findEmitVarsFromPartition part q <&> fmap EVar
 
     nonQArgument arg = throwError' $ printf "%s is not a valid qreg parameter" (showEmitI 0 arg)
     cardinalityMismatch cardGiven cardReq = fail $
       printf "the cardinality of the qreg passed %s doesn't match the required: %s"
       (showEmitI 0 cardGiven) (showEmitI 0 cardReq)
+
 
 --------------------------------------------------------------------------------
 -- | Constraints
@@ -865,7 +869,8 @@ collectConstraints es = (Map.mapMaybe glb1 <$>) . execState Map.empty $ forM nor
             _   -> failUninterp e
       modify $ Map.insertWith (++) v1 [intv]
 
-    maxE = fromInteger $ toInteger (maxBound @Int)
+    -- pick 100 here to avoid overflow in computation
+    maxE = fromInteger $ toInteger (maxBound @Int - 100) 
 
     failUninterp e = throwError' $ printf "(%s) is left uninterpreted" (show e)
 

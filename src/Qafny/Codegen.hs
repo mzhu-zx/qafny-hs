@@ -30,19 +30,14 @@ import           Effect.Gensym                (Gensym, gensym)
 import           Qafny.Gensym                 (resumeGensym)
 
 -- Utils
-import           Control.Lens
-    ( at
-    , non
-    , (%~)
-    , (?~)
-    , (^.)
-    )
+import           Control.Lens                 (at, non, (%~), (?~), (^.))
 import           Control.Lens.Tuple
 import           Control.Monad
     ( MonadPlus (mzero)
     , forM
     , forM_
     , join
+    , liftM2
     , unless
     , void
     , when
@@ -63,6 +58,7 @@ import           Control.Exception            (throw)
 import           Data.Bool                    (bool)
 import           Data.List                    (find)
 import           Data.Maybe                   (listToMaybe, maybeToList)
+import           Data.Sum                     (Injection (inj))
 import           Qafny.Config
 import           Qafny.Env
 import           Qafny.Interval               (Interval (Interval))
@@ -96,17 +92,20 @@ import           Qafny.Typing
     , splitScheme
     , splitThenCastScheme
     , tStateFromPartitionQTys
+    , typeCheckMethodApplication
     , typingExp
     , typingGuard
     , typingPartition
-    , typingPartitionQTy, typeCheckMethodApplication
+    , typingPartitionQTy
     )
 import           Qafny.Utils
     ( dumpSSt
+    , findEmitBindingsFromPartition
     , findEmitRangeQTy
     , gensymEmitRangeQTy
     , gensymLoc
     , gensymRangeQTy
+    , getMethodType
     , liftPartition
     , modifyEmitRangeQTy
     , rbindingOfRangeQTy
@@ -114,7 +113,6 @@ import           Qafny.Utils
     , rethrowMaybe
     , throwError'
     )
-import Data.Sum (Injection(inj))
 
 --------------------------------------------------------------------------------
 -- * Introduction
@@ -220,18 +218,18 @@ codegenToplevel'Method q@(QMethod v bds rts rqs ens (Just block)) = runWithCallS
   trace $ printf "Constraint Sets:\n%s\n" (show boundConstraints)
   let iEnv = Map.foldMapWithKey vIntv2IEnv boundConstraints
 
-  (countMeta, (countEmit, (rbdvsEmitR', rbdvsEmitB), (rqsCG, blockCG))) <-
-    local (appkEnvWithBds bds) $
-    codegenRequires rqs `resumeGensym` codegenMethodBody iEnv block
+  mty <- getMethodType v
 
+  (countMeta, (countEmit, (rbdvsEmitR', rbdvsEmitB), ((rqsCG, params), blockCG))) <-
+    local (appkEnvWithBds bds) $
+    codegenRequiresAndParams mty `resumeGensym` codegenMethodBody iEnv block
 
   mapFinalEmits <- use emitSt
   ensCG <- codegenEnsures ens
 
   -- Gensym symbols are in the reverse order!
   let rbdvsEmitR = reverse rbdvsEmitR'
-  let bdsCG = genBdsReqs rbdvsEmitR
-      bdRets = genBdsRets $ Map.toList mapFinalEmits
+  let bdRets = genBdsRets $ Map.toList mapFinalEmits
       stmtsDeclare = fDecls rbdvsEmitB mapFinalEmits
   let blockStmts = concat
         [ return $ qComment "Forward Declaration"
@@ -240,9 +238,13 @@ codegenToplevel'Method q@(QMethod v bds rts rqs ens (Just block)) = runWithCallS
         , [ SDafny "" , qComment "Method Definition"]
         , inBlock blockCG
         ]
-  return $ QMethod v bdsCG (rts ++ bdRets) rqsCG ensCG (Just . Block $ blockStmts)
+  return $ QMethod v params (rts ++ bdRets) rqsCG ensCG (Just . Block $ blockStmts)
   where
+
     vIntv2IEnv v' (Interval l r) = [(v', l :| [r])]
+
+    codegenRequiresAndParams mty =
+      liftM2 (,) (codegenRequires rqs) (codegenMethodParams mty)
 
     codegenMethodBody iEnv =
       runReader iEnv . -- | TODO: propagate parameter constraints
@@ -261,17 +263,17 @@ codegenToplevel'Method q@(QMethod v bds rts rqs ens (Just block)) = runWithCallS
        , vMeta `notElem` vIns ||
          vEmit `notElem` Map.elems mapFinalEmits ]
 
-    -- | For each qreg variable passed into the method, filter its corresponding
-    -- symbols emitted during 'codegenRequires' and replace the meta variable in
-    -- the method parameter list with the emited variables.
-    genBdsReqs rbdvsEmitR = do
-        bd@(Binding vIn ty) <- bds
-        case ty of
-          TQReg _ ->
-            [ Binding vEmit tEmit
-            | (RBinding (Range vMeta _ _, tEmit), vEmit) <- rbdvsEmitR
-            , vMeta == vIn ]
-          _    -> return bd
+    -- -- | For each qreg variable passed into the method, filter its corresponding
+    -- -- symbols emitted during 'codegenRequires' and replace the meta variable in
+    -- -- the method parameter list with the emited variables.
+    -- genBdsReqs rbdvsEmitR = do
+    --     bd@(Binding vIn ty) <- bds
+    --     case ty of
+    --       TQReg _ ->
+    --         [ Binding vEmit tEmit
+    --         | (RBinding (Range vMeta _ _, tEmit), vEmit) <- rbdvsEmitR
+    --         , vMeta == vIn ]
+    --       _    -> return bd
 
     -- | For each qreg variable passed into the method, look it up in the final
     -- 'emitSt', filter their emit symbols out and add to the __returns__
@@ -393,10 +395,11 @@ codegenStmt' s@(SFor {}) =
 codegenStmt' (SAssert e@(ESpec{})) =
   (SAssert <$>) <$> codegenAssertion e
 
-codegenStmt' (SCall (EVar x) eargs) = do
+codegenStmt' (SCall ef@(EVar x) eargs) = do
   mtyMaybe <- asks @TEnv (^. kEnv . at x) <&> (>>= projMethodTy)
   mty <- maybe errNoAMethod return mtyMaybe
   resolvedArgs <- typeCheckMethodApplication eargs mty
+  pure $ [SCall ef resolvedArgs]
   where
     errNoAMethod = throwError' $
       printf "The variable %s is not referring to a method." x
@@ -1210,13 +1213,26 @@ codegenMergeScheme = mapM $ \scheme -> do
 --------------------------------------------------------------------------------
 -- * Specification Related
 --------------------------------------------------------------------------------
+-- | Generate method parameters from the method signature
+codegenMethodParams
+  :: ( Has (State TState)  sig m
+     , Has (Error String) sig m
+     )
+  => MethodType -> m [Binding']
+codegenMethodParams MethodType{ mtSrcParams=srcParams
+                              , mtInstantiate=instantiator
+                              } = do
+  let pureVars = [ Binding v t | MTyPure v t <- srcParams ]
+      qVars = [ (v, Range v 0 card) | MTyQuantum v card <- srcParams ]
+      inst = instantiator $ Map.fromList qVars
+  vqEmits <- (concat <$>) . forM inst $ uncurry findEmitBindingsFromPartition
+  pure $ pureVars ++ vqEmits
 
 codegenRequires
   :: ( Has (State TState)  sig m
      , Has (Error String) sig m
      , Has (Gensym String) sig m
      , Has (Gensym RBinding) sig m
-     -- , Has (Writer [(String, Range)]) sig m
      )
   => [Exp'] -> m [Exp']
 codegenRequires rqs = forM rqs $ \rq ->
@@ -1227,6 +1243,7 @@ codegenRequires rqs = forM rqs $ \rq ->
       vsEmit <- extendTState s qt
       (ands <$>) . runReader True $ codegenSpecExp (zip vsEmit (unpackPart s)) qt espec
     _ -> return rq
+
 
 codegenEnsures
   :: ( Has (State TState)  sig m
