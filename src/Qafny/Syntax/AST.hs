@@ -311,8 +311,8 @@ data Stmt x where
   SDafny :: String -> Stmt x
   SIf :: GuardExp -> Partition -> (Block x) -> Stmt x
   -- TODO: Refactor 'For' with a record
-  --     id  left             right            guard    invarants          separates Body
-  SFor :: Var ->  (XRec x (Exp x)) -> (XRec x (Exp x)) -> GuardExp -> [(XRec x (Exp x))] -> Partition -> (Block x) -> Stmt x
+  --     id      left                right               guard       invarants             separates Body
+  SFor :: Var -> (XRec x (Exp x)) -> (XRec x (Exp x)) -> GuardExp -> [(XRec x (Exp x))] -> Partition -> (Block x) -> Stmt x
   SEmit :: EmitStmt -> Stmt x
 
 deriving instance Show (Stmt ())

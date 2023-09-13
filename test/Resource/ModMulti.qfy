@@ -1,0 +1,9 @@
+method Shor(q : qreg[10], p : qreg[10])
+  requires { q [0 .. 10] : had ↦ ⊗ i . (1) }
+  requires { p [10 .. 20] : en ↦ ∑ i ∈ [0 .. 1]. (1) }
+{
+  for i in [0 .. 10] with q[i .. i + 1]
+  {
+  
+  }
+}  

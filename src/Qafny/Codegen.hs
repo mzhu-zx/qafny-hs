@@ -22,7 +22,7 @@ import           Control.Effect.Catch
 import           Control.Effect.Error         (Error, throwError)
 import           Control.Effect.Lens
 import           Control.Effect.Reader
-import           Control.Effect.State         (State, get, modify, put)
+import           Control.Effect.State         (State, get, put)
 import           Control.Effect.Trace
 import           Effect.Gensym                (Gensym, gensym)
 
@@ -821,7 +821,7 @@ codegenFor'Body idx boundl boundr eG body stSep@(STuple (_, Partition rsSep, qtS
         codegenMergeScheme schemes
       let (stmtsMerge, vsEmitMerge) = unzip stmtsAndVsMerge
 
-      return $ (inBlock stmtsBody ++ stmtsMerge, vsEmitMerge)
+      return (inBlock stmtsBody ++ stmtsMerge, vsEmitMerge)
 
     codegenMatchLoopBeginEnd emitStBegin = do
       -- Next, I need to collect ranges/partitions from the invariant with
@@ -1294,6 +1294,21 @@ codegenSpecExp vrs p e = putOpt $
   case (p, e) of
     (_, SEWildcard) -> return []
     (TNor, SESpecNor idx es) -> do
+      checkListCorr vrs es
+      -- In x[l .. r]
+      -- @
+      --   forall idx | 0 <= idx < (r - l) :: xEmit[idx] == eBody
+      -- @
+      let eSelect x = EEmit (ESelect (EVar x) (EVar idx))
+      return . concat $
+        [ [ reduce (er - el) `eEq` EEmit (ECard (EVar v))
+          , EForall (natB idx) eBound (eSelect v `eEq` eBody)
+          ]
+        | ((v, Range _ el er), eBody) <- zip vrs es
+        , let eBound = Just (eIntv idx (ENum 0) (reduce (er - el))) ]
+    -- Interesting... 
+    --   Had and Nor are of the same spec form ....
+    (THad, SESpecNor idx es) -> do
       checkListCorr vrs es
       -- In x[l .. r]
       -- @

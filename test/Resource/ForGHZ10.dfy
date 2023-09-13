@@ -38,6 +38,8 @@ method GHZ (q_seq'nat'_0__emit : seq<nat>) returns (q_seq'seq'nat''_7__emit : se
   assert q_seq'nat'_0__emit[1..15] == q_seq'nat'_2__emit[0..14];
   // Cast TNor ==> THad
   q_seq'nat'_3__emit := CastNorHad(q_seq'nat'_1__emit);
+  assert 1 == |q_seq'nat'_3__emit|;
+  assert (forall i : nat | 0 <= i < 1 :: q_seq'nat'_3__emit[i] == 1);
   // Cast THad ==> TEN01
   q_seq'seq'nat''_4__emit := CastHadEN01'1(q_seq'nat'_3__emit);
   q_seq'nat'_5__emit := q_seq'nat'_2__emit[0..9];
