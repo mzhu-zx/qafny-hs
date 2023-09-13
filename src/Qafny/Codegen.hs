@@ -111,8 +111,14 @@ import           Qafny.Utils
     , rbindingOfRangeQTy
     , removeEmitRangeQTys
     , rethrowMaybe
-    , throwError'
     )
+
+
+throwError'
+  :: ( Has (Error String) sig m )
+  => String -> m a
+throwError' = throwError @String . ("[Codegen] " ++)
+
 
 --------------------------------------------------------------------------------
 -- * Introduction
@@ -348,7 +354,7 @@ runWithCallStack
   -> m b
   -> m b
 runWithCallStack s =
-  flip catchError $ \err -> throwError' $ err ++ "\nat:\n" ++ showEmitI 4 s
+  flip catchError $ \err -> throwError $ err ++ "\nat:\n" ++ showEmitI 4 s
 
 codegenStmt'
   :: ( Has (Reader TEnv) sig m
@@ -579,7 +585,7 @@ codegenStmt'For
   => Stmt'
   -> m [Stmt']
 
-codegenStmt'For (SFor idx boundl boundr eG invs seps body) = do
+codegenStmt'For (SFor idx boundl boundr eG invs (Just seps) body) = do
   -- statePreLoop: the state before the loop starts
   -- stateLoop:    the state for each iteration
   (stmtsPreGuard, statePreLoop, stateLoop) <- codegenInit

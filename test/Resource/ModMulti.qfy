@@ -1,9 +1,32 @@
-method Shor(q : qreg[10], p : qreg[10])
+method Shor(q : qreg[10], p : qreg[10], base : nat)
   requires { q [0 .. 10] : had ↦ ⊗ i . (1) }
-  requires { p [10 .. 20] : en ↦ ∑ i ∈ [0 .. 1]. (1) }
+  requires { p [0 .. 10] : en ↦ ∑ i ∈ [0 .. 1]. (1) }
 {
+  // Some notes on how to compile this.
+  // 
+  // 1. Understand that for the precondition where q[0..0], it holds vacuously
+  //    true because there's no qubit at all.
+  //    Implementationwise, I need a way to skip emitting assertions for empty 
+  //    ranges
+  // 2. With the current semantics, in each iteration, I duplicate both ranges.
+  //    This is decided by the fact that q[i .. i+1] is indeed a Had partition.
+  // 3. Merge turns to be trickier? 
+  //    I need a way to do q[ 0 .. i ]  + q [i .. i + 1] provided that they're 
+  //    of different types.
+  //    I can use the fact that in the invariant typing q[i .. i + 1] is
+  //    adjacent to q[0..i] to make it work so that I just add 0 to one half and
+  //    add Pow(i) to another
+  // 4. This semantics should be documented seriously for our Dafny 2024
+  //    submission.  
   for i in [0 .. 10] with q[i .. i + 1]
+    separates p [0 .. 10]
+    invariant {
+      q [0 .. i], p[0 .. 10] : en ↦ ∑ k ∈ [0 .. Pow2(i)] . ( k , ((Pow(a, k)) % 10) )
+    }
+    invariant {
+      q [i .. i+1] : had ↦ ⊗ i . (1)
+    }   
   {
-  
+    p[0 .. 10] *= λ (x => ((Pow(base, Pow2(i))) * x) % N);
   }
 }  

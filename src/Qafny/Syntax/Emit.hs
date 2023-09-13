@@ -218,6 +218,7 @@ instance DafnyPrinter (Exp ()) where
           beb Nothing    = mempty
   build e@EHad = debugOnly e "H"
   build e@ESpec{} = debugOnly e (show e)
+  build e@(EApp v es) = v <!> withParen (byComma es)
   build e = "//" <!> show e <!> build " should not be in emitted form!"
 
 instance DafnyPrinter EmitExp where
@@ -245,6 +246,7 @@ instance (Show a, Show b, DafnyPrinter a, DafnyPrinter b) => DafnyPrinter (a, b)
 
 -- | Warning: don't emit parentheses in `buildOp2` because `EOpChained` relies
 -- on this function not to be parenthesized
+-- TODO: I want to get the precedence right here.
 buildOp2 :: Op2 -> Builder -> Builder -> Builder
 buildOp2 op b1 b2 =  parenOpt b1 <!> opSign <!> parenOpt b2
   where
@@ -253,6 +255,7 @@ buildOp2 op b1 b2 =  parenOpt b1 <!> opSign <!> parenOpt b2
       case op of
         OAnd -> withParen
         OOr  -> withParen
+        OMod -> withParen -- mod is a fragile operator
         _    -> id
         
     opSign :: String

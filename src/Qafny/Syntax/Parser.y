@@ -164,11 +164,11 @@ qspec ::  { SpecExp' }
   : "⊗" id '.' tuple(expr)
                                       { SESpecNor $2 $4                   }
   | "Σ" id "∈" '[' expr ".." expr ']' '.' tuple(expr)
-                                      { SESpecEN $2 (Intv $5 $7) $10           }
+                                      { SESpecEN $2 (Intv $5 $7) $10  }
   | "Σ" id "∈" '[' expr ".." expr ']' '.'             {- 9  -}
     "⊗" id "∈" '[' expr ".." expr ']' '.'             {- 18 -}
     tuple(expr)
-                                      { SESpecEN01 $2 (Intv $5 $7) $11 (Intv $14 $16) $19           }
+                                      { SESpecEN01 $2 (Intv $5 $7) $11 (Intv $14 $16) $19 }
 
   | '_'                               { SEWildcard }
 
@@ -185,7 +185,7 @@ expr
   | "not" atomic                      { EOp1 ONot $2           }
   | "nor" '(' atomic ',' digits ')'   { EOp2 ONor $3 (ENum $5) }
   | "λ" '(' id "=>" expr ')'          { EEmit $ ELambda $3 $5  }
-  | id '(' atomic ')'                 { EApp $1 $3             }
+  | id tuple(expr)                    { EApp $1 $2             }
   | logicOrExp                        { $1                     }
 
 qops

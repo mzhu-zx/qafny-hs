@@ -169,7 +169,7 @@ data Exp x
   | ERQFT
   | EMea Var
   | EBool Bool
-  | EApp Var (XRec x (Exp x))
+  | EApp Var [(XRec x (Exp x))]
   | EOp1 Op1 (XRec x (Exp x))
   | EOp2 Op2 (XRec x (Exp x)) (XRec x (Exp x))
   | EForall (Binding x) (Maybe (XRec x (Exp x))) (XRec x (Exp x))
@@ -312,7 +312,7 @@ data Stmt x where
   SIf :: GuardExp -> Partition -> (Block x) -> Stmt x
   -- TODO: Refactor 'For' with a record
   --     id      left                right               guard       invarants             separates Body
-  SFor :: Var -> (XRec x (Exp x)) -> (XRec x (Exp x)) -> GuardExp -> [(XRec x (Exp x))] -> Partition -> (Block x) -> Stmt x
+  SFor :: Var -> (XRec x (Exp x)) -> (XRec x (Exp x)) -> GuardExp -> [(XRec x (Exp x))] -> Maybe Partition -> (Block x) -> Stmt x
   SEmit :: EmitStmt -> Stmt x
 
 deriving instance Show (Stmt ())
@@ -385,7 +385,7 @@ data ExpF f
   | ERQFTF
   | EMeaF Var
   | EBoolF Bool
-  | EAppF Var f
+  | EAppF Var [f]
   | EOp1F Op1 f
   | EOp2F Op2 f f
   | EForallF (Binding ()) (Maybe f) f

@@ -31,11 +31,12 @@ requireEnsures =
         _          -> Left . err $ show cond
     err = printf "%s is not one of `requires` or `ensures`"
 
-invariantSeperates :: [Conds] -> Parser ([Exp'], Partition)
+invariantSeperates :: [Conds] -> Parser ([Exp'], Maybe Partition)
 invariantSeperates conds = do
   (invs, seps) <- foldr inner (return ([], [])) conds
   case seps of
-    [sep] -> return (invs, sep)
+    []    -> return (invs, Nothing)
+    [sep] -> return (invs, Just sep)
     _     -> Left . errSep $ show seps
   where
     inner cond mrqens = do

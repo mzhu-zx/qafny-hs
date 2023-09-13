@@ -31,10 +31,10 @@ import           Qafny.TypeUtils              (typingQEmit)
 import           Qafny.Variable               (Variable (variable))
 import           Text.Printf                  (printf)
 
-throwError'
+throwError''
   :: ( Has (Error String) sig m )
   => String -> m a
-throwError' = throwError @String
+throwError'' = throwError @String
 
 -- | Catch the error in the Maybe and rethrow it as an Error
 rethrowMaybe
@@ -43,7 +43,7 @@ rethrowMaybe
   -> String
   -> m a
 rethrowMaybe mayFail err =
-  mayFail >>= maybe (throwError' err) return
+  mayFail >>= maybe (throwError'' err) return
 
 
 gensymLoc
@@ -166,8 +166,8 @@ getMethodType v = do
   case tyM of
     Just mty ->
       case unMTy mty of
-        Inl ty -> throwError' $ printf "%s is not a method but a %s" v (showEmitI 0 ty)
+        Inl ty -> throwError'' $ printf "%s is not a method but a %s" v (showEmitI 0 ty)
         Inr mty -> pure mty
-    _             -> asks (^. kEnv) >>= throwError' . show . UnknownVariableError v
+    _             -> asks (^. kEnv) >>= throwError'' . show . UnknownVariableError v
 
 

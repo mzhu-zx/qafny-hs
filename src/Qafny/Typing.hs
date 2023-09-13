@@ -38,7 +38,6 @@ import           Qafny.Utils
     , gensymLoc
     , removeEmitRangeQTys
     , rethrowMaybe
-    , throwError'
     )
 
 -- Utils
@@ -85,6 +84,13 @@ import           Qafny.Syntax.Emit
     , showEmitI
     )
 import           Text.Printf                (printf)
+
+
+throwError'
+  :: ( Has (Error String) sig m )
+  => String -> m a
+throwError' = throwError @String . ("[Typing] " ++)
+
 
 -- | Compute the simple type of the given expression
 typingExp
