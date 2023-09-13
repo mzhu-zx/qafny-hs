@@ -10,9 +10,11 @@ import opened Seq
 import opened Power2
 import opened Power
 
-method Shor (base : nat, q_seq'nat'_0__emit : seq<nat>, p_seq'nat'_1__emit : seq<nat>)
+method Shor (base : nat, q_seq'nat'_0__emit : seq<nat>, p_seq'nat'_1__emit : seq<nat>) returns (q_seq'nat'_8__emit : seq<nat>, p_seq'nat'_9__emit : seq<nat>, q_seq'nat'_10__emit : seq<nat>)
   requires (10 == |q_seq'nat'_0__emit|) && ((forall i : nat | 0 <= i < 10 :: q_seq'nat'_0__emit[i] == 1))
   requires (1 == |p_seq'nat'_1__emit|) && ((forall i : nat | 0 <= i < 1 :: p_seq'nat'_1__emit[i] == 1))
+  ensures (((2 == |q_seq'nat'_8__emit|) && ((forall k : nat | 0 <= k < 2 :: q_seq'nat'_8__emit[k] == k))) && (2 == |p_seq'nat'_9__emit|)) && ((forall k : nat | 0 <= k < 2 :: p_seq'nat'_9__emit[k] == (Pow(base, k)) % (10)))
+  ensures (9 == |q_seq'nat'_10__emit|) && ((forall i : nat | 0 <= i < 9 :: q_seq'nat'_10__emit[i] == 1))
 {
   var p_seq'nat'_2__emit : seq<nat> := p_seq'nat'_1__emit;
   var q_seq'nat'_3__emit : seq<nat> := q_seq'nat'_0__emit;
@@ -45,6 +47,9 @@ method Shor (base : nat, q_seq'nat'_0__emit : seq<nat>, p_seq'nat'_1__emit : seq
   assert (forall k : nat | 0 <= k < 2 :: q_seq'nat'_7__emit[k] == k);
   assert 2 == |p_seq'nat'_2__emit|;
   assert (forall k : nat | 0 <= k < 2 :: p_seq'nat'_2__emit[k] == (Pow(base, k)) % (10));
+  q_seq'nat'_8__emit := q_seq'nat'_7__emit;
+  p_seq'nat'_9__emit := p_seq'nat'_2__emit;
+  q_seq'nat'_10__emit := q_seq'nat'_5__emit;
 }
 
 }
