@@ -435,8 +435,8 @@ typingGuard
      , Has (Reader IEnv) sig m
      , Has Trace sig m
      )
-  => GuardExp -> m STuple
-typingGuard (GEPartition s' _) = resolvePartition s'
+  => GuardExp -> m (STuple, Partition)
+typingGuard (GEPartition s' _) = resolvePartition s' <&> (,s')
 
 -- | Type check if the given partition exists in the context
 typingPartitionQTy
@@ -758,14 +758,19 @@ analyzeMethodType (QMethod v bds rts rqs ens _) = do
       srcReturns = collectRange <$> rts
       instantiate (r :: Map.Map Var Range) =
         runIdentity $ runReader r $ forM (mapMaybe collectSignature rqs) go
+      receive (r :: Map.Map Var Range) =
+        runIdentity $ runReader r $ forM (mapMaybe collectSignature ens) go
+
+
     in (v, MethodType { mtSrcParams=srcParams
                       , mtSrcReturns=srcReturns
                       , mtInstantiate = instantiate
+                      , mtReceiver = receive
                       })
   where
     collectRange :: Binding () -> MethodElem
     collectRange (Binding vq (TQReg a)) = MTyQuantum vq (aexpToExp a)
-    collectRange (Binding varg t)          = MTyPure varg t
+    collectRange (Binding varg t)       = MTyPure varg t
 
     collectSignature :: Exp' -> Maybe (Partition, QTy)
     collectSignature (ESpec s qt _) = pure (s, qt)

@@ -289,3 +289,6 @@ showEmit = unpack . texify
 -- Debug mode
 showEmitI :: DafnyPrinter a => Int -> a -> String
 showEmitI i = unpack . runBuilder i True
+
+showEmit0 :: DafnyPrinter a => a -> String
+showEmit0 = showEmitI 0

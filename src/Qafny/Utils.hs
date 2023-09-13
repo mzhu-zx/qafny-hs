@@ -63,6 +63,7 @@ gensymLoc = (Loc <$>) . gensym . variable . Loc
 rbindingOfRangeQTy :: Range -> QTy -> RBinding
 rbindingOfRangeQTy r qty = RBinding (reduce r, typingQEmit qty)
 
+
 -- | Generate a varaible from a 'Range' and its 'QTy' and add the corresponding
 -- 'Binding' into 'emitSt'
 gensymEmitRangeQTy
@@ -70,8 +71,14 @@ gensymEmitRangeQTy
      , Has (State TState) sig m
      )
   => Range -> QTy-> m Var
-gensymEmitRangeQTy r qty = do
-  let rb = rbindingOfRangeQTy r qty
+gensymEmitRangeQTy r qty = gensymEmitRB (rbindingOfRangeQTy r qty)
+
+gensymEmitRB
+  :: ( Has (Gensym RBinding) sig m
+     , Has (State TState) sig m
+     )
+  => RBinding -> m Var
+gensymEmitRB rb = do
   name <- gensym rb
   emitSt %= (at rb ?~ name)
   return name
@@ -83,6 +90,14 @@ gensymRangeQTy
   => Range -> QTy -> m Var
 gensymRangeQTy r qty =
   gensym $ rbindingOfRangeQTy r qty
+
+gensymEmitPartitionQTy 
+  :: ( Has (Gensym RBinding) sig m
+     , Has (State TState) sig m
+     )
+  => Partition -> QTy -> m [Var]
+gensymEmitPartitionQTy p qty = 
+  forM (unpackPart p) (`gensymEmitRangeQTy` qty)
 
 liftPartition :: Monad m => (Range -> m b) -> Partition -> m [b]
 liftPartition f p = forM (unpackPart p) f
@@ -127,6 +142,12 @@ modifyEmitRangeQTy r qty name = do
   let rb = rbindingOfRangeQTy r qty
   emitSt %= (at rb ?~ name)
 
+
+removeEmitPartitionQTys
+  :: ( Has (State TState) sig m)
+  => Partition -> QTy -> m ()
+removeEmitPartitionQTys p qty = do
+  removeEmitRangeQTys ((, qty) <$> unpackPart p)
 
 removeEmitRangeQTys
   :: ( Has (State TState) sig m)

@@ -67,9 +67,7 @@ data MethodType = MethodType
   { mtSrcParams :: [MethodElem]
   , mtSrcReturns :: [MethodElem]
   , mtInstantiate :: Map.Map Var Range -> [(Partition, QTy)]
-  -- Parameters for emitted method (Dafny level)
-  -- , mtTgtParams :: [MethodElem]
-  -- , mtTgtReturns :: [MethodElem]
+  , mtReceiver :: Map.Map Var Range -> [(Partition, QTy)]
   }
 
 instance Show MethodType where

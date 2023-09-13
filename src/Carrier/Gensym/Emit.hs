@@ -1,6 +1,13 @@
-{-# LANGUAGE FlexibleContexts, FlexibleInstances, GADTs,
-             GeneralizedNewtypeDeriving, MultiParamTypeClasses, TypeOperators,
-             UndecidableInstances #-}
+{-# LANGUAGE
+    FlexibleContexts
+  , FlexibleInstances
+  , GADTs
+  , GeneralizedNewtypeDeriving
+  , MultiParamTypeClasses
+  , RankNTypes
+  , TypeOperators
+  , UndecidableInstances
+  #-}
 module Carrier.Gensym.Emit where
 
 -- | A carrier for 'Gensym' effect, generating a unique variable on the
@@ -37,3 +44,14 @@ startGensymEmitWith
 startGensymEmitWith i c = do
   let ans = runState (i, []) $ runGensymC c
   ans <&> \((i, w), r) -> (i, w, r)
+
+
+evalGensymEmitWith
+  :: forall s a m . Monad m
+  => Int
+  -> GensymC s m a
+  -> m a
+evalGensymEmitWith i c = do
+  evalState (i, []) $ runGensymC c
+
+
