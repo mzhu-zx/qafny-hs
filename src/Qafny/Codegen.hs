@@ -98,7 +98,7 @@ import           Qafny.Typing
     , typingExp
     , typingGuard
     , typingPartition
-    , typingPartitionQTy
+    , typingPartitionQTy, splitSchemePartition
     )
 import           Qafny.Utils
     ( dumpSSt
@@ -399,11 +399,7 @@ codegenStmt' (SIf e seps b) = do
   -- resolve the type of the guard
   (stG'@(STuple (_, _, qtG)), pG) <- typingGuard e
   -- perform a split to separate the focused guard range from parition
-  (stG, maySplit) <- case unpackPart pG of
-    [rG] -> splitScheme stG' rG
-    _   ->
-      throwError' $ printf "Ambiguous partition %s in the guard expression %s"
-                    (showEmitI 0 pG) (showEmitI 0 e)
+  (stG, maySplit) <- splitSchemePartition stG' pG
   stmtsSplit <- codegenSplitEmitMaybe maySplit
   -- resolve and collect partitions in the body of the IfStmt
   -- analogous to what we do in SepLogic
@@ -679,7 +675,21 @@ codegenStmt'For (SFor idx boundl boundr eG invs (Just seps) body) = do
           --    In this case, split will also requires a non-trivial merge?
           --    How to do this?
           --
-          throwError' $ printf "More than 1 range %s" (show sInv)
+          -- A: In this case, I don't want to do casts or splits at this
+          -- moment. But this will be a serious limitation given that I haven't
+          -- allow explicit casts/splits yet. There's a way to do it by using
+          -- λ. However, this falls into the category of undocumented, probably
+          -- undefined tricks.
+          -- 
+          -- But why would one split and cast a real partition?
+          -- If we have a partition made up of two ranges, it's likely that
+          -- both ranges are in entanglement, therefore, there's no reasonable
+          -- way to split them. To entangle two partitions into one, one should
+          -- use a single If statement to perform the initialization.
+          -- 
+          -- ------------------------------------------------------------------
+          -- Here, I simply allow this by performing NO cast/split.
+          pure [] 
       -- | This is important because we will generate a new state from the loop
       -- invariant and perform both typing and codegen in the new state!
       statePreLoop <- get @TState
@@ -750,8 +760,11 @@ codegenFor'Body
 codegenFor'Body idx boundl boundr eG body stSep@(STuple (_, Partition rsSep, qtSep)) newInvs = do
   let psBody = leftPartitions . inBlock $ body
   (stG@(STuple (_, sG, qtG)), pG) <- typingGuard eG
-  trace $ printf "Partitions collected from %s:\n%s" (showEmit0 eG) (showEmit0 pG)
+  trace $ printf "The guard partition collected from %s is %s" (showEmit0 eG) (showEmit0 pG)
+  trace $ printf "From invariant typing, the guard partition is %s from %s" (showEmit0 pG) (show stG)
+
   -- ^ FIXME: these two handling of guard state seems ungrounded
+  
   (stmtsPrelude, stmtsBody) <- case qtG of
     THad -> do
       stB'@(STuple (_, sB, qtB)) <- resolvePartitions psBody
@@ -761,28 +774,47 @@ codegenFor'Body idx boundl boundr eG body stSep@(STuple (_, Partition rsSep, qtS
         _            -> (,) <$> castPartitionEN stB' <*> resolvePartition (unSTup stB' ^. _2)
 
       -- what to do with the guard partition is unsure...
+      -- TODO: This comment seems out-of-date
       (stmtsDupG, gCorr) <- dupState sG
-
-      (rL, eConstraint) <- makeLoopRange sG boundl boundr
-
-      -- FIXME: for now, I discard the env for the Had case for backward
-      -- compatibility
+      let rG = head (unpackPart pG)
+      (stGSplited, maySplit) <- splitScheme stG rG
+      stmtsSplitG <- codegenSplitEmitMaybe maySplit
+      -- vEmitG <- findEmitRangeQTy rG THad 
+      
       stateIterBegin <- get @TState
-      local (const initIEnv) $ do
-         (stGSplited, schemeSMaybe) <- splitScheme stG rL
-         stmtsSplitG <- codegenSplitEmitMaybe schemeSMaybe
-         schemeC <- retypePartition stGSplited TEN
-         let CastScheme { schVsNewEmit=(~[vEmitG]) } = schemeC
-         let cardVEmitG = EEmit . ECard . EVar $ vEmitG
-         let stmtsInitG =
-               [ qComment "Retype from Had to EN and initialize with 0"
-               , (::=:) vEmitG $
-                   EEmit $ EMakeSeq TNat cardVEmitG $ constExp $ ENum 0 ]
-         stG' <- resolvePartition (unSTup stGSplited ^. _2)
-         stmtsCGHad <- codegenStmt'For'Had stB stG' vEmitG idx body
-         return $ ( stmtsCastB ++ stmtsDupG ++ stmtsInitG
-                  , stmtsSplitG ++ stmtsCGHad
-                  )
+      schemeC <- retypePartition stGSplited TEN
+      let CastScheme { schVsNewEmit=vsEmitG } = schemeC
+      let vEmitG = head vsEmitG
+      let cardVEmitG = EEmit . ECard . EVar $ vEmitG
+      let stmtsInitG =
+            [ qComment "Retype from Had to EN and initialize with 0"
+            , (::=:) vEmitG $
+                EEmit $ EMakeSeq TNat cardVEmitG $ constExp $ ENum 0 ]
+      stG' <- resolvePartition (unSTup stGSplited ^. _2)
+      stmtsCGHad <- codegenStmt'For'Had stB stG' vEmitG idx body
+      return ( stmtsCastB ++ stmtsDupG ++ stmtsInitG
+             , stmtsSplitG ++ stmtsCGHad
+             )
+
+      -- throwError' "BREAK"
+
+      -- ask @IEnv >>= trace . show
+      -- local @IEnv id $ do
+      --   trace $ printf "split %s into %s" (show stG) (showEmit0 rL)
+      --   (stGSplited, schemeSMaybe) <- splitScheme stG rL
+      --   stmtsSplitG <- codegenSplitEmitMaybe schemeSMaybe
+      --   schemeC <- retypePartition stGSplited TEN
+      --   let CastScheme { schVsNewEmit=(~[vEmitG]) } = schemeC
+      --   let cardVEmitG = EEmit . ECard . EVar $ vEmitG
+      --   let stmtsInitG =
+      --         [ qComment "Retype from Had to EN and initialize with 0"
+      --         , (::=:) vEmitG $
+      --             EEmit $ EMakeSeq TNat cardVEmitG $ constExp $ ENum 0 ]
+      --   stG' <- resolvePartition (unSTup stGSplited ^. _2)
+      --   stmtsCGHad <- codegenStmt'For'Had stB stG' vEmitG idx body
+      --   return $ ( stmtsCastB ++ stmtsDupG ++ stmtsInitG
+      --            , stmtsSplitG ++ stmtsCGHad
+      --            )
     TEN01 -> do
       eSep <- case eG of
         GEPartition _ (Just eSep) -> return eSep
@@ -855,10 +887,10 @@ codegenFor'Body idx boundl boundr eG body stSep@(STuple (_, Partition rsSep, qtS
       -- 3. Perform merge with merge scheme
       stmtsAndVsMerge <- (concat <$>) $ forM psBody $ \p -> do
         stP <- resolvePartition p
-        dumpSSt "premerge"
+        -- dumpSSt "premerge"
         schemes <- mergeScheme stSep stP
-        trace $ printf "What's the merge scheme here?\n %s" (show schemes)
-        dumpSSt "postmerge"
+        -- trace $ printf "What's the merge scheme here?\n %s" (show schemes)
+        -- dumpSSt "postmerge"
         codegenMergeScheme schemes
       let (stmtsMerge, vsEmitMerge) = unzip stmtsAndVsMerge
 

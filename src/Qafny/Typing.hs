@@ -247,6 +247,27 @@ splitScheme s r = do
   --   (show s) (show r) (show ans)
   return ans
 
+
+-- | Rationale: there's no good reason to split a partition with multiple ranges
+-- in entanglement. So, we're safe to reject non-singleton partitions for now.
+splitSchemePartition
+  :: ( Has (Error String) sig m
+     , Has (Gensym String) sig m
+     , Has (State TState) sig m
+     , Has (Gensym RBinding) sig m
+     , Has (Reader IEnv) sig m
+     , Has Trace sig m
+     )
+  => STuple
+  -> Partition
+  -> m (STuple, Maybe SplitScheme)
+splitSchemePartition st p = 
+  case unpackPart p of
+    [r] -> splitScheme st r
+    _   -> throwError' $
+      printf "Partition %s contains multiple ranges for split, which is likely to be a bug!" (showEmitI 0 p) 
+
+
 -- | Remove range if it is equivalent to the bottom
 contractRange
   :: ( Has (Error String) sig m
