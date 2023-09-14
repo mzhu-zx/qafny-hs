@@ -1010,7 +1010,7 @@ cardStatesCorr a =
 -- Merge the two partitions in correspondence
 mergeEmitted :: [(Var, Var)] -> [Stmt']
 mergeEmitted corr =
-  [ (::=:) vMain (EOp2 OAdd (EVar vStash) (EVar vMain))
+  [ vMain ::=: EOp2 OAdd (EVar vStash) (EVar vMain)
   | (vMain, vStash) <- corr ]
 
 

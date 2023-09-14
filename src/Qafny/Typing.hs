@@ -921,10 +921,12 @@ collectConstraints es = (Map.mapMaybe glb1 <$>) . execState Map.empty $ forM nor
     flipLOp OGt = pure OLt
     flipLOp _   = Nothing
 
+
+
+
 --------------------------------------------------------------------------------
 -- | Helpers
 --------------------------------------------------------------------------------
-
 -- Compute types of methods from the toplevel
 collectMethodTypes :: AST -> Map.Map Var MethodType
 collectMethodTypes a = run $ execState Map.empty $
