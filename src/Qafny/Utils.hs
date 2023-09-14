@@ -10,6 +10,7 @@ import           Control.Carrier.State.Church (State)
 import           Control.Effect.Error         (Error, throwError)
 import           Control.Effect.Lens
 import           Control.Effect.Reader
+import           Control.Effect.State
 import           Control.Lens                 (at, (?~), (^.))
 
 --
@@ -165,6 +166,15 @@ exp2AExp (ENum n) = return $ ANat n
 exp2AExp e = throwError @String $
   printf "%s cannot be projected to an AExp." (show e)
 
+dumpSt 
+  :: ( Has (State TState) sig m
+     , Has Trace sig m
+     )
+  => String -> m ()
+dumpSt str = do
+  s <- get @TState
+  trace $ printf "[info] The state after (%s) is:\n%s" str (show s)
+
 dumpSSt
   :: ( Has (State TState) sig m
      , Has Trace sig m
@@ -190,5 +200,3 @@ getMethodType v = do
         Inl ty -> throwError'' $ printf "%s is not a method but a %s" v (showEmitI 0 ty)
         Inr mty -> pure mty
     _             -> asks (^. kEnv) >>= throwError'' . show . UnknownVariableError v
-
-

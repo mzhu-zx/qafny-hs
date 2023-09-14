@@ -13,6 +13,9 @@ module Qafny.Typing where
 
 -- | Typing though Fused Effects
 
+import qualified Debug.Trace as Trace
+
+
 -- Effects
 import           Control.Carrier.Reader     (runReader)
 import           Control.Carrier.State.Lazy (execState)
@@ -774,19 +777,19 @@ mergeSTuples
 -- origianl signature following the calling convention.
 --
 analyzeMethodType :: QMethod () -> (Var, MethodType)
-analyzeMethodType (QMethod v bds rts rqs ens _) = do
+analyzeMethodType (QMethod v bds rts rqs ens _) = 
   let srcParams = collectRange <$> bds
       srcReturns = collectRange <$> rts
       instantiate (r :: Map.Map Var Range) =
         runIdentity $ runReader r $ forM (mapMaybe collectSignature rqs) go
       receive (r :: Map.Map Var Range) =
         runIdentity $ runReader r $ forM (mapMaybe collectSignature ens) go
-
-
+    
     in (v, MethodType { mtSrcParams=srcParams
                       , mtSrcReturns=srcReturns
                       , mtInstantiate = instantiate
                       , mtReceiver = receive
+                      , mtDebugInit = mapMaybe collectSignature rqs
                       })
   where
     collectRange :: Binding () -> MethodElem
@@ -811,11 +814,11 @@ analyzeMethodType (QMethod v bds rts rqs ens _) = do
     instRange
       :: ( Has (Reader (Map.Map Var Range)) sig' m' )
       => Range -> m' Range
-    instRange rr@(Range x l _) = do
+    instRange rr@(Range x l r) = do
       -- Q: What to do with the right
       rMaybe <- asks (Map.!? x)
       pure $ case rMaybe of
-        Just (Range x' l' r') -> reduce $ Range x' (reduce (l + l')) (reduce (l + r'))
+        Just (Range x' l' r') -> reduce $ Range x' (reduce (l + l')) (reduce (r + l'))
         Nothing               -> rr
 
 -- Check if the given argument expressions are consistent with the types in the

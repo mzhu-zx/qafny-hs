@@ -68,6 +68,7 @@ data MethodType = MethodType
   , mtSrcReturns :: [MethodElem]
   , mtInstantiate :: Map.Map Var Range -> [(Partition, QTy)]
   , mtReceiver :: Map.Map Var Range -> [(Partition, QTy)]
+  , mtDebugInit :: [(Partition, QTy)]
   }
 
 instance Show MethodType where

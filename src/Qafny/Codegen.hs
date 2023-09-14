@@ -113,7 +113,7 @@ import           Qafny.Utils
     , modifyEmitRangeQTy
     , rbindingOfRangeQTy
     , removeEmitRangeQTys
-    , rethrowMaybe, removeEmitPartitionQTys, gensymEmitRB
+    , rethrowMaybe, removeEmitPartitionQTys, gensymEmitRB, dumpSt
     )
 
 
@@ -249,7 +249,9 @@ codegenToplevel'Method q@(QMethod v bds rts rqs ens (Just block)) = runWithCallS
         [ stmtsMatchParams
         , return $ qComment "Forward Declaration"
         , stmtsDeclare
-        , [ SDafny "reveal Map();" ] -- TODO: any optimization can be done here?
+        , [ SDafny "reveal Map();"
+          , SDafny "reveal Pow2();"
+          ] -- TODO: any optimization can be done here?
         , [ SDafny "" , qComment "Method Definition"]
         , inBlock blockCG
         , stmtsMatchEnsures
@@ -630,9 +632,9 @@ codegenStmt'For (SFor idx boundl boundr eG invs (Just seps) body) = do
     stmtsBody <- codegenFor'Body idx boundl boundr eG body stSep (concat newInvs)
 
     -- update the post-loop typing state
-    trace $ "stateLoop:\n" ++ show stateLoop
+    -- trace $ "stateLoop:\n" ++ show stateLoop
     codegenFinish stateLoop
-    get @TState >>= trace . ("staetLoop (subst):\n" ++) . show
+    -- get @TState >>= trace . ("staetLoop (subst):\n" ++) . show
     pure $ stmtsBody
 
   return $ concat stmtsPreGuard ++ stmtsBody
@@ -696,7 +698,7 @@ codegenStmt'For (SFor idx boundl boundr eG invs (Just seps) body) = do
 
       -- | Do type inference with the loop invariant typing state
       stateLoop <- tStateFromPartitionQTys invPQts
-      trace $ printf "statePreLoop: %s\nstateLoop: %s"  (show statePreLoop) (show stateLoop)
+      -- trace $ printf "statePreLoop: %s\nstateLoop: %s"  (show statePreLoop) (show stateLoop)
 
       -- | pass preLoop variables to loop ones
       stmtsEquiv <- (uncurry mkAssignment <$>) <$> matchStateCorrLoop statePreLoop stateLoop [(idx, boundl)]
@@ -792,6 +794,7 @@ codegenFor'Body idx boundl boundr eG body stSep@(STuple (_, Partition rsSep, qtS
                 EEmit $ EMakeSeq TNat cardVEmitG $ constExp $ ENum 0 ]
       stG' <- resolvePartition (unSTup stGSplited ^. _2)
       stmtsCGHad <- codegenStmt'For'Had stB stG' vEmitG idx body
+      dumpSt "the end of Had for loop"
       return ( stmtsCastB ++ stmtsDupG ++ stmtsInitG
              , stmtsSplitG ++ stmtsCGHad
              )
@@ -1291,14 +1294,19 @@ codegenMergeScheme = mapM $ \scheme -> do
 codegenMethodParams
   :: ( Has (State TState)  sig m
      , Has (Error String) sig m
+     , Has Trace sig m
      )
   => MethodType -> m [Binding']
 codegenMethodParams MethodType{ mtSrcParams=srcParams
                               , mtInstantiate=instantiator
+                              , mtDebugInit=debugInit
                               } = do
   let pureVars = [ Binding v t | MTyPure v t <- srcParams ]
       qVars = [ (v, Range v 0 card) | MTyQuantum v card <- srcParams ]
       inst = instantiator $ Map.fromList qVars
+  trace $ "INIT: " ++ show debugInit
+  trace $ "QVARS: " ++ show qVars
+  trace $ "INSTANCE: " ++ show inst
   vqEmits <- (concat <$>) . forM inst $ uncurry findEmitBindingsFromPartition
   pure $ pureVars ++ vqEmits
 
@@ -1309,14 +1317,14 @@ codegenRequires
      , Has (Gensym RBinding) sig m
      )
   => [Exp'] -> m [Exp']
-codegenRequires rqs = forM rqs $ \rq ->
+codegenRequires rqs = (concat <$>) $ forM rqs $ \rq ->
   -- TODO: I need to check if partitions from different `requires` clauses are
   -- indeed disjoint!
   case rq of
     ESpec s qt espec -> do
       vsEmit <- extendTState s qt
-      (ands <$>) . runReader True $ codegenSpecExp (zip vsEmit (unpackPart s)) qt espec
-    _ -> return rq
+      runReader True $ codegenSpecExp (zip vsEmit (unpackPart s)) qt espec
+    _ -> return [rq]
 
 codegenMethodReturns
   :: ( Has (State TState) sig m
