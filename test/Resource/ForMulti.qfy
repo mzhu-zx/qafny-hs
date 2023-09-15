@@ -1,7 +1,7 @@
 method Shor(q : qreg[10], p : qreg[10], base : nat )
   requires base >= 3
   requires { q[0 .. 1], p[0 .. 10] : en ↦
-    ∑ k ∈ [0 .. 2] . (k, ((Pow(base, k)) % 10))
+    ∑ k ∈ [0 .. 2] . (k, ((Pow(base, k))))
   }
   requires { q[1 .. 10] : had ↦ ⊗ i . (1) }
 {
@@ -25,12 +25,12 @@ method Shor(q : qreg[10], p : qreg[10], base : nat )
   for i in [1 .. 10] with q[i .. i + 1]
     separates q[0 .. i], p[0 .. 10]
     invariant {
-      q[0 .. i], p[0 .. 10] : en ↦ ∑ k ∈ [0 .. Pow2(i)] . ( k , ((Pow(base, k)) % 10) )
+      q[0 .. i], p[0 .. 10] : en ↦ ∑ k ∈ [0 .. Pow2(i)] . ( k , ((Pow(base, k))))
     }
     invariant {
       q [i .. 10] : had ↦ ⊗ k . (1)
     }   
   {
-    p[0 .. 10] *= λ (x => ((Pow(base, Pow2(i))) * x) % 10);
+    p[0 .. 10] *= λ (x => ((Pow(base, Pow2(i))) * x));
   }
 }  

@@ -84,7 +84,7 @@ import           Qafny.Partial              (Reducible (reduce))
 import           Qafny.Syntax.Emit
     ( DafnyPrinter (build)
     , byComma
-    , showEmitI
+    , showEmitI, showEmit0, byLineT
     )
 import           Text.Printf                (printf)
 
@@ -623,8 +623,9 @@ retypePartition = (snd <$>) .: castScheme
 matchEmitStates
   :: EmitState -> EmitState -> [(Range, (Var, Var))]
 matchEmitStates es1 es2 =
-  Map.toList $ Map.intersectionWith (,) em1 em2
+  filter removeEq . Map.toList $ Map.intersectionWith (,) em1 em2
   where
+    removeEq (_, (v1, v2)) = v1 /= v2
     ripLoc = Map.mapKeys (fst . unRBinding)
     reduceKeys = Map.mapKeys reduce
     reduceMap = reduceKeys . ripLoc
@@ -922,7 +923,36 @@ collectConstraints es = (Map.mapMaybe glb1 <$>) . execState Map.empty $ forM nor
     flipLOp _   = Nothing
 
 
+-- | Given an STuple for a fragment of a Had guard match in the current
+-- environment for a EN partition to be merged with this stuple. 
+mergeCandidateHad
+  :: ( Has (State TState) sig m
+     , Has (Error String) sig m
+     , Has (Reader IEnv) sig m
+     , Has Trace sig m
+     )
+  => STuple -> m STuple
+mergeCandidateHad st@(STuple (_, Partition [r], THad)) = do
+  ps <- use sSt <&> Map.elems
+  matched <- catMaybes <$> forM ps matchMergeable
+  case matched of
+    [p'] -> resolvePartition p'
+    _    -> throwError' $ ambiguousCandidates matched
+  where
+    matchMergeable (p'@(Partition rs), TEN) = do
+      rsAdjacent <- lookupAdjacentRange rs r
+      pure $ case rsAdjacent of
+        [] -> Nothing
+        _  -> Just p'
+    matchMergeable _ = pure Nothing
 
+    ambiguousCandidates matched = printf
+      "There're more than one merge candidate for %s.\n%s"
+      (show st) (showEmit0 $ byLineT matched)
+
+
+mergeCandidateHad st =
+  throwError' $ printf "%s may not be a Had guard partition." (show st)
 
 --------------------------------------------------------------------------------
 -- | Helpers

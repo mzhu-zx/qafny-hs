@@ -3,9 +3,11 @@ method For0 (n : nat)
 {
   var q : qreg[n] := nor(n, 0);
   var p : qreg[n] := nor(n, 0);
+
   q[0 .. 1] *= H;
   for i in [0 .. n] with q[i .. (i + 1)]
     separates p[0 .. n]
+    invariant { p [0 .. n] : en ↦ ∑ j ∈ [0 .. Pow2(i)] . (j % 2) }
   {
     p[0 .. n] *= λ (x => (x + 1) % 2);
   }

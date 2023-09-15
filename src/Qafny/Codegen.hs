@@ -70,7 +70,7 @@ import           Qafny.Syntax.Emit
     ( DafnyPrinter (build)
     , showEmit
     , showEmit0
-    , showEmitI
+    , showEmitI, byLineT
     )
 import           Qafny.TypeUtils              (isEN, typingQEmit)
 import           Qafny.Typing
@@ -98,7 +98,7 @@ import           Qafny.Typing
     , typingExp
     , typingGuard
     , typingPartition
-    , typingPartitionQTy, splitSchemePartition
+    , typingPartitionQTy, splitSchemePartition, mergeCandidateHad
     )
 import           Qafny.Utils
     ( dumpSSt
@@ -592,7 +592,7 @@ codegenStmt'If'Had stG stB' b = do
   -- 3. merge duplicated body partitions and merge the body with the guard
   stB <- resolvePartition sB
   stmtsG <- mergeHadGuard stG stB cardMain cardStash
-  let stmtsMerge = mergeEmitted corr
+  let stmtsMerge = mergeEmitted corr []
   return $ stmtsDupB ++ [stmtB] ++ [stmtCard, stmtStash] ++ stmtsMerge ++ stmtsG
   where
     saveCard e = do
@@ -770,6 +770,7 @@ codegenFor'Body idx boundl boundr eG body stSep@(STuple (_, Partition rsSep, qtS
   (stmtsPrelude, stmtsBody) <- case qtG of
     THad -> do
       stB'@(STuple (_, sB, qtB)) <- resolvePartitions psBody
+
       -- It seems that castEN semantics maybe unnecessary with invariant typing?
       (stmtsCastB, stB) <- case qtB of
         _ | isEN qtB -> return ([], stB')
@@ -777,47 +778,38 @@ codegenFor'Body idx boundl boundr eG body stSep@(STuple (_, Partition rsSep, qtS
 
       -- what to do with the guard partition is unsure...
       -- TODO: This comment seems out-of-date
-      (stmtsDupG, gCorr) <- dupState sG
+      -- (stmtsDupG, gCorr) <- dupState sG
+      ------------------------------------------------------------
+      -- Begin compiling the body
+      ------------------------------------------------------------
+      stateIterBegin <- get @TState
+      dumpSt "the beginning of Had for loop"
+
       let rG = head (unpackPart pG)
       (stGSplited, maySplit) <- splitScheme stG rG
       stmtsSplitG <- codegenSplitEmitMaybe maySplit
-      -- vEmitG <- findEmitRangeQTy rG THad 
+
+      -- Splitting the guard maintains the invariant of the Had part. It remains
+      -- to find a merge candidate of this split guard parition at the end of
+      -- the loop.
       
-      stateIterBegin <- get @TState
-      schemeC <- retypePartition stGSplited TEN
-      let CastScheme { schVsNewEmit=vsEmitG } = schemeC
-      let vEmitG = head vsEmitG
-      let cardVEmitG = EEmit . ECard . EVar $ vEmitG
-      let stmtsInitG =
-            [ qComment "Retype from Had to EN and initialize with 0"
-            , (::=:) vEmitG $
-                EEmit $ EMakeSeq TNat cardVEmitG $ constExp $ ENum 0 ]
+      -- schemeC <- retypePartition stGSplited TEN
+      -- let CastScheme { schVsNewEmit=vsEmitG } = schemeC
+      -- let vEmitG = head vsEmitG
+      -- let cardVEmitG = EEmit . ECard . EVar $ vEmitG
+      -- let stmtsInitG =
+      --       [ qComment "Retype from Had to EN and initialize with 0"
+      --       , (::=:) vEmitG $
+      --           EEmit $ EMakeSeq TNat cardVEmitG $ constExp $ ENum 0 ]
       stG' <- resolvePartition (unSTup stGSplited ^. _2)
-      stmtsCGHad <- codegenStmt'For'Had stB stG' vEmitG idx body
+      stmtsCGHad <- codegenStmt'For'Had stB stG' idx body
       dumpSt "the end of Had for loop"
-      return ( stmtsCastB ++ stmtsDupG ++ stmtsInitG
-             , stmtsSplitG ++ stmtsCGHad
+      stmtsMatchLoopBeginEnd <- codegenMatchLoopBeginEnd . inferTsLoopEnd $ stateIterBegin ^. emitSt
+
+      return ( stmtsCastB -- ++ stmtsDupG -- ++ stmtsInitG
+             , stmtsSplitG ++ stmtsCGHad ++ stmtsMatchLoopBeginEnd
              )
 
-      -- throwError' "BREAK"
-
-      -- ask @IEnv >>= trace . show
-      -- local @IEnv id $ do
-      --   trace $ printf "split %s into %s" (show stG) (showEmit0 rL)
-      --   (stGSplited, schemeSMaybe) <- splitScheme stG rL
-      --   stmtsSplitG <- codegenSplitEmitMaybe schemeSMaybe
-      --   schemeC <- retypePartition stGSplited TEN
-      --   let CastScheme { schVsNewEmit=(~[vEmitG]) } = schemeC
-      --   let cardVEmitG = EEmit . ECard . EVar $ vEmitG
-      --   let stmtsInitG =
-      --         [ qComment "Retype from Had to EN and initialize with 0"
-      --         , (::=:) vEmitG $
-      --             EEmit $ EMakeSeq TNat cardVEmitG $ constExp $ ENum 0 ]
-      --   stG' <- resolvePartition (unSTup stGSplited ^. _2)
-      --   stmtsCGHad <- codegenStmt'For'Had stB stG' vEmitG idx body
-      --   return $ ( stmtsCastB ++ stmtsDupG ++ stmtsInitG
-      --            , stmtsSplitG ++ stmtsCGHad
-      --            )
     TEN01 -> do
       eSep <- case eG of
         GEPartition _ (Just eSep) -> return eSep
@@ -858,7 +850,6 @@ codegenFor'Body idx boundl boundr eG body stSep@(STuple (_, Partition rsSep, qtS
       -- I need a way to merge two typing state here.
       put tsFalse
 
-      let inferTsLoopEnd =  subst [(idx, EVar idx + 1)]
       stmtsMatchLoopBeginEnd <- codegenMatchLoopBeginEnd . inferTsLoopEnd $ stateIterBegin ^. emitSt
 
       -- 4. put stashed part back
@@ -882,6 +873,7 @@ codegenFor'Body idx boundl boundr eG body stSep@(STuple (_, Partition rsSep, qtS
   let innerFor = SEmit $ SForEmit idx boundl boundr newInvs $ Block stmtsBody
   return $ stmtsPrelude ++ [innerFor]
   where
+    inferTsLoopEnd =  subst [(idx, EVar idx + 1)]
     codegenHalf psBody = do
       -- 2. generate the body statements with the hint that lambda should
       -- resolve to EN01 now
@@ -928,17 +920,16 @@ codegenStmt'For'Had
      , Has (Gensym RBinding) sig m
      , Has Trace sig m
      )
-  => STuple -> STuple -> Var -> Var -> Block'
+  => STuple -> STuple -> Var -> Block'
   -> m [Stmt']
-codegenStmt'For'Had stB stG vEmitG vIdx b = do
+codegenStmt'For'Had stB stG vIdx b = do
   -- 0. extract partition, this will not be changed
   let sB = unSTup stB ^. _2
-  -- 1. duplicate the guard
+  -- 1. duplicate the body
   (stmtsDupB, corrB) <- dupState sB
+  trace $ ">>>>>\n" ++ showEmitI 4 (byLineT stmtsDupB)
   -- 3. codegen the body
   stmtB <- SEmit . SBlock <$> codegenBlock b
-  -- 4. merge the main body with the stashed
-  let stmtsMergeB = mergeEmitted corrB
 
   -- 5. (Proposed) compute the value for the had ket from the counter and the
   -- body cardinality
@@ -951,11 +942,15 @@ codegenStmt'For'Had stB stG vEmitG vIdx b = do
   -- the body, this strategy is incorrect!
 
   -- 5. (Compromised) double the counter
-  let stmtAdd1 = addENHad1 vEmitG vIdx
-  mergeSTuples stB stG
-  return $ stmtsDupB ++ [stmtB] ++ stmtsMergeB ++ [ stmtAdd1 ]
+  stToBeMerged <- mergeCandidateHad stG
+  mayMerge <- mergeScheme stToBeMerged stG
+  (stmtsMergeG, vsSkip) <- unzip <$> codegenMergeScheme mayMerge
+
+  -- 4. merge the main body with the stashed
+  let stmtsMergeB = mergeEmitted corrB vsSkip
 
 
+  return $ stmtsDupB ++ [stmtB] ++ stmtsMergeB ++ stmtsMergeG
 
 -- | Assume `stG` is a Had guard, cast it into `EN` type and merge it with
 -- the partition in`stB`. The number of kets in the generated states depends on
@@ -1008,10 +1003,11 @@ cardStatesCorr a =
 
 
 -- Merge the two partitions in correspondence
-mergeEmitted :: [(Var, Var)] -> [Stmt']
-mergeEmitted corr =
+mergeEmitted :: [(Var, Var)] -> [Var] -> [Stmt']
+mergeEmitted corr excluded =
   [ vMain ::=: EOp2 OAdd (EVar vStash) (EVar vMain)
-  | (vMain, vStash) <- corr ]
+  | (vMain, vStash) <- corr
+  , vMain `notElem` excluded ]
 
 
 -- | Generate statements that allocate qubits if it's Nor; otherwise, keep the
@@ -1224,7 +1220,7 @@ codegenSplitThenCastEmit sS sC =
 --------------------------------------------------------------------------------
 -- | Merge semantics of a Had qubit into one EN emitted state
 -- uses the name of the emitted seq as well as the index name
-addENHad1 :: Var -> Var -> Stmt'
+addENHad1 :: Var -> Exp' -> Stmt'
 addENHad1 vEmit idx =
   (::=:) vEmit $
     EOp2 OAdd (EVar vEmit) (EEmit $ ECall "Map" [eLamPlusPow2, EVar vEmit])
@@ -1232,7 +1228,7 @@ addENHad1 vEmit idx =
     vfresh = "x__lambda"
     eLamPlusPow2 =
       EEmit . ELambda vfresh $
-        EOp2 OAdd (EVar vfresh) (EEmit (ECall "Pow2" [EVar idx]))
+        EOp2 OAdd (EVar vfresh) (EEmit (ECall "Pow2" [idx]))
 
 
 -- | Multiply the Had coutner by 2
@@ -1256,17 +1252,21 @@ codegenMergeScheme = mapM $ \scheme -> do
     MJoin JoinStrategy { jsQtMain=qtMain, jsQtMerged=qtMerged
                        , jsRResult=rResult, jsRMerged=rMerged, jsRMain=rMain
                        } -> do
-      vEmitResult <- gensymEmitRangeQTy rResult qtMain
       vEmitMerged <- findEmitRangeQTy rMerged qtMerged
       vEmitMain   <- findEmitRangeQTy rMain qtMain
       removeEmitRangeQTys [(rMerged, qtMerged), (rMain, qtMain)]
       case (qtMain, qtMerged) of
         (TEN01, TNor) -> do
           -- append the merged value (ket) into each kets in the main value
+          vEmitResult <- gensymEmitRangeQTy rResult qtMain
           vBind <- gensym "lambda_x"
           let stmt = vEmitResult ::=: callMap ef (EVar vEmitMain)
               ef   = EEmit (ELambda vBind (EVar vBind + EVar vEmitMerged))
           return (stmt, vEmitMain)
+        (TEN, THad) -> do
+          let (Range _ lBound rBound) = rMain
+          let stmtAdd = addENHad1 vEmitMain (reduce (rBound - lBound))
+          return (stmtAdd, vEmitMain)
         _             -> throwError' $ printf "No idea about %s to %s conversion."
     MEqual EqualStrategy { esRange = r, esQTy = qt
                          , esVMain = v1, esVAux = v2 } -> do

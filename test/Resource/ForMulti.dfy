@@ -15,7 +15,7 @@ method Shor (base : nat, q_seq'nat'_0__emit : seq<nat>, p_seq'nat'_1__emit : seq
   requires 2 == |q_seq'nat'_0__emit|
   requires (forall k : nat | 0 <= k < 2 :: q_seq'nat'_0__emit[k] == k)
   requires 2 == |p_seq'nat'_1__emit|
-  requires (forall k : nat | 0 <= k < 2 :: p_seq'nat'_1__emit[k] == (Pow(base, k)) % (10))
+  requires (forall k : nat | 0 <= k < 2 :: p_seq'nat'_1__emit[k] == Pow(base, k))
   requires 9 == |q_seq'nat'_2__emit|
   requires (forall i : nat | 0 <= i < 9 :: q_seq'nat'_2__emit[i] == 1)
 {
@@ -41,7 +41,7 @@ method Shor (base : nat, q_seq'nat'_0__emit : seq<nat>, p_seq'nat'_1__emit : seq
     invariant Pow2(i) == |q_seq'nat'_6__emit|
     invariant (forall k : nat | 0 <= k < Pow2(i) :: q_seq'nat'_6__emit[k] == k)
     invariant Pow2(i) == |p_seq'nat'_7__emit|
-    invariant (forall k : nat | 0 <= k < Pow2(i) :: p_seq'nat'_7__emit[k] == (Pow(base, k)) % (10))
+    invariant (forall k : nat | 0 <= k < Pow2(i) :: p_seq'nat'_7__emit[k] == Pow(base, k))
     invariant 10 - i == |q_seq'nat'_8__emit|
     invariant (forall k : nat | 0 <= k < 10 - i :: q_seq'nat'_8__emit[k] == 1)
   {
@@ -55,7 +55,7 @@ method Shor (base : nat, q_seq'nat'_0__emit : seq<nat>, p_seq'nat'_1__emit : seq
     q_seq'nat'_11__emit := q_seq'nat'_6__emit;
     p_seq'nat'_12__emit := p_seq'nat'_7__emit;
     {
-      p_seq'nat'_7__emit := Map(x => (Pow(base, Pow2(i)) * x) % (10), p_seq'nat'_7__emit);
+      p_seq'nat'_7__emit := Map(x => Pow(base, Pow2(i)) * x, p_seq'nat'_7__emit);
     }
 
     p_seq'nat'_7__emit := p_seq'nat'_12__emit + p_seq'nat'_7__emit;
