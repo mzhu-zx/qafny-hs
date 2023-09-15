@@ -9,6 +9,7 @@ import opened QPreludeUntyped
 import opened Seq
 import opened Power2
 import opened Power
+import opened DivMod
 
 method Shor (base : nat, q_seq'nat'_0__emit : seq<nat>, p_seq'nat'_1__emit : seq<nat>, q_seq'nat'_2__emit : seq<nat>)
   requires base >= 3
@@ -56,6 +57,7 @@ method Shor (base : nat, q_seq'nat'_0__emit : seq<nat>, p_seq'nat'_1__emit : seq
     p_seq'nat'_12__emit := p_seq'nat'_7__emit;
     {
       p_seq'nat'_7__emit := Map(x => (Pow(base, Pow2(i)) * x) % (10), p_seq'nat'_7__emit);
+      LemmaPowEquiv(p_seq'nat'_7__emit, base, i, 10);
     }
 
     p_seq'nat'_7__emit := p_seq'nat'_12__emit + p_seq'nat'_7__emit;
@@ -65,4 +67,19 @@ method Shor (base : nat, q_seq'nat'_0__emit : seq<nat>, p_seq'nat'_1__emit : seq
 
 }
 
+lemma LemmaPowEquiv(s : seq<nat>, a : nat, i : nat, N : nat)
+  requires |s| == Pow2(i) && N >= 2
+  requires forall k | 0 <= k < Pow2(i) :: s[k] == ((Pow(a, Pow2(i)) * (Pow(a, k) % N)) % N)
+  ensures forall k | 0 <= k < Pow2(i) :: s[k] == (Pow(a, (Pow2(i) + k)) % N)
+{ 
+  forall k | 0 <= k < Pow2(i) {
+    calc == {
+      s[k] == ((Pow(a, Pow2(i)) * (Pow(a, k) % N)) % N);
+     { LemmaMulModNoopRightAuto(); } // crush double Ns
+      s[k] == ((Pow(a, Pow2(i)) * Pow(a, k)) % N);
+     { LemmaPowAdds(a, Pow2(i), k); } // crush the add on Power
+     s[k] == (Pow(a, (Pow2(i) + k)) % N);
+    }
+  }
+} 
 }

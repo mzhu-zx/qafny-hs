@@ -32,5 +32,25 @@ method Shor(q : qreg[10], p : qreg[10], base : nat )
     }   
   {
     p[0 .. 10] *= λ (x => ((Pow(base, Pow2(i))) * x) % 10);
+
+    // This is super hacky, but I have no good way to do this now....
+    #LemmaPowEquiv(p_seq'nat'_7__emit, base, i, 10);
   }
 }  
+
+
+#lemma LemmaPowEquiv(s : seq<nat>, a : nat, i : nat, N : nat)
+#  requires |s| == Pow2(i) && N >= 2
+#  requires forall k | 0 <= k < Pow2(i) :: s[k] == ((Pow(a, Pow2(i)) * (Pow(a, k) % N)) % N)
+#  ensures forall k | 0 <= k < Pow2(i) :: s[k] == (Pow(a, (Pow2(i) + k)) % N)
+#{ 
+#  forall k | 0 <= k < Pow2(i) {
+#    calc == {
+#      s[k] == ((Pow(a, Pow2(i)) * (Pow(a, k) % N)) % N);
+#     { LemmaMulModNoopRightAuto(); } // crush double Ns
+#      s[k] == ((Pow(a, Pow2(i)) * Pow(a, k)) % N);
+#     { LemmaPowAdds(a, Pow2(i), k); } // crush the add on Power
+#     s[k] == (Pow(a, (Pow2(i) + k)) % N);
+#    }
+#  }
+#} 

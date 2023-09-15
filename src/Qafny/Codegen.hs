@@ -185,6 +185,7 @@ codegenAST ast = do
       , QDafny "import opened Seq"
       , QDafny "import opened Power2"
       , QDafny "import opened Power"
+      , QDafny "import opened DivMod"
       , QDafny ""
       ]
     finale = [ QDafny "}" ]
@@ -436,6 +437,8 @@ codegenStmt' (SCall ef@(EVar x) eargs) = do
 
 codegenStmt' (SCall e eargs) = do
   fail $ printf "Expecting a reference to a method, but found %s." (showEmitI 0 e)
+
+codegenStmt' s@(SDafny {}) = return [s]
 
 codegenStmt' s = error $ "Unimplemented:\n\t" ++ show s ++ "\n"
 
