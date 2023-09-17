@@ -180,7 +180,7 @@ codegenAST ast = do
   let astGened = (injQDafny prelude ++) <$> main <&> (++ injQDafny finale)
   return $ (catMaybes states, astGened)
   where
-    
+
     injQDafny = (Sum.inj <$>)
     mkIncludes path s =
       QDafny $ "include \"" ++ path ++ "/" ++ s ++ "\""

@@ -10,7 +10,7 @@ import qualified Data.Text.Lazy.IO   as Txt.IO
 
 import           System.Environment  (getArgs)
 import           System.Exit         (exitFailure)
-import Text.Printf (printf)
+import           Text.Printf         (printf)
 
 
 
