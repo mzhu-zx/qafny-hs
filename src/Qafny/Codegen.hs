@@ -39,9 +39,10 @@ import           Control.Monad
     , forM_
     , join
     , liftM2
+    , liftM3
     , unless
     , void
-    , when, liftM3
+    , when
     )
 
 import           Data.Bifunctor
@@ -53,12 +54,17 @@ import qualified Data.Sum                     as Sum
 import           Text.Printf                  (printf)
 
 -- Qafny
+import qualified Control.Carrier.Error.Either as ErrE
 import           Control.Carrier.State.Strict (runState)
 import           Control.Effect.Fail          (Fail)
 import           Control.Exception            (throw)
 import           Data.Bool                    (bool)
 import           Data.List                    (find)
-import           Data.Maybe                   (listToMaybe, maybeToList)
+import           Data.Maybe
+    ( catMaybes
+    , listToMaybe
+    , maybeToList
+    )
 import           Data.Sum                     (Injection (inj))
 import           Qafny.Config
 import           Qafny.Env
@@ -68,9 +74,10 @@ import           Qafny.Syntax.AST
 import           Qafny.Syntax.ASTFactory
 import           Qafny.Syntax.Emit
     ( DafnyPrinter (build)
+    , byLineT
     , showEmit
     , showEmit0
-    , showEmitI, byLineT
+    , showEmitI
     )
 import           Qafny.TypeUtils              (isEN, typingQEmit)
 import           Qafny.Typing
@@ -83,6 +90,7 @@ import           Qafny.Typing
     , extendTState
     , matchEmitStates
     , matchStateCorrLoop
+    , mergeCandidateHad
     , mergeMatchedTState
     , mergeSTuples
     , mergeScheme
@@ -92,19 +100,22 @@ import           Qafny.Typing
     , retypePartition
     , retypePartition1
     , splitScheme
+    , splitSchemePartition
     , splitThenCastScheme
     , tStateFromPartitionQTys
     , typeCheckMethodApplication
     , typingExp
     , typingGuard
     , typingPartition
-    , typingPartitionQTy, splitSchemePartition, mergeCandidateHad
+    , typingPartitionQTy
     )
 import           Qafny.Utils
     ( dumpSSt
+    , dumpSt
     , findEmitBindingsFromPartition
     , findEmitRangeQTy
     , gensymEmitPartitionQTy
+    , gensymEmitRB
     , gensymEmitRangeQTy
     , gensymLoc
     , gensymRangeQTy
@@ -112,10 +123,10 @@ import           Qafny.Utils
     , liftPartition
     , modifyEmitRangeQTy
     , rbindingOfRangeQTy
+    , removeEmitPartitionQTys
     , removeEmitRangeQTys
-    , rethrowMaybe, removeEmitPartitionQTys, gensymEmitRB, dumpSt
+    , rethrowMaybe
     )
-
 
 throwError'
   :: ( Has (Error String) sig m )
@@ -155,19 +166,21 @@ putOpt s = do
 codegenAST
   :: ( Has (Reader Configs) sig m
      , Has (Reader TEnv) sig m
-     , Has (State TState)  sig m
-     , Has (Error String) sig m
      , Has Trace sig m
      )
   => AST
-  -> m AST
+  -> m ([(Var, TState)], Either String AST)
 codegenAST ast = do
   path <- asks stdlibPath
   let prelude = (mkIncludes path <$> includes) ++ imports
   let methodMap = collectMethodTypes ast
-  main <- local (kEnv %~ Map.union (inj <$> methodMap)) $ mapM codegenToplevel ast
-  return $ injQDafny prelude ++ main ++ injQDafny finale
+  stTops <- local (kEnv %~ Map.union (inj <$> methodMap)) $ mapM codegenToplevel ast
+  let (states, mainMayFail) = unzip stTops
+  let main :: Either String AST = sequence mainMayFail
+  let astGened = (injQDafny prelude ++) <$> main <&> (++ injQDafny finale)
+  return $ (catMaybes states, astGened)
   where
+    
     injQDafny = (Sum.inj <$>)
     mkIncludes path s =
       QDafny $ "include \"" ++ path ++ "/" ++ s ++ "\""
@@ -192,15 +205,19 @@ codegenAST ast = do
 
 codegenToplevel
   :: ( Has (Reader TEnv) sig m
-     , Has (State TState)  sig m
-     , Has (Error String) sig m
      , Has Trace sig m
      )
   => Toplevel'
-  -> m Toplevel'
+  -> m (Maybe (Var, TState), Either String Toplevel')
 codegenToplevel t = case unTop t of
-  Sum.Inl q -> Sum.inj <$> codegenToplevel'Method q
-  Sum.Inr q -> return . Sum.inj $ q
+  Sum.Inl q@(QMethod idm _ _ _ _ _ ) ->
+    bimap (Just . (idm, )) (Sum.inj <$>)  <$> codegenMethod q
+  Sum.Inr q -> return (Nothing, pure . Sum.inj $ q)
+  where
+    codegenMethod =
+      runState initTState .
+      ErrE.runError .
+      codegenToplevel'Method
 
 codegenToplevel'Method
   :: ( Has (Reader TEnv) sig m
@@ -276,7 +293,7 @@ codegenToplevel'Method q@(QMethod v bds rts rqs ens (Just block)) = runWithCallS
     -- the body
     fDecls = fmap $ uncurry fDecl
     fDecl (RBinding (_, ty)) v' = SVar (Binding v' ty) Nothing
-      
+
     -- | Forward declare all symbols emitted during Codegen except for those to
     -- be put in the __returns__ clause.
     -- fDecls rbdvsEmitB mapFinalEmits =
@@ -685,16 +702,16 @@ codegenStmt'For (SFor idx boundl boundr eG invs (Just seps) body) = do
           -- allow explicit casts/splits yet. There's a way to do it by using
           -- λ. However, this falls into the category of undocumented, probably
           -- undefined tricks.
-          -- 
+          --
           -- But why would one split and cast a real partition?
           -- If we have a partition made up of two ranges, it's likely that
           -- both ranges are in entanglement, therefore, there's no reasonable
           -- way to split them. To entangle two partitions into one, one should
           -- use a single If statement to perform the initialization.
-          -- 
+          --
           -- ------------------------------------------------------------------
           -- Here, I simply allow this by performing NO cast/split.
-          pure [] 
+          pure []
       -- | This is important because we will generate a new state from the loop
       -- invariant and perform both typing and codegen in the new state!
       statePreLoop <- get @TState
@@ -769,7 +786,7 @@ codegenFor'Body idx boundl boundr eG body stSep@(STuple (_, Partition rsSep, qtS
   trace $ printf "From invariant typing, the guard partition is %s from %s" (showEmit0 pG) (show stG)
 
   -- ^ FIXME: these two handling of guard state seems ungrounded
-  
+
   (stmtsPrelude, stmtsBody) <- case qtG of
     THad -> do
       stB'@(STuple (_, sB, qtB)) <- resolvePartitions psBody
@@ -795,7 +812,7 @@ codegenFor'Body idx boundl boundr eG body stSep@(STuple (_, Partition rsSep, qtS
       -- Splitting the guard maintains the invariant of the Had part. It remains
       -- to find a merge candidate of this split guard parition at the end of
       -- the loop.
-      
+
       -- schemeC <- retypePartition stGSplited TEN
       -- let CastScheme { schVsNewEmit=vsEmitG } = schemeC
       -- let vEmitG = head vsEmitG
@@ -1363,7 +1380,7 @@ codegenEnsures
      )
   => [Exp'] -> m [Exp']
 codegenEnsures ens =
-  (ands <$>) <$> forM ens (runReader initIEnv . runReader True  . codegenAssertion)
+  concat <$> forM ens (runReader initIEnv . runReader True  . codegenAssertion)
 
 
 codegenAssertion
@@ -1488,7 +1505,7 @@ checkListCorr vsEmit eValues =
 
 -- | Take the emit state and generate totally new emit symbols and emit
 -- statements to match the translation
--- 
+--
 -- This is needed because you cannot mutate the parameter of a method.
 -- An alternative is to copy the augument into a local variable where mutation
 -- are allowed.
@@ -1507,7 +1524,7 @@ genEmitSt = do
     go (rb@(RBinding (_, ty)), pv) = do
       nv <- gensymEmitRB rb
       pure $ SVar (Binding nv ty) (Just (EVar pv))
-      
+
 
 --------------------------------------------------------------------------------
 instance (Has (Error String) sig m, Monad m) => MonadFail m where

@@ -33,6 +33,23 @@ method MultiMod(q : qreg[10], p : qreg[10], base : nat )
     ∑ k ∈ [0 .. Pow2(10)] . (k, ((Pow(base, k)) % 10))
   }
 {
+  // Some notes on how to compile this.
+  // 
+  // 1. Understand that for the precondition where q[0..0], it holds vacuously
+  //    true because there's no qubit at all.
+  //    Implementationwise, I need a way to skip emitting assertions for empty 
+  //    ranges
+  // 2. With the current semantics, in each iteration, I duplicate both ranges.
+  //    This is decided by the fact that q[i .. i+1] is indeed a Had partition.
+  // 3. Merge turns to be trickier? 
+  //    I need a way to do q[ 0 .. i ]  + q [i .. i + 1] provided that they're 
+  //    of different types.
+  //    I can use the fact that in the invariant typing q[i .. i + 1] is
+  //    adjacent to q[0..i] in entanglement with p[0 .. 10] to make it work so that I just add 0 to one half and
+  //    add Pow(i) to another
+  // 4. This semantics should be documented seriously for our Dafny 2024
+  //    submission.  
+
   for i in [1 .. 10] with q[i .. i + 1]
     separates q[0 .. i], p[0 .. 10]
     invariant {

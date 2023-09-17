@@ -9,12 +9,19 @@ import opened QPreludeUntyped
 import opened Seq
 import opened Power2
 import opened Power
+import opened DivMod
 
 method Shor (base : nat, q_seq'nat'_0__emit : seq<nat>, p_seq'nat'_1__emit : seq<nat>) returns (q_seq'nat'_8__emit : seq<nat>, p_seq'nat'_9__emit : seq<nat>, q_seq'nat'_10__emit : seq<nat>)
-  requires (10 == |q_seq'nat'_0__emit|) && ((forall i : nat | 0 <= i < 10 :: q_seq'nat'_0__emit[i] == 1))
-  requires (1 == |p_seq'nat'_1__emit|) && ((forall i : nat | 0 <= i < 1 :: p_seq'nat'_1__emit[i] == 1))
-  ensures (((2 == |q_seq'nat'_8__emit|) && ((forall k : nat | 0 <= k < 2 :: q_seq'nat'_8__emit[k] == k))) && (2 == |p_seq'nat'_9__emit|)) && ((forall k : nat | 0 <= k < 2 :: p_seq'nat'_9__emit[k] == (Pow(base, k)) % (10)))
-  ensures (9 == |q_seq'nat'_10__emit|) && ((forall i : nat | 0 <= i < 9 :: q_seq'nat'_10__emit[i] == 1))
+  requires 10 == |q_seq'nat'_0__emit|
+  requires (forall i : nat | 0 <= i < 10 :: q_seq'nat'_0__emit[i] == 1)
+  requires 1 == |p_seq'nat'_1__emit|
+  requires (forall i : nat | 0 <= i < 1 :: p_seq'nat'_1__emit[i] == 1)
+  ensures 2 == |q_seq'nat'_8__emit|
+  ensures (forall k : nat | 0 <= k < 2 :: q_seq'nat'_8__emit[k] == k)
+  ensures 2 == |p_seq'nat'_9__emit|
+  ensures (forall k : nat | 0 <= k < 2 :: p_seq'nat'_9__emit[k] == (Pow(base, k)) % (10))
+  ensures 9 == |q_seq'nat'_10__emit|
+  ensures (forall i : nat | 0 <= i < 9 :: q_seq'nat'_10__emit[i] == 1)
 {
   var p_seq'nat'_2__emit : seq<nat> := p_seq'nat'_1__emit;
   var q_seq'nat'_3__emit : seq<nat> := q_seq'nat'_0__emit;
@@ -24,6 +31,7 @@ method Shor (base : nat, q_seq'nat'_0__emit : seq<nat>, p_seq'nat'_1__emit : seq
   var q_seq'nat'_5__emit : seq<nat>;
   var q_seq'nat'_4__emit : seq<nat>;
   reveal Map();
+  reveal Pow2();
   
   // Method Definition
   q_seq'nat'_4__emit := q_seq'nat'_3__emit[0..1];

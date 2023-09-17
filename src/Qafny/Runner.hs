@@ -8,7 +8,7 @@ import           Control.Carrier.Trace.Returning (runTrace)
 import           Qafny.Codegen                   (codegenAST)
 import           Qafny.Config                    (Configs)
 import           Qafny.Env
-import           Qafny.Syntax.AST                (AST)
+import           Qafny.Syntax.AST                (AST, Var)
 import           Qafny.Syntax.Parser             (scanAndParse)
 
 --------------------------------------------------------------------------------
@@ -16,7 +16,7 @@ import           Qafny.Syntax.Parser             (scanAndParse)
 --------------------------------------------------------------------------------
 data Production a = Production
   { pResult ::  Either String a
-  , pState  :: TState
+  , pState  :: [(Var, TState)]
   , pTrace  :: String
   }
 
@@ -36,16 +36,14 @@ data Production a = Production
 --       ErrC.runError error return
 
 
-runCodegen :: Configs -> AST -> ([String], (TState, Either String AST))
+runCodegen :: Configs -> AST -> ([String], ([(Var, TState)], Either String AST))
 runCodegen conf ast = do
   run . run' $ codegenAST ast
   where
     run' =
       runTrace .
       runReader conf .
-      runReader initTEnv .
-      runState initTState .
-      ErrE.runError
+      runReader initTEnv
 
 produceCodegen :: Configs -> AST -> Production AST
 produceCodegen conf ast =

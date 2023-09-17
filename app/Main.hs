@@ -10,6 +10,7 @@ import qualified Data.Text.Lazy.IO   as Txt.IO
 
 import           System.Environment  (getArgs)
 import           System.Exit         (exitFailure)
+import Text.Printf (printf)
 
 
 
@@ -50,8 +51,11 @@ main =
               putStrLn "Pipeline Finished!\n"
               Txt.IO.writeFile tgtFile txt
               return (return ())
-          putStrLn $ "Statistics from Codegen:\n" ++ show st
+          putStrLn $ "Statistics from Codegen:\n" ++
+            concatMap showEachSt st
           wrapUp
+        showEachSt (v, st) =
+          printf "\nThe post-state of the method `%s`:\n%s\n" v (show st)
         srcFile = "./test/Resource/" ++ prog ++ ".qfy"
         tgtFile = "./test/Resource/" ++ prog ++ ".dfy"
 
