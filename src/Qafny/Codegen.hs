@@ -449,10 +449,14 @@ codegenStmt' (SCall x eargs) = do
   mtyMaybe <- asks @TEnv (^. kEnv . at x) <&> (>>= projMethodTy)
   mty <- maybe errNoAMethod return mtyMaybe
   (envArgs, resolvedArgs, rSts) <- resolveMethodApplicationArgs eargs mty
-  forM_ rSts removeTStateBySTuple
+  stmtsSC <- forM rSts codegenStupleSplitCast
+  forM_ rSts $ removeTStateBySTuple . fst3
   rets <- resolveMethodApplicationRets envArgs mty
-  pure $ [SEmit (rets :*:=: EEmit (ECall x resolvedArgs))]
+  pure $ concat stmtsSC ++ [SEmit (rets :*:=: EEmit (ECall x resolvedArgs))]
   where
+    fst3 (a, _, _) = a
+    codegenStupleSplitCast (_, mS, mC) =
+      codegenSplitThenCastEmit mS mC
     errNoAMethod = throwError' $
       printf "The variable %s is not referring to a method." x
 

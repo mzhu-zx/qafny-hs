@@ -835,7 +835,8 @@ analyzeMethodType (QMethod v bds rts rqs ens _) =
       -- Q: What to do with the right
       rMaybe <- asks (Map.!? x)
       pure $ case rMaybe of
-        Just (Range x' l' r') -> reduce $ Range x' (reduce (l + l')) (reduce (r + l'))
+        Just (Range x' l' r') ->
+          reduce $ Range x' (reduce (l + l')) (reduce (r + l'))
         Nothing               -> rr
 
 typeCheckEachParameter
@@ -866,7 +867,8 @@ typeCheckEachParameter earg (MTyQuantum v cardinality) = do
   modify (Map.insert v qRange)
   pure Nothing
   where
-    nonQArgument arg = throwError' $ printf "%s is not a valid qreg parameter" (showEmitI 0 arg)
+    nonQArgument arg = throwError' $
+      printf "%s is not a valid qreg parameter" (showEmitI 0 arg)
     cardinalityMismatch cardGiven cardReq = fail $
       printf "the cardinality of the qreg passed %s doesn't match the required: %s"
       (showEmitI 0 cardGiven) (showEmitI 0 cardReq)
@@ -890,7 +892,9 @@ normalizeArguments es params = runState Map.empty $
 -- Return a map from QVars to ranges passed, arguments to be emitted, and passed
 -- STuples in the caller's context.
 resolveMethodApplicationArgs
-  ::  ( Has (Error String) sig m
+  ::  ( Has (Gensym String) sig m
+      , Has (Gensym RBinding) sig m
+      , Has (Error String) sig m
       , Has (Reader TEnv) sig m
       , Has (Reader IEnv) sig m
       , Has (State TState) sig m
@@ -898,7 +902,7 @@ resolveMethodApplicationArgs
       )
   => [Exp']
   -> MethodType
-  -> m (Map.Map Var Range, [Exp'], [STuple])
+  -> m (Map.Map Var Range, [Exp'], [(STuple, Maybe SplitScheme, Maybe CastScheme)])
 resolveMethodApplicationArgs es
   MethodType { mtSrcParams=srcParams
              , mtInstantiate=instantiator
@@ -918,8 +922,12 @@ resolveMethodApplicationArgs es
 
     -- type check partitions in the typing state 
     getEmitVarsAfterTyCheck part q = do
-      st <- typingPartitionQTy part q
-      (st,) <$> (findEmitVarsFromPartition part q <&> fmap EVar)
+      sAndMaySC <- case part of
+        Partition [r] -> do
+          st <- resolvePartition part
+          splitThenCastScheme st q r
+        _ -> (, Nothing, Nothing) <$> typingPartitionQTy part q
+      (sAndMaySC,) <$> (findEmitVarsFromPartition part q <&> fmap EVar)
 
 
 
