@@ -303,7 +303,7 @@ instance Show Partition where
 
 data Stmt x where
   SAssert :: (XRec x (Exp x)) -> Stmt x
-  SCall :: (XRec x (Exp x)) -> [(XRec x (Exp x))] -> Stmt x
+  SCall :: Var -> [(XRec x (Exp x))] -> Stmt x
   SVar :: (XRec x (Binding x)) -> (Maybe (XRec x (Exp x))) -> Stmt x
   (::=:) :: Var -> (XRec x (Exp x)) -> Stmt x
   (:*=:) :: Partition -> (XRec x (Exp x)) -> Stmt x
@@ -323,6 +323,8 @@ data EmitStmt
   = SIfDafny (Exp ()) (Block ())
   | SBlock (Block ())
   | SForEmit Var (Exp ()) (Exp ()) [Exp ()] (Block ())
+  | SVars [Binding ()] (Exp ())
+  | (:*:=:) [Var] (Exp ())
   deriving (Show, Eq)
 
 type AST = [Toplevel ()]

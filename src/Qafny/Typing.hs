@@ -24,7 +24,7 @@ import           Control.Effect.Error       (Error, throwError)
 import           Control.Effect.Lens
 import           Control.Effect.NonDet
 import           Control.Effect.Reader
-import           Control.Effect.State       (State, modify)
+import           Control.Effect.State       (State, modify, get)
 import           Effect.Gensym              (Gensym)
 
 -- Qafny
@@ -40,7 +40,7 @@ import           Qafny.Utils
     , gensymEmitRangeQTy
     , gensymLoc
     , removeEmitRangeQTys
-    , rethrowMaybe
+    , rethrowMaybe, removeEmitPartitionQTys
     )
 
 -- Utils
@@ -60,7 +60,7 @@ import           Control.Monad
     , unless
     , void
     , when
-    , zipWithM
+    , zipWithM, mapAndUnzipM
     )
 import           Data.Bool                  (bool)
 import           Data.Functor               ((<&>))
@@ -87,6 +87,7 @@ import           Qafny.Syntax.Emit
     , showEmitI, showEmit0, byLineT
     )
 import           Text.Printf                (printf)
+import Data.Bifunctor (Bifunctor(second))
 
 
 throwError'
@@ -190,6 +191,15 @@ resolvePartition' se' = do
       <&> \(rel, env) ->
             printf "%s %s %s at %s" (showEmitI 0 r1) (mkRelOp rel) (showEmitI 0 r2) (showEmitI 0 $ byComma env)
 
+
+removeTStateBySTuple
+  :: (Has (State TState) sig m)
+  => STuple -> m ()
+removeTStateBySTuple st@(STuple (loc, p, qt)) = do
+  sSt %= flip Map.withoutKeys (Set.singleton loc)
+  xSt %= Map.map (filter ((/= loc) . snd))
+  removeEmitPartitionQTys p qt
+
 -- | Query all ranges related to the given range.
 resolveRange
   :: ( Has (State TState) sig m
@@ -264,11 +274,11 @@ splitSchemePartition
   => STuple
   -> Partition
   -> m (STuple, Maybe SplitScheme)
-splitSchemePartition st p = 
+splitSchemePartition st p =
   case unpackPart p of
     [r] -> splitScheme st r
     _   -> throwError' $
-      printf "Partition %s contains multiple ranges for split, which is likely to be a bug!" (showEmitI 0 p) 
+      printf "Partition %s contains multiple ranges for split, which is likely to be a bug!" (showEmitI 0 p)
 
 
 -- | Remove range if it is equivalent to the bottom
@@ -326,6 +336,8 @@ splitScheme' s@(STuple (loc, p, qt)) rSplitTo@(Range to rstL rstR) = do
       let xrl =
             -- "new range -> new loc"
             [ (rAux, locAux) | rAux <- rsAux ] ++
+            -- "split ranges -> old loc"
+            
             -- "split ranges -> old loc"
             [ (rMainNew, loc) | rMainNew <- rsRem ] ++
             -- "the rest with the old range removed"
@@ -545,6 +557,10 @@ checkSubtypeQ
   => QTy -> QTy -> m ()
 checkSubtypeQ t1 t2 =
   unless (subQ t1 t2) $
+  -- traceStack "" .
+
+  -- traceStack "" .
+  
   -- traceStack "" .
 
   -- traceStack "" .
@@ -778,14 +794,14 @@ mergeSTuples
 -- origianl signature following the calling convention.
 --
 analyzeMethodType :: QMethod () -> (Var, MethodType)
-analyzeMethodType (QMethod v bds rts rqs ens _) = 
+analyzeMethodType (QMethod v bds rts rqs ens _) =
   let srcParams = collectRange <$> bds
       srcReturns = collectRange <$> rts
       instantiate (r :: Map.Map Var Range) =
         runIdentity $ runReader r $ forM (mapMaybe collectSignature rqs) go
       receive (r :: Map.Map Var Range) =
         runIdentity $ runReader r $ forM (mapMaybe collectSignature ens) go
-    
+
     in (v, MethodType { mtSrcParams=srcParams
                       , mtSrcReturns=srcReturns
                       , mtInstantiate = instantiate
@@ -822,9 +838,58 @@ analyzeMethodType (QMethod v bds rts rqs ens _) =
         Just (Range x' l' r') -> reduce $ Range x' (reduce (l + l')) (reduce (r + l'))
         Nothing               -> rr
 
--- Check if the given argument expressions are consistent with the types in the
--- signature, returns resolved arguments w.r.t. the calling convention.
-typeCheckMethodApplication
+typeCheckEachParameter
+  :: ( Has (Error String) sig m'
+     , Has (State (Map.Map Var Range)) sig m'
+     , Has (State TState) sig m'
+     , Has (Reader IEnv) sig m'
+     , Has (Reader TEnv) sig m'
+     )
+  => Exp' -> MethodElem -> m' (Maybe Exp')
+-- for simple types, check it immediately
+typeCheckEachParameter earg (MTyPure v ty) = do
+  tyArg <- typingExp earg
+  checkTypeEq tyArg ty
+  pure (Just earg)
+-- for quantum types, collect the qreg correspondence instead
+typeCheckEachParameter earg (MTyQuantum v cardinality) = do
+  qRange@(Range x el er) <-
+    case earg of
+      EVar varg                  -> pure $ Range varg 0 cardinality
+      EPartition (Partition [r]) -> pure r
+      _                          -> nonQArgument earg
+  -- check if the cardinality is fine
+  let eCard :: Exp' = er - el
+  eq <- (allI .:) <$> liftIEnv2 (≡)
+  unless (eq 0 (er - el - cardinality)) $
+    throwError' $ cardinalityMismatch eCard cardinality
+  modify (Map.insert v qRange)
+  pure Nothing
+  where
+    nonQArgument arg = throwError' $ printf "%s is not a valid qreg parameter" (showEmitI 0 arg)
+    cardinalityMismatch cardGiven cardReq = fail $
+      printf "the cardinality of the qreg passed %s doesn't match the required: %s"
+      (showEmitI 0 cardGiven) (showEmitI 0 cardReq)
+
+
+-- | Compute the argment map and pure arguments for a given argument list and
+-- parameter list.
+normalizeArguments
+  :: ( Has (Error String) sig m
+     , Has (State TState) sig m
+     , Has (Reader IEnv) sig m
+     , Has (Reader TEnv) sig m
+     )
+  => [Exp'] -> [MethodElem] -> m (Map.Map Var Range, [Exp'])
+normalizeArguments es params = runState Map.empty $
+    catMaybes <$> zipWithM typeCheckEachParameter es params
+
+-- | Take in a list of arguments, check against the method signature and resolve
+-- arguments to be emitted w.r.t. the calling convention.
+--
+-- Return a map from QVars to ranges passed, arguments to be emitted, and passed
+-- STuples in the caller's context.
+resolveMethodApplicationArgs
   ::  ( Has (Error String) sig m
       , Has (Reader TEnv) sig m
       , Has (Reader IEnv) sig m
@@ -833,60 +898,53 @@ typeCheckMethodApplication
       )
   => [Exp']
   -> MethodType
-  -> m [Exp']
-typeCheckMethodApplication es
+  -> m (Map.Map Var Range, [Exp'], [STuple])
+resolveMethodApplicationArgs es
   MethodType { mtSrcParams=srcParams
              , mtInstantiate=instantiator
              } = do
   unless (length es == length srcParams) $ arityMismatch srcParams
-  (envArgs, pureArgs) <- runState Map.empty $
-    catMaybes <$> zipWithM checkEachParameter es srcParams
+  (envArgs, pureArgs) <- normalizeArguments es srcParams
   let inst = instantiator envArgs
   -- perform qtype check for each argument
-  qArgs <- concat <$> mapM (uncurry getEmitVarsAfterTyCheck) inst
-  pure (pureArgs ++ qArgs)
+  (resolvedSts, qArgs) <- second concat <$>
+    mapAndUnzipM (uncurry getEmitVarsAfterTyCheck) inst
+  pure (envArgs, pureArgs ++ qArgs, resolvedSts)
   where
     arityMismatch prs = throwError' $
       "The number of arguments given doesn't match the number of parameters expected by the method."
       ++ printf "Given:\n%s\nExpected:\n%s" (show es) (show prs)
 
-    checkEachParameter
-      :: ( Has (Error String) sig m'
-         , Has (State (Map.Map Var Range)) sig m'
-         , Has (State TState) sig m'
-         , Has (Reader IEnv) sig m'
-         , Has (Reader TEnv) sig m'
-         )
-      => Exp' -> MethodElem -> m' (Maybe Exp')
-    -- for simple types, check it immediately
-    checkEachParameter earg (MTyPure v ty) = do
-      tyArg <- typingExp earg
-      checkTypeEq tyArg ty
-      pure (Just earg)
-    -- for quantum types, collect the qreg correspondence instead
-    checkEachParameter earg (MTyQuantum v cardinality) = do
-      qRange@(Range x el er) <-
-        case earg of
-          EVar varg                  -> pure $ Range varg 0 cardinality
-          EPartition (Partition [r]) -> pure r
-          _                          -> nonQArgument earg
-      -- check if the cardinality is fine
-      let eCard :: Exp' = er - el
-      eq <- (allI .:) <$> liftIEnv2 (≡)
-      unless (eq 0 (er - el - cardinality)) $
-        throwError' $ cardinalityMismatch eCard cardinality
-      modify (Map.insert v qRange)
-      pure Nothing
 
+    -- type check partitions in the typing state 
     getEmitVarsAfterTyCheck part q = do
-      void $ typingPartitionQTy part q
-      findEmitVarsFromPartition part q <&> fmap EVar
+      st <- typingPartitionQTy part q
+      (st,) <$> (findEmitVarsFromPartition part q <&> fmap EVar)
 
-    nonQArgument arg = throwError' $ printf "%s is not a valid qreg parameter" (showEmitI 0 arg)
-    cardinalityMismatch cardGiven cardReq = fail $
-      printf "the cardinality of the qreg passed %s doesn't match the required: %s"
-      (showEmitI 0 cardGiven) (showEmitI 0 cardReq)
 
+
+-- | Compute the typing state after returning from a method call.
+resolveMethodApplicationRets
+  ::  ( Has (Error String) sig m
+      , Has (State TState) sig m
+      , Has (Gensym Var) sig m
+      , Has (Gensym RBinding) sig m
+      )
+  => Map.Map Var Range -> MethodType ->  m [Var]
+resolveMethodApplicationRets envArgs
+  MethodType { mtSrcReturns=retParams
+             , mtReceiver=receiver
+             } = do
+  qBindings :: [Var] <- concat <$> forM psRet (uncurry extendTState)
+  -- TODO: also outputs pure variables here
+  return qBindings
+  where
+    -- partitions after the method call
+    psRet = receiver envArgs
+
+    -- extendTState, but returns bindings
+    -- extendTState'Binding p qty =
+    --   extendTState p qty <&> (<&> (`Binding` typingQEmit qty))
 
 --------------------------------------------------------------------------------
 -- | Constraints
@@ -906,7 +964,7 @@ collectConstraints es = (Map.mapMaybe glb1 <$>) . execState Map.empty $ forM nor
       modify $ Map.insertWith (++) v1 [intv]
 
     -- pick 100 here to avoid overflow in computation
-    maxE = fromInteger $ toInteger (maxBound @Int - 100) 
+    maxE = fromInteger $ toInteger (maxBound @Int - 100)
 
     failUninterp e = throwError' $ printf "(%s) is left uninterpreted" (show e)
 
@@ -957,6 +1015,10 @@ mergeCandidateHad st =
 --------------------------------------------------------------------------------
 -- | Helpers
 --------------------------------------------------------------------------------
+-- Collect all pure variables
+collectPureBindings :: [MethodElem] -> [Binding']
+collectPureBindings params =  [ Binding v t | MTyPure v t <- params ]
+
 -- Compute types of methods from the toplevel
 collectMethodTypes :: AST -> Map.Map Var MethodType
 collectMethodTypes a = run $ execState Map.empty $
@@ -992,7 +1054,7 @@ extendTState
      , Has (State TState) sig m
      )
   => Partition -> QTy -> m [Var]
-extendTState p  qt = do
+extendTState p qt = do
   sLoc <- gensymLoc "requires"
   sSt %= (at sLoc ?~ (p, qt))
   let xMap = [ (v, [(r, sLoc)]) | r@(Range v _ _) <- unpackPart p ]

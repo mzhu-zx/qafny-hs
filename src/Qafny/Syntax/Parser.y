@@ -143,6 +143,8 @@ stmt :: { Stmt' }
     {% do sep <- separatesOnly $5; return $ SIf $3 sep $6                    }
   | "for" id "in" '[' expr ".." expr ']' "with" guardExpr conds block
     {% do (invs, sep) <- invariantSeperates $11; return $ SFor $2 $5 $7 $10 invs sep $12 }
+  | id tuple(expr) ';'                { SCall $1 $2 }
+
 
 splitAt :: { Exp' }
   : "split" "at" expr                 { $3 }

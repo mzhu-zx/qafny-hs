@@ -175,6 +175,7 @@ instance DafnyPrinter (Stmt ()) where
           <!> b
       buildInvs = withIncr2 . byLineT $
         map (((indent <!> "invariant") <+>) . build) invs
+
   build (SDafny s') = indent <> build s'
 
   build s@(SFor idx boundl boundr eG invs seps body) = debugOnly s $
@@ -183,6 +184,7 @@ instance DafnyPrinter (Stmt ()) where
     <+> "with" <+> eG <!> line
     <!> body
 
+  -- Statements that end with a SemiColon
   build s = indent <> buildStmt s <> build ';'
     where
       buildStmt :: Stmt' -> Builder
@@ -200,7 +202,9 @@ instance DafnyPrinter (Stmt ()) where
       λHuh e                      = build e
 
       buildEmit :: EmitStmt -> Builder
-      buildEmit (SIfDafny e b) = "if " <!> withParen (build e) <!> b
+      buildEmit (SVars bds e) = "var" <+> byComma bds <+> ":=" <+> e
+      buildEmit (vs :*:=: e) = byComma vs <+> ":=" <+> e
+      -- buildEmit (SIfDafny e b) = "if " <!> withParen (build e) <!> b
       buildEmit _              = error "Should have been handled!!"
 
 instance DafnyPrinter GuardExp where

@@ -87,6 +87,7 @@ import           Qafny.Typing
     , checkSubtypeQ
     , collectConstraints
     , collectMethodTypes
+    , collectPureBindings
     , extendTState
     , matchEmitStates
     , matchStateCorrLoop
@@ -94,6 +95,8 @@ import           Qafny.Typing
     , mergeMatchedTState
     , mergeSTuples
     , mergeScheme
+    , resolveMethodApplicationArgs
+    , resolveMethodApplicationRets
     , resolvePartition
     , resolvePartition'
     , resolvePartitions
@@ -103,11 +106,10 @@ import           Qafny.Typing
     , splitSchemePartition
     , splitThenCastScheme
     , tStateFromPartitionQTys
-    , typeCheckMethodApplication
     , typingExp
     , typingGuard
     , typingPartition
-    , typingPartitionQTy
+    , typingPartitionQTy, removeTStateBySTuple
     )
 import           Qafny.Utils
     ( dumpSSt
@@ -443,17 +445,16 @@ codegenStmt' s@(SFor {}) =
 codegenStmt' (SAssert e@(ESpec{})) =
   (SAssert <$>) <$> codegenAssertion e
 
-codegenStmt' (SCall ef@(EVar x) eargs) = do
+codegenStmt' (SCall x eargs) = do
   mtyMaybe <- asks @TEnv (^. kEnv . at x) <&> (>>= projMethodTy)
   mty <- maybe errNoAMethod return mtyMaybe
-  resolvedArgs <- typeCheckMethodApplication eargs mty
-  pure $ [SCall ef resolvedArgs]
+  (envArgs, resolvedArgs, rSts) <- resolveMethodApplicationArgs eargs mty
+  forM_ rSts removeTStateBySTuple
+  rets <- resolveMethodApplicationRets envArgs mty
+  pure $ [SEmit (rets :*:=: EEmit (ECall x resolvedArgs))]
   where
     errNoAMethod = throwError' $
       printf "The variable %s is not referring to a method." x
-
-codegenStmt' (SCall e eargs) = do
-  fail $ printf "Expecting a reference to a method, but found %s." (showEmitI 0 e)
 
 codegenStmt' s@(SDafny {}) = return [s]
 
@@ -1321,7 +1322,7 @@ codegenMethodParams MethodType{ mtSrcParams=srcParams
                               , mtInstantiate=instantiator
                               , mtDebugInit=debugInit
                               } = do
-  let pureVars = [ Binding v t | MTyPure v t <- srcParams ]
+  let pureVars = collectPureBindings srcParams
       qVars = [ (v, Range v 0 card) | MTyQuantum v card <- srcParams ]
       inst = instantiator $ Map.fromList qVars
   trace $ "INIT: " ++ show debugInit
@@ -1355,7 +1356,7 @@ codegenMethodReturns
 codegenMethodReturns MethodType{ mtSrcReturns=srcReturns
                                , mtReceiver=receiver
                                } = do
-  let pureBds :: [Binding'] = [ Binding v t | MTyPure v t <- srcReturns ]
+  let pureBds = collectPureBindings srcReturns
       qVars = [ (v, Range v 0 card) | MTyQuantum v card <- srcReturns ]
       inst = receiver $ Map.fromList qVars
   (stmtsAssign, bdsRet) <- (unzip . concat <$>) . forM inst $ uncurry genAndPairReturnRanges

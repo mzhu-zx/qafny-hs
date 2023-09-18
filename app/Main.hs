@@ -55,7 +55,7 @@ main =
             concatMap showEachSt st
           wrapUp
         showEachSt (v, st) =
-          printf "\nThe post-state of the method `%s`:\n%s\n" v (show st)
+          printf "\nThe final state of the method `%s`:\n%s\n" v (show st)
         srcFile = "./test/Resource/" ++ prog ++ ".qfy"
         tgtFile = "./test/Resource/" ++ prog ++ ".dfy"
 
