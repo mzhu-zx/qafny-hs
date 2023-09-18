@@ -937,8 +937,12 @@ resolveMethodApplicationRets envArgs
              } = do
   qBindings :: [Var] <- concat <$> forM psRet (uncurry extendTState)
   -- TODO: also outputs pure variables here
+  -- Sanity check for now:
+  let pureArgs = collectPureBindings retParams
+  unless (null pureArgs) unimpl
   return qBindings
   where
+    unimpl = throwError' "Unimplemented: method returns a pure value."
     -- partitions after the method call
     psRet = receiver envArgs
 
