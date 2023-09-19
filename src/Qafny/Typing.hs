@@ -964,7 +964,8 @@ resolveMethodApplicationRets envArgs
 collectConstraints
   :: ( Has (Error String) sig m )
   => [Exp'] -> m (Map.Map Var (Interval Exp'))
-collectConstraints es = (Map.mapMaybe glb1 <$>) . execState Map.empty $ forM normalizedEs collectIntv
+collectConstraints es = (Map.mapMaybe glb1 <$>) . execState Map.empty $
+  forM normalizedEs collectIntv
   where
     collectIntv e@(op, v1, e2) = do
       intv :: Interval Exp' <- case op of

@@ -48,6 +48,8 @@ dafny                 { ( _, L.TDafny $$  ) }
 "λ"                   { ( _, L.TCl        ) }
 "Σ"                   { ( _, L.TUnicodeSum    ) }
 "⊗"                   { ( _, L.TUnicodeTensor ) }
+"ω"                   { ( _, L.TUnicodeOmega ) }
+"Ω"                   { ( _, L.TUnicodeSumOmega ) }
 "∈"                   { ( _, L.TUnicodeIn     ) }
 "↦"                   { ( _, L.TUnicodeMap    ) }
 "assert"              { ( _, L.TAssert    ) }
@@ -162,17 +164,24 @@ spec ::   { Exp' }
   : '{' partition ':'  qty "↦" qspec '}'
                                       { ESpec $2 $4 $6                       }
 
-qspec ::  { SpecExp' }
-  : "⊗" id '.' tuple(expr)
-                                      { SESpecNor $2 $4                   }
-  | "Σ" id "∈" '[' expr ".." expr ']' '.' tuple(expr)
-                                      { SESpecEN $2 (Intv $5 $7) $10  }
+qspec ::  { (SpecExp', PhaseExp) }
+  : "⊗" id '.' pspec tuple(expr)
+                                      { (SESpecNor $2 $5, $4)                   }
+  | "Σ" id "∈" '[' expr ".." expr ']' '.' pspec tuple(expr)
+                                      { (SESpecEN $2 (Intv $5 $7) $11, $10)  }
   | "Σ" id "∈" '[' expr ".." expr ']' '.'             {- 9  -}
-    "⊗" id "∈" '[' expr ".." expr ']' '.'             {- 18 -}
+    pspec                                             {- 10 -}
+    "⊗" id "∈" '[' expr ".." expr ']' '.'             {- 19 -}
     tuple(expr)
-                                      { SESpecEN01 $2 (Intv $5 $7) $11 (Intv $14 $16) $19 }
+                                      { (SESpecEN01 $2 (Intv $5 $7) $12 (Intv $15 $17) $20, $10) }
+  | '_'                               { (SEWildcard, PhaseZ) }
 
-  | '_'                               { SEWildcard }
+-- phase specification
+pspec :: { PhaseExp }
+  : {- empty -}                            { PhaseZ                 }
+  | "ω" '(' expr ',' expr ')'              { PhaseOmega $3 $5       }
+  | "Ω" id '.' '(' expr ',' expr ')'       { PhaseSumOmega $2 $5 $7 }
+
 
 tuple(p)
   : '(' manyComma(p) ')'              { $2 }

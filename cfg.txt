@@ -8,17 +8,8 @@ toplevels
 
 toplevel
   : dafny
-  | "method" id '(' bindings ')' requireEnsures opt(block)
-  | "method" id '(' bindings ')' "returns" '(' bindings ')' requireEnsures opt(block)
-
-requireEnsures
-  : conds
-
-invs
-  : conds
-
-separates
-  : "separates" partition
+  | "method" id '(' bindings ')' "returns" '(' bindings ')' conds opt(block)
+  | "method" id '(' bindings ')' conds opt(block)
 
 conds
   : many(cond)
@@ -27,6 +18,7 @@ cond
   : "requires" expr
   | "ensures" expr
   | "invariant" expr
+  | "separates" partition
 
 bindings
   : manyComma(binding)
@@ -55,13 +47,21 @@ stmts
   : many(stmt)
 
 stmt
-  : "assert" expr ';'
+  : dafny
+  | "assert" expr ';'
   | "var" binding ';'
   | "var" binding ":=" expr ';'
   | id ":=" expr ';'
   | partition "*=" expr ';'
-  | "if" '(' expr ')' separates block
-  | "for" id "in" '[' expr ".." expr ']' "with" expr invs separates block
+  | "if" '(' guardExpr ')' cond block
+  | "for" id "in" '[' expr ".." expr ']' "with" guardExpr conds block
+  | id tuple(expr) ';'
+
+splitAt
+  : "split" "at" expr
+
+guardExpr
+  : partition opt(splitAt)
 
 partition
   : manyComma(range)
@@ -73,9 +73,10 @@ spec
   : '{' partition ':' qty "↦" qspec '}'
 
 qspec
-  : "Σ" id "∈" '[' expr ".." expr ']' '.' tuple(expr)
+  : "⊗" id '.' tuple(expr)
+  | "Σ" id "∈" '[' expr ".." expr ']' '.' tuple(expr)
   | "Σ" id "∈" '[' expr ".." expr ']' '.' "⊗" id "∈" '[' expr ".." expr ']' '.' tuple(expr)
-  | {- empty -}
+  | '_'
 
 tuple
   : '(' manyComma(p) ')'
@@ -85,22 +86,32 @@ expr
   | '_'
   | spec
   | partition
-  | "H"
-  | "QFT"
-  | "RQFT"
+  | qops
   | "meas" id
   | "not" atomic
   | "nor" '(' atomic ',' digits ')'
   | "λ" '(' id "=>" expr ')'
-  | id '(' atomic ')'
-  | atomic "&&" atomic
-  | atomic "||" atomic
+  | id tuple(expr)
+  | logicOrExp
+
+qops
+  : "H"
+  | "QFT"
+  | "RQFT"
+
+logicOrExp
+  : logicAndExp "||" logicOrExp
+  | logicAndExp
+
+logicAndExp
+  : cmpExpr "&&" logicAndExp
   | cmpExpr
-  | arithExpr
-  | '(' expr ')'
+
+cmpPartial
+  : cmp arithExpr
 
 cmpExpr
-  : expr cmp expr
+  : arithExpr many(cmpPartial)
 
 cmp
   : '>'
@@ -109,7 +120,8 @@ cmp
   | "<="
 
 arithExpr
-  : expr arith expr
+  : atomic arith arithExpr
+  | atomic
 
 arith
   : '+'
@@ -120,6 +132,7 @@ arith
 atomic
   : digits
   | id
+  | '(' expr ')'
 
 many
   : many_(p)

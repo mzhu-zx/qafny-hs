@@ -25,6 +25,8 @@ data Token
   | TMea
   | TUnicodeMap
   | TUnicodeTensor
+  | TUnicodeOmega
+  | TUnicodeSumOmega
 
   -- Delimiters
   | TLPar | TRPar

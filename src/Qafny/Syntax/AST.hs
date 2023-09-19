@@ -168,25 +168,37 @@ data Exp x
   | ERQFT
   | EMea Var
   | EBool Bool
-  | EApp Var [(XRec x (Exp x))]
+  | EApp Var [XRec x (Exp x)]
   | EOp1 Op1 (XRec x (Exp x))
   | EOp2 Op2 (XRec x (Exp x)) (XRec x (Exp x))
   | EForall (Binding x) (Maybe (XRec x (Exp x))) (XRec x (Exp x))
   | EDafny String
   | EEmit EmitExp
   | EPartition Partition
-  | ESpec Partition QTy (XRec x (SpecExp x))
+  | ESpec Partition QTy (XRec x (SpecExp x), PhaseExp)
   -- ?
   -- | RInd Var Exp -- boolean at var[exp], var must be Q type
   -- | REq Exp Exp Var Exp -- compare exp == exp and store the value in var[exp], var must be Q type
   -- | RLt Exp Exp Var Exp -- compare exp < exp and store the value in var[exp], var must be Q type
+
+data PhaseExp
+  = PhaseZ
+  | PhaseOmega Exp' Exp'
+  | PhaseSumOmega Var Exp' Exp'
+  | PhaseWildCard
 
 
 -- deriving instance (Typeable (Exp ()))
 -- deriving instance (Data (Exp ()))
 -- deriving instance (Typeable (Exp Source))
 -- deriving instance (Data (Exp Source))
+deriving instance (Generic PhaseExp)
+deriving instance (Show PhaseExp)
+deriving instance (Eq PhaseExp)
+deriving instance (Ord PhaseExp)
+
 deriving instance (Generic (Exp ()))
+deriving instance (Generic (Exp Source))
 deriving instance (Show (Exp ()))
 deriving instance (Show (Exp Source))
 deriving instance (Eq (Exp ()))
@@ -393,7 +405,7 @@ data ExpF f
   | EDafnyF String
   | EEmitF EmitExp
   | EPartitionF Partition
-  | ESpecF Partition QTy (XRec () (SpecExp ()))
+  | ESpecF Partition QTy (XRec () (SpecExp ()), PhaseExp)
   deriving (Functor, Foldable, Traversable, Show, Generic)
 
 type instance Base (Exp ()) = ExpF

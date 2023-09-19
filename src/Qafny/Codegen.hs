@@ -1422,8 +1422,8 @@ codegenSpecExp
   :: ( Has (Error String) sig m
      , Has (Reader Bool) sig m
      )
-  => [(Var, Range)] -> QTy -> SpecExp' -> m [Exp']
-codegenSpecExp vrs p e = putOpt $
+  => [(Var, Range)] -> QTy -> (SpecExp', PhaseExp) -> m [Exp']
+codegenSpecExp vrs p (e, _) = putOpt $
   case (p, e) of
     (_, SEWildcard) -> return []
     (TNor, SESpecNor idx es) -> do

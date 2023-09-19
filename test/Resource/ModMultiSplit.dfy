@@ -55,7 +55,8 @@ method EntangleOne1 (base : nat, q_seq'nat'_0__emit : seq<nat>, p_seq'nat'_1__em
   ensures 2 == |q_seq'nat'_6__emit|
   ensures (forall k : nat | 0 <= k < 2 :: q_seq'nat'_6__emit[k] == k)
   ensures 2 == |p_seq'nat'_7__emit|
-  ensures (forall k : nat | 0 <= k < 2 :: p_seq'nat'_7__emit[k] == (Pow(base, k)) % (10))
+  ensures (forall k : nat | 0 <= k < 2 :: p_seq'nat'_7__emit[k] == (Pow(base, k)) %
+  (10))
 {
   var p_seq'nat'_2__emit : seq<nat> := p_seq'nat'_1__emit;
   var q_seq'nat'_3__emit : seq<nat> := q_seq'nat'_0__emit;

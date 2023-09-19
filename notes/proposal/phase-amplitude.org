@@ -1,0 +1,81 @@
+#+TITLE: Proposal: Phases and Amplitude
+#+OPTIONS: toc:nil date:nil H:4 author:nil
+
+#+begin_export latex
+\newcommand{\Rou}[2]{\omega_{#2}^{#1}}
+#+end_export
+
+* Synopsis
+
+We will allow phases as roots of unity and amplitudes as an integer associated
+with each phase.
+
+The goal is to provide a native support for QFT operators as well as an
+effecient and accurate desription of post-measurement states and outcomes.
+
+** Example 
+
+
+* Proposal
+
+** Representation
+*** Root of Unity
+Notation
+\[
+\omega_N^{k} = \exp(2{\pi}{i} \frac{k}{N})
+\]
+
+- \(\omega_{N}^0 = 1\)
+- \(\omega_{2}^1 = -1\)
+- \(\omega_{4}^1 = i\)
+- \(\omega_{4}^3 = -i\)
+
+*** Degree of Phases
+For efficiency, a hierarchy of phases should be adopted to provide a
+pay-as-you-go model for phase description. The degree corresponds to the
+dimension of the underlying matrix. 
+
+- zero degree for cases where phases and amplitudes are uninterested
+
+  For example, a simple =Nor= vector where phases can be omitted.
+
+- first degree for cases where one root of unity suffices
+
+  For example, \(\ket{-} = \Rou{0}{2}\ket{0} + \Rou{1}{2} \ket{1}\).
+
+- second degree for cases using a summation of roots of unity.
+
+  For example,
+  \[
+    \sum_{k}^{N - 1}\Rou{xk}{N} \ket{k}
+  \]
+
+*** Placement
+Phases and amplitudes should be assigned on partition basis. The number of
+phases object should agree with that of rows per partition.
+
+** Phase Language
+
+- 0th-degree: Specification without explicit phases are of 0-degree phases.
+- 1st-degree: =ω(k, N)= for \(\omega^{k}_{N}\)
+- 2nd-degree: =Ω i . (f(i), N)= for
+  \[
+  \sum_{i} \Rou{f(i)}{N} \ket{\phi}
+  \]
+
+** Data Representation
+
+*** Zeroth-degree Phase
+Zeroth-degree phases, as the name suggests, will not be emitted by the compiler
+and will be bookkept by the type system. The benefit of this is that there's no
+verification overhead imposed for a program that doesn't care about phases,
+e.g,. the GHZ program.
+
+Implementationwise, the modification to the compiler to support the phase will
+be minimal and incremental.
+
+*** First-degree Phase
+WIP
+
+*** Second-degree Phase
+WIP
