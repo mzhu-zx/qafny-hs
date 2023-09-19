@@ -75,7 +75,12 @@ Implementationwise, the modification to the compiler to support the phase will
 be minimal and incremental.
 
 *** First-degree Phase
-WIP
+WIP[fn:1]
 
 *** Second-degree Phase
 WIP
+
+[fn:1] I'd like to design those two phases while considering the introduction
+and elemination of those phases, i.e., how phases are transformed into a more
+expressive one and how expressive phases are contracted/eliminated to extract
+truth from it.
