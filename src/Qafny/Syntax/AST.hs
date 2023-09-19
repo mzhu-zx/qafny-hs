@@ -176,6 +176,7 @@ data Exp x
   | EEmit EmitExp
   | EPartition Partition
   | ESpec Partition QTy (XRec x (SpecExp x), PhaseExp)
+  | ERepr Range
   -- ?
   -- | RInd Var Exp -- boolean at var[exp], var must be Q type
   -- | REq Exp Exp Var Exp -- compare exp == exp and store the value in var[exp], var must be Q type
@@ -406,6 +407,7 @@ data ExpF f
   | EEmitF EmitExp
   | EPartitionF Partition
   | ESpecF Partition QTy (XRec () (SpecExp ()), PhaseExp)
+  | EReprF Range
   deriving (Functor, Foldable, Traversable, Show, Generic)
 
 type instance Base (Exp ()) = ExpF

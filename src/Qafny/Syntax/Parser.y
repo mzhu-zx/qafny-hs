@@ -39,6 +39,7 @@ dafny                 { ( _, L.TDafny $$  ) }
 "H"                   { ( _, L.THApp      ) }
 "QFT"                 { ( _, L.TQFT       ) }
 "RQFT"                { ( _, L.TRQFT      ) }
+"repr"                { ( _, L.TRepr      ) }
 "meas"                { ( _, L.TMea       ) }
 "en"                  { ( _, L.TEN        ) }
 "qreg"                { ( _, L.TQReg      ) }
@@ -197,6 +198,7 @@ expr
   | "nor" '(' atomic ',' digits ')'   { EOp2 ONor $3 (ENum $5) }
   | "λ" '(' id "=>" expr ')'          { EEmit $ ELambda $3 $5  }
   | id tuple(expr)                    { EApp $1 $2             }
+  | "repr" '(' range ')'              { ERepr $3               }
   | logicOrExp                        { $1                     }
 
 qops

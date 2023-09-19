@@ -109,7 +109,7 @@ import           Qafny.Typing
     , typingExp
     , typingGuard
     , typingPartition
-    , typingPartitionQTy, removeTStateBySTuple
+    , typingPartitionQTy, removeTStateBySTuple, resolveRange
     )
 import           Qafny.Utils
     ( dumpSSt
@@ -445,6 +445,7 @@ codegenStmt' s@(SFor {}) =
 codegenStmt' (SAssert e@(ESpec{})) =
   (SAssert <$>) <$> codegenAssertion e
 
+-- TODO: Handle arguments in the method call in one pass to codegen Repr.
 codegenStmt' (SCall x eargs) = do
   mtyMaybe <- asks @TEnv (^. kEnv . at x) <&> (>>= projMethodTy)
   mty <- maybe errNoAMethod return mtyMaybe
@@ -1312,9 +1313,22 @@ codegenMergeScheme = mapM $ \scheme -> do
     merge3 vS vRF vRT = vS ::=: (EVar vRF + EVar vRT)
 
 
+
 --------------------------------------------------------------------------------
 -- * Specification Related
 --------------------------------------------------------------------------------
+-- | Find the representation of the given range
+codegenRangeRepr
+  :: ( Has (State TState) sig m
+     , Has (Error String) sig m
+     , Has (Reader IEnv) sig m
+     , Has Trace sig m
+     )
+  => Range -> m Var
+codegenRangeRepr r = do
+  STuple(_, _, qt) <- resolvePartition (Partition [r])
+  findEmitRangeQTy r qt
+
 -- | Generate method parameters from the method signature
 codegenMethodParams
   :: ( Has (State TState)  sig m

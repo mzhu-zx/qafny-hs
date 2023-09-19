@@ -22,7 +22,7 @@ data Token
   | TVar | TIf | TCl | TFor
   | TWith
   | TSplit | TAt
-  | TMea
+  | TMea | TRepr
   | TUnicodeMap
   | TUnicodeTensor
   | TUnicodeOmega

@@ -71,6 +71,7 @@ token :-
   "\otimes"        { emit $  TUnicodeIn          }
   "↦"              { emit $  TUnicodeMap         }
   "\mapsto"        { emit $  TUnicodeMap         }
+  repr             { emit $  TRepr               }
   with             { emit $  TWith               }
   invariant        { emit $  TInv                }
   H                { emit $  THApp               }
