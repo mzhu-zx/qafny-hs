@@ -47,8 +47,10 @@ dimension of the underlying matrix.
 
   For example,
   \[
-    \sum_{k}^{N - 1}\Rou{xk}{N} \ket{k}
+    \sum_{k}^{N - 1}\Rou{xk}{N} \ket{i}
   \]
+
+  Note that this is not QFT. 
 
 *** Placement
 Phases and amplitudes should be assigned on partition basis. The number of
@@ -84,3 +86,50 @@ WIP
 and elemination of those phases, i.e., how phases are transformed into a more
 expressive one and how expressive phases are contracted/eliminated to extract
 truth from it.
+
+
+** Phase Primitives
+*** Quantum Fourier Transform
+\[
+\ket{x} \mapsto \sum_{k = 0}^{N - 1} \omega(xk, N) \ket{k}
+\]
+
+This is a complicated case: the phase itself is of the 1st degree but the
+outcome state comprises a superposition of state.
+# 
+What makes this even harder is when we apply QFT over a superposition of kets,
+the norm of doing it on EN states.
+#
+But, there's a tiny little trick:
+\[
+\sum_{x \in S}\ket{x}
+\mapsto
+\sum_{x \in S}\sum_{k = 0}^{N - 1} \omega(xk, N) \ket{k}
+= 
+\sum_{k = 0}^{N - 1} \prs{\sum_{x \in S} \omega(xk, N)} \ket{k}.
+\]
+# 
+Essentially, applying QFT over EN promotes the original zeroth-degree states in
+superposition into a second-degree state in superposition. We will rely a lot on
+this equation for reasoning.
+#
+Note that if the original EN state is of 1st-degree, then the outcome after QFT
+operation can still be expressed in the second-degree
+# 
+\[
+\sum_{(x, i) \in S} \omega(i, N) \ket{x}
+\mapsto
+\sum_{(x, i) \in S}\sum_{k = 0}^{N - 1} \omega(i + xk, N) \ket{k}
+=
+\sum_{k = 0}^{N - 1} \prs{\sum_{(x, i) \in S} \omega(i + xk, N)} \ket{k}
+\]
+#
+The overhead/difficulty here is how one is going to reason in arithemtics.
+
+In summary, the QFT operator, when applied to kets in superposition, promotes
+any phase into its second degree representation.  If the original repr is of 0th
+degree, it's straightforward.  If it was of 1st degree, we need to match the
+base of the root of unity through gcm and add them together, which will require
+a lot of arithmetic reasoning.  If we get a 2nd degree, things will be come hard
+which is equivalent to reasoning about cartisan products.
+
