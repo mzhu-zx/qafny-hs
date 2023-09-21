@@ -47,6 +47,28 @@ aexpToExp :: AExp -> Exp ()
 aexpToExp (ANat i) = ENum i
 aexpToExp (AVar v) = EVar v 
 
+-- | The good thing about this design is that I don't need to modify the
+-- emitState when creating a new phaseRef.
+-- 
+-- The only bad thing is that everytime
+-- I want to get the pointer to the phase, I need to resolve through `sSt`,
+-- which is not too bad because phase are designed to live with partitiions
+-- instead of with ranges :)
+-- 
+-- TODO: move this into the proposal
+-- 
+data PhaseRef = PhaseRef
+  { prBase :: Var -- | pointer to the base
+  , prRepr :: Var -- | pointer to its representation
+  }
+  deriving (Show, Eq, Ord)
+
+-- | PhaseTy associated with corresponding emitted vars
+data PhaseTy
+  = PT0
+  | PTN Int PhaseRef
+  deriving (Show, Eq, Ord)
+
 data Ty
   = TNat
   | TInt
@@ -125,11 +147,16 @@ deriving instance (Ord (XRec x Var), Ord (XRec x Ty)) => Ord (Binding x)
 
 type Bindings x = [XRec x (Binding x)]
 
-newtype RBinding = RBinding { unRBinding :: (Range, Ty) }
+-- type EBinds = QTy :+: PhaseTy :+: Ty
+
+data EmitBinding
+  = RBinding (Range, QTy :+: PhaseTy :+: Ty) -- range-based phase binding
+  | LBinding (Var, PhaseTy)                  -- loc-based phase binding
   deriving (Eq, Ord)
 
-instance Show RBinding where
-  show = show . unRBinding
+instance Show EmitBinding where
+  show (RBinding t) = show t
+  show (LBinding t) = show t
 
 data Op2
   = OAnd
@@ -475,11 +502,13 @@ instance (Substitutable a, Substitutable b) => Substitutable (a, b) where
   subst a = bimap (subst a) (subst a)
   fVars = uncurry (++) . bimap fVars fVars
 
-instance Substitutable RBinding where
+instance Substitutable EmitBinding where
   subst a (RBinding (r, t)) = RBinding (subst a r, t)
-  fVars = fVars . fst . unRBinding
+  subst a b                 = b
+  fVars (RBinding (r, _)) = fVars r
+  fVars _                 = []
 
-instance Substitutable (Map.Map RBinding Var) where
+instance Substitutable (Map.Map EmitBinding Var) where
   subst = substMapKeys
   fVars = fVarMapKeys
 
@@ -508,7 +537,6 @@ substE env = go
     go (ESpec p q e)  = ESpec (substP env p) q e
     go (EPartition p) = EPartition (substP env p)
     go e              = embed $ go <$> project e
-
 
 substP :: AEnv -> Partition -> Partition
 substP [] = id

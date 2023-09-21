@@ -14,11 +14,25 @@ instance (Show f, Show g) => Show (f :+: g) where
   show (Inl f) = show f
   show (Inr g) = show g
 
+instance (Eq f, Eq g) => Eq (f :+: g) where
+  (Inl f1) == (Inl f2) = f1 == f2
+  (Inr f1) == (Inr f2) = f1 == f2
+  _ == _               = False
+
+instance (Ord f, Ord g) => Ord (f :+: g) where
+  compare (Inl _) (Inr _) = LT
+  compare (Inr _) (Inl _) = GT
+  compare (Inl f1) (Inl f2) = compare f1 f2
+  compare (Inr f1) (Inr f2) = compare f1 f2
+
 class Injection f g where
   inj :: f -> g
 
-instance Injection f (f :+: g) where
+instance {-# OVERLAPPABLE #-} Injection f (f :+: g) where
   inj = Inl
+
+instance {-# OVERLAPPABLE #-} Injection f h => Injection f (h :+: g) where
+  inj = Inl . inj
 
 instance Injection g (f :+: g) where
   inj = Inr

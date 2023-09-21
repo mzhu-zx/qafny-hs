@@ -2,35 +2,37 @@
     ScopedTypeVariables
   , TypeApplications
   , TupleSections
+  , TypeOperators
   #-}
 module Qafny.Utils where
 
 --
-import           Control.Carrier.State.Church (State)
 import           Control.Effect.Error         (Error, throwError)
 import           Control.Effect.Lens
 import           Control.Effect.Reader
 import           Control.Effect.State
+import           Control.Effect.Trace
+import           Control.Monad                (forM)
 import           Control.Lens                 (at, (?~), (^.))
+
+import           Data.Bifunctor               (bimap, second)
+import           Data.Functor                 ((<&>))
+import qualified Data.Map.Strict              as Map
+import qualified Data.Set                     as Set
+import           Data.Sum
+import           Text.Printf                  (printf)
 
 --
 import           Effect.Gensym                (Gensym, gensym)
 
 --
-import           Control.Effect.Trace
-import           Control.Monad                (forM)
-import           Data.Functor                 ((<&>))
-import qualified Data.Map.Strict              as Map
-import qualified Data.Set                     as Set
-import           Data.Sum
 import           Qafny.Env                    (TEnv, TState, emitSt, kEnv, sSt)
 import           Qafny.Error                  (QError (UnknownVariableError))
 import           Qafny.Partial                (Reducible (reduce))
 import           Qafny.Syntax.AST
 import           Qafny.Syntax.Emit            (showEmitI)
-import           Qafny.TypeUtils              (typingQEmit)
+import           Qafny.TypeUtils              (typingQEmit, typingPhaseEmit)
 import           Qafny.Variable               (Variable (variable))
-import           Text.Printf                  (printf)
 
 throwError''
   :: ( Has (Error String) sig m )
@@ -58,27 +60,56 @@ gensymLoc = (Loc <$>) . gensym . variable . Loc
 -- $doc
 -- The following functions operate on a 'Range' and a 'QTy', form a `Binding` to
 -- be normalized to a variable name, perform modification and query to the emit
--- symbol state and the __Gensym RBinding__ effect.
+-- symbol state and the __Gensym EmitBinding__ effect.
 -- $doc
 --------------------------------------------------------------------------------
-rbindingOfRangeQTy :: Range -> QTy -> RBinding
-rbindingOfRangeQTy r qty = RBinding (reduce r, typingQEmit qty)
+rbindingOfRange :: Range -> QTy :+: PhaseTy :+: Ty -> EmitBinding
+rbindingOfRange r b = RBinding (reduce r, b)
 
+gensymBase
+  :: ( Has (Gensym EmitBinding) sig m )
+  => Range -> m Var
+gensymBase r = gensym $ rbindingOfRange r (inj TNat)
 
+-- rbindingOfRangeQTy :: Range -> QTy -> EmitBinding
+-- rbindingOfRangeQTy r qty = RBinding (reduce r, inj qty)
+
+-- rbindingOfRangePTyRepr :: Range -> PhaseTy -> Maybe EmitBinding
+-- rbindingOfRangePTyRepr r pty =
+--   pty <&> RBinding . (reduce r, ) . snd
 -- | Generate a varaible from a 'Range' and its 'QTy' and add the corresponding
 -- 'Binding' into 'emitSt'
 gensymEmitRangeQTy
-  :: ( Has (Gensym RBinding) sig m
+  :: ( Has (Gensym EmitBinding) sig m
      , Has (State TState) sig m
      )
   => Range -> QTy-> m Var
-gensymEmitRangeQTy r qty = gensymEmitRB (rbindingOfRangeQTy r qty)
+gensymEmitRangeQTy r qty = gensymEmitRB (rbindingOfRange r (inj qty))
 
-gensymEmitRB
-  :: ( Has (Gensym RBinding) sig m
+gensymEmitRangePTyRepr
+  :: ( Has (Gensym EmitBinding) sig m
      , Has (State TState) sig m
      )
-  => RBinding -> m Var
+  => Range -> PhaseTy-> m (Maybe Var)
+gensymEmitRangePTyRepr _ PT0 = pure Nothing
+gensymEmitRangePTyRepr r t =
+  Just <$> gensymEmitRB (rbindingOfRange r (inj t))
+
+
+gensymEmitRangePTy
+  :: ( Has (Gensym EmitBinding) sig m
+     , Has (State TState) sig m
+     )
+  => Range -> PhaseTy-> m (Maybe (Var, Var))
+gensymEmitRangePTy r =
+  undefined
+
+
+gensymEmitRB
+  :: ( Has (Gensym EmitBinding) sig m
+     , Has (State TState) sig m
+     )
+  => EmitBinding -> m Var
 gensymEmitRB rb = do
   name <- gensym rb
   emitSt %= (at rb ?~ name)
@@ -86,14 +117,14 @@ gensymEmitRB rb = do
 
 -- | Similar to 'gensymEmitRangeQTy' but gensym without adding it the 'emitSt'
 gensymRangeQTy
-  :: ( Has (Gensym RBinding) sig m
+  :: ( Has (Gensym EmitBinding) sig m
      )
   => Range -> QTy -> m Var
 gensymRangeQTy r qty =
-  gensym $ rbindingOfRangeQTy r qty
+  gensym $ rbindingOfRange r (inj qty)
 
 gensymEmitPartitionQTy 
-  :: ( Has (Gensym RBinding) sig m
+  :: ( Has (Gensym EmitBinding) sig m
      , Has (State TState) sig m
      )
   => Partition -> QTy -> m [Var]
@@ -109,7 +140,7 @@ findEmitRangeQTy
      )
   => Range -> QTy -> m Var
 findEmitRangeQTy r qty = do
-  let rb = rbindingOfRangeQTy r qty
+  let rb = rbindingOfRange r (inj qty)
   st <- use emitSt
   rethrowMaybe
     (return (st ^. at rb)) $
@@ -140,7 +171,7 @@ modifyEmitRangeQTy
   :: ( Has (State TState) sig m )
   => Range -> QTy -> Var -> m ()
 modifyEmitRangeQTy r qty name = do
-  let rb = rbindingOfRangeQTy r qty
+  let rb = rbindingOfRange r (inj qty)
   emitSt %= (at rb ?~ name)
 
 
@@ -154,7 +185,7 @@ removeEmitRangeQTys
   :: ( Has (State TState) sig m)
   => [(Range, QTy)] -> m ()
 removeEmitRangeQTys rqts = do
-  let bs = uncurry rbindingOfRangeQTy <$> rqts
+  let bs = uncurry rbindingOfRange <$> (rqts <&> second inj)
   emitSt %= (`Map.withoutKeys` Set.fromList bs)
 
 --------------------------------------------------------------------------------

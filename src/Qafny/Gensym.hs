@@ -3,7 +3,7 @@ module Qafny.Gensym(resumeGensym) where
 
 import qualified Carrier.Gensym.Emit as GEmit
 import qualified Carrier.Gensym.Meta as GMeta
-import           Qafny.Syntax.AST           (RBinding)
+import           Qafny.Syntax.AST           (EmitBinding)
 
 -- runGensym
 --   :: Monad m
@@ -17,9 +17,9 @@ import           Qafny.Syntax.AST           (RBinding)
 -- carried over to it.
 resumeGensym
   :: Monad m
-  => GEmit.GensymC RBinding (GMeta.GensymC String m) a
-  -> GEmit.GensymC RBinding (GMeta.GensymC String m) b
-  -> m (Int, (Int, ([(RBinding, String)], [(RBinding, String)]), (a, b)))
+  => GEmit.GensymC EmitBinding (GMeta.GensymC String m) a
+  -> GEmit.GensymC EmitBinding (GMeta.GensymC String m) b
+  -> m (Int, (Int, ([(EmitBinding, String)], [(EmitBinding, String)]), (a, b)))
 resumeGensym comp1 comp2 =
   GMeta.runGensymMeta @String $ do
     (i, s', a) <- GEmit.runGensymEmit comp1

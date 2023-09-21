@@ -40,7 +40,7 @@ import           Qafny.Utils
     , gensymEmitRangeQTy
     , gensymLoc
     , removeEmitRangeQTys
-    , rethrowMaybe, removeEmitPartitionQTys
+    , rethrowMaybe, removeEmitPartitionQTys, gensymRangeQTy, gensymEmitRB, gensymEmitRangePTyRepr
     )
 
 -- Utils
@@ -195,7 +195,7 @@ resolvePartition' se' = do
 removeTStateBySTuple
   :: (Has (State TState) sig m)
   => STuple -> m ()
-removeTStateBySTuple st@(STuple (loc, p, qt)) = do
+removeTStateBySTuple st@(STuple (loc, p, (qt, _))) = do
   sSt %= flip Map.withoutKeys (Set.singleton loc)
   xSt %= Map.map (filter ((/= loc) . snd))
   removeEmitPartitionQTys p qt
@@ -225,13 +225,13 @@ resolvePartitions =
   resolvePartition . Partition . concatMap unpackPart
 
 
-inferRangeQTy
+inferRangeTy
   :: ( Has (State TState) sig m
      , Has (Error String) sig m
      , Has (Reader IEnv) sig m
      , Has Trace sig m)
-  => Range -> m QTy
-inferRangeQTy r = (^. _3) . unSTup <$> resolvePartition (Partition [r])
+  => Range -> m (QTy, [PhaseTy])
+inferRangeTy r = (^. _3) . unSTup <$> resolvePartition (Partition [r])
 
 --------------------------------------------------------------------------------
 -- | Split Typing
@@ -247,7 +247,7 @@ splitScheme
   :: ( Has (Error String) sig m
      , Has (Gensym String) sig m
      , Has (State TState) sig m
-     , Has (Gensym RBinding) sig m
+     , Has (Gensym EmitBinding) sig m
      , Has (Reader IEnv) sig m
      , Has Trace sig m
      )
@@ -267,7 +267,7 @@ splitSchemePartition
   :: ( Has (Error String) sig m
      , Has (Gensym String) sig m
      , Has (State TState) sig m
-     , Has (Gensym RBinding) sig m
+     , Has (Gensym EmitBinding) sig m
      , Has (Reader IEnv) sig m
      , Has Trace sig m
      )
@@ -306,15 +306,20 @@ splitScheme'
   :: ( Has (Error String) sig m
      , Has (Gensym String) sig m
      , Has (State TState) sig m
-     , Has (Gensym RBinding) sig m
+     , Has (Gensym EmitBinding) sig m
      , Has (Reader IEnv) sig m
      , Has Trace sig m
      )
   => STuple
   -> Range
   -> m (STuple, Maybe SplitScheme)
-splitScheme' s@(STuple (loc, p, qt)) rSplitTo@(Range to rstL rstR) = do
-  ((rRemL, rRemR), rOrigin, rsRem) <- getRangeSplits s rSplitTo
+splitScheme' s@(STuple (loc, p, xt@(qt, pty))) rSplitTo@(Range to rstL rstR) = do
+  -- FIXME: Type checking of `qt` should happen first because splitting an EN
+  -- typed partition should not be allowed.
+  -- TODO: Is this correct?
+  when (isEN qt) $ throwError'' errSplitEN
+
+  ((rRemL, rRemR), rOrigin, rsRem') <- getRangeSplits s rSplitTo
   rsRem <- (++) <$> contractRange rRemL <*> contractRange rRemR
   let rsRest = List.delete rOrigin $ unpackPart p
       -- the ranges except the chosen one + the quotient ranges
@@ -323,14 +328,18 @@ splitScheme' s@(STuple (loc, p, qt)) rSplitTo@(Range to rstL rstR) = do
       pMain  = Partition rsMain
       pAux   = Partition rsAux
   case rsMain of
-    [] -> return (s, Nothing) -- no split at all!
+    [] -> 
+      -- ^ No need to split at all, so we're safe regardless of the qtype
+      -- 
+      return (s, Nothing) -- no split at all!
+
     _  -> do
       -- ^ Split in partition or in both partition and a range
+      -- There's a need for split.
+      -- 
       -- 1. Allocate partitions, break ranges and move them around
       locAux <- gensymLoc to
-      let sMain' = (loc, pMain, qt)   -- the part that's splited _from_
-      let sAux'  = (locAux, pAux, qt) -- the part that's splited _to_
-      sSt %= (at loc ?~ (pMain, qt)) . (at locAux ?~ (pAux, qt))
+      sSt %= (at loc ?~ (pMain, xt)) . (at locAux ?~ (pAux, xt))
       -- use sSt >>= \s' -> trace $ printf "sSt: %s" (show s')
       xRangeLocs <- use (xSt . at to) `rethrowMaybe` errXST
       let xrl =
@@ -345,19 +354,29 @@ splitScheme' s@(STuple (loc, p, qt)) rSplitTo@(Range to rstL rstR) = do
       -- trace (printf "State Filtered by %s: %s" (show rSplitTo) (show xrl))
       xSt %= (at to ?~ xrl)
       -- 2. Generate emit symbols for split ranges
+      let sMain' = (loc, pMain, xt)          -- the part that's splited _from_
       case rsRem of
-        [] -> return (STuple sAux', Nothing) -- only split in partition but not in a range
+        [] -> case qt of
+          t | t `elem` [ TEN, TEN01 ] ->
+              throwError'' errSplitEN
+          _ -> 
+            -- only split in partition but not in a range,
+            -- therefore, no need to duplicate the range-based phases
+            let sAux' = (locAux, pAux, xt)
+            in return (STuple sAux', Nothing) 
         _  -> do
-          (vEmitR, rSyms) <- case qt of
-            t | t `elem` [ TNor, THad, TEN01 ] -> do
+          (vEmitR, rSyms, rPhReprs) <- case qt of
+            t | t `elem` [ TNor, THad ] -> do
               -- locate the original range
               vEmitR <- findEmitRangeQTy rOrigin qt
               -- delete it from the record
               removeEmitRangeQTys [(rOrigin, qt)]
               -- gensym for each split ranges
               rSyms <- (rSplitTo : rsRem) `forM` (`gensymEmitRangeQTy` qt)
-              return (vEmitR, rSyms)
+              rPhReprs <- (rSplitTo : rsRem) `forM` (`gensymEmitRangePTyRepr` pty)
+              return (vEmitR, rSyms, rPhReprs)
             _    -> throwError'' $ errUnsupprtedTy ++ "\n" ++ infoSS
+          let sAux' = (locAux, pAux, xt)
           let ans = SplitScheme
                 { schROrigin = rOrigin
                 , schRTo = rSplitTo
@@ -366,6 +385,7 @@ splitScheme' s@(STuple (loc, p, qt)) rSplitTo@(Range to rstL rstR) = do
                 , schSMain = STuple sMain'
                 , schVEmitOrigin = vEmitR
                 , schVsEmitAll = rSyms
+                , schVsEmitPhaseAll = rPhReprs
                 }
           -- trace $ printf "[splitScheme (post)] %s" (show ans)
           return (STuple sAux', Just ans)
@@ -374,6 +394,28 @@ splitScheme' s@(STuple (loc, p, qt)) rSplitTo@(Range to rstL rstR) = do
     throwError'' = throwError' . ("[split] " ++)
     errUnsupprtedTy = printf "Splitting a %s partition is unsupported." (show qt)
     errXST = printf "No range beginning with %s cannot be found in `xSt`" to
+    errSplitEN = "Splitting an EN partition is disallowed!"
+
+-- | Duplicate a phase type by allocating a new reference to its Repr if
+-- necessary.
+-- 
+-- FIXME: at this moment, this is more like a placeholder. There're something to
+-- be done to generate the correct spltiScheme for the codegen to give a
+-- satisfying result.   
+duplicatePhaseTy
+  :: ( Has (Gensym EmitBinding) sig m
+     , Has (Error String) sig m
+     )
+  => Loc -> QTy -> PhaseTy
+  -> m PhaseTy
+duplicatePhaseTy _ _ PT0 = return PT0
+duplicatePhaseTy v qt (PTN i (PhaseRef { prBase=vBase, prRepr=_ })) = do
+  -- allocate a new repr variable without allocating a new base one
+  vRepr <- gensymEmitRB (LBinding (deref v, reprTy))
+  return (PTN i (PhaseRef { prBase=vBase, prRepr=vRepr }))
+  where
+    (_, reprTy) = typingPhaseEmitN i
+
 
 -- | Compute, in order to split the given range from a resolved partition, which
 -- range in the partition needs to be split as well as the resulting quotient
@@ -381,12 +423,11 @@ splitScheme' s@(STuple (loc, p, qt)) rSplitTo@(Range to rstL rstR) = do
 getRangeSplits
   :: ( Has (Error String) sig m
      , Has (Reader IEnv) sig m
-     , Has Trace sig m
      )
   => STuple
   -> Range
   -> m ((Range, Range), Range, [Range])
-getRangeSplits s@(STuple (loc, p, qt)) rSplitTo@(Range to rstL rstR) = do
+getRangeSplits s@(STuple (loc, p, _)) rSplitTo@(Range to rstL rstR) = do
   botHuh <- ($ rSplitTo) <$> isBotI
   case botHuh of
     _ | all (== Just True)  botHuh -> throwError' errBotRx
@@ -416,7 +457,7 @@ getRangeSplits s@(STuple (loc, p, qt)) rSplitTo@(Range to rstL rstR) = do
 -- casting if needed.  return 'Nothing' if no cast is required.
 splitThenCastScheme
   :: ( Has (Gensym String) sig m
-     , Has (Gensym RBinding) sig m
+     , Has (Gensym EmitBinding) sig m
      , Has (State TState) sig m
      , Has Trace sig m
      , Has (Reader IEnv) sig m
@@ -572,7 +613,7 @@ checkSubtypeQ t1 t2 =
 retypePartition1
   :: ( Has (Error String) sig m
      , Has (State TState) sig m
-     , Has (Gensym RBinding) sig m
+     , Has (Gensym EmitBinding) sig m
      )
   => STuple -> QTy -> m (Var, Ty, Var, Ty)
 retypePartition1 st qtNow = do
@@ -596,7 +637,7 @@ retypePartition1 st qtNow = do
 castScheme
   :: ( Has (Error String) sig m
      , Has (State TState) sig m
-     , Has (Gensym RBinding) sig m
+     , Has (Gensym EmitBinding) sig m
      )
   => STuple -> QTy -> m (STuple, CastScheme)
 castScheme st qtNow = do
@@ -627,7 +668,7 @@ castScheme st qtNow = do
 retypePartition
   :: ( Has (Error String) sig m
      , Has (State TState) sig m
-     , Has (Gensym RBinding) sig m
+     , Has (Gensym EmitBinding) sig m
      )
   => STuple -> QTy -> m CastScheme
 retypePartition = (snd <$>) .: castScheme
@@ -653,7 +694,6 @@ matchEmitStates es1 es2 =
 -- 'tsLoop' is for the state during iteration.
 matchStateCorrLoop
   :: ( Has (Error String) sig m
-     , Has Trace sig m
      )
   => TState -> TState -> AEnv -> m [(Var, Var)]
 matchStateCorrLoop tsInit tsLoop env = do
@@ -893,7 +933,7 @@ normalizeArguments es params = runState Map.empty $
 -- STuples in the caller's context.
 resolveMethodApplicationArgs
   ::  ( Has (Gensym String) sig m
-      , Has (Gensym RBinding) sig m
+      , Has (Gensym EmitBinding) sig m
       , Has (Error String) sig m
       , Has (Reader TEnv) sig m
       , Has (Reader IEnv) sig m
@@ -936,7 +976,7 @@ resolveMethodApplicationRets
   ::  ( Has (Error String) sig m
       , Has (State TState) sig m
       , Has (Gensym Var) sig m
-      , Has (Gensym RBinding) sig m
+      , Has (Gensym EmitBinding) sig m
       )
   => Map.Map Var Range -> MethodType ->  m [Var]
 resolveMethodApplicationRets envArgs
@@ -1051,7 +1091,7 @@ bdTypes b = [t | Binding _ t <- b]
 
 -- | Construct from a scratch a new TState containing the given partitons.
 tStateFromPartitionQTys
-  :: ( Has (Gensym RBinding) sig m
+  :: ( Has (Gensym EmitBinding) sig m
      , Has (Gensym Var) sig m
      )
   => [(Partition, QTy)] -> m TState
@@ -1062,7 +1102,7 @@ tStateFromPartitionQTys pqts = execState initTState $ do
 -- symbols for every range in the partition and return all emitted symbols in
 -- the same order as those ranges.
 extendTState
-  :: ( Has (Gensym RBinding) sig m
+  :: ( Has (Gensym EmitBinding) sig m
      , Has (Gensym Var) sig m
      , Has (State TState) sig m
      )

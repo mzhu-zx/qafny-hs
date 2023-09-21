@@ -1,12 +1,15 @@
 {-# LANGUAGE
     FlexibleInstances
   , TypeSynonymInstances
+  , TypeOperators
   #-}
 
 module Qafny.Variable where
 
+import           Data.Sum
 import           Qafny.Syntax.AST
-import           Text.Printf (printf)
+import           Text.Printf      (printf)
+import Qafny.TypeUtils (typingQEmit)
 
 class Variable s where
   variable :: s -> String
@@ -52,8 +55,20 @@ instance Variable Range where
 instance Variable (Binding ()) where
   variable (Binding s t) = variable (s, t)
 
-instance Variable RBinding where
-  variable = variable . unRBinding
+instance Variable PhaseTy where
+  variable PT0 = "phase_0_"
+  variable (PTN n _) = printf "phase_%d_" n
+
+instance Variable QTy where
+  variable = variable . typingQEmit
+
+instance (Variable a, Variable b) => Variable (a :+: b) where
+  variable (Inl l) = variable l
+  variable (Inr r) = variable r
+
+instance Variable EmitBinding where
+  variable (RBinding r) = variable r
+  variable (LBinding v) = variable v
 
 instance Variable Loc where
   variable = ("loc__" ++) . deref

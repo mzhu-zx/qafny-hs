@@ -334,7 +334,7 @@ codegenBlock
      , Has (State TState)  sig m
      , Has (Error String) sig m
      , Has (Gensym String) sig m
-     , Has (Gensym RBinding) sig m
+     , Has (Gensym EmitBinding) sig m
      , Has (Reader Bool) sig m
      , Has (Reader IEnv) sig m
      , Has (Reader QTy) sig m
@@ -351,7 +351,7 @@ codegenStmts
      , Has (Error String) sig m
      , Has (Reader Bool) sig m
      , Has (Gensym String) sig m
-     , Has (Gensym RBinding) sig m
+     , Has (Gensym EmitBinding) sig m
      , Has (Reader IEnv) sig m
      , Has Trace sig m
      , Has (Reader QTy) sig m -- hints for λ type resolution
@@ -377,7 +377,7 @@ codegenStmt
      , Has (State TState)  sig m
      , Has (Error String) sig m
      , Has (Gensym String) sig m
-     , Has (Gensym RBinding) sig m
+     , Has (Gensym EmitBinding) sig m
      , Has Trace sig m
      )
   => Stmt'
@@ -402,7 +402,7 @@ codegenStmt'
      , Has (State TState)  sig m
      , Has (Error String) sig m
      , Has (Gensym String) sig m
-     , Has (Gensym RBinding) sig m
+     , Has (Gensym EmitBinding) sig m
      , Has Trace sig m
      )
   => Stmt'
@@ -478,7 +478,7 @@ codegenStmt'Apply
      , Has (State TState)  sig m
      , Has (Error String) sig m
      , Has (Gensym String) sig m
-     , Has (Gensym RBinding) sig m
+     , Has (Gensym EmitBinding) sig m
      , Has Trace sig m
      )
   => Stmt'
@@ -565,7 +565,7 @@ codegenStmt'If
      , Has (State TState)  sig m
      , Has (Error String) sig m
      , Has (Gensym String) sig m
-     , Has (Gensym RBinding) sig m
+     , Has (Gensym EmitBinding) sig m
      , Has Trace sig m
      )
   => Stmt'
@@ -596,7 +596,7 @@ codegenStmt'If'Had
      , Has (State TState)  sig m
      , Has (Error String) sig m
      , Has (Gensym String) sig m
-     , Has (Gensym RBinding) sig m
+     , Has (Gensym EmitBinding) sig m
      , Has (Reader IEnv) sig m
      , Has (Reader QTy) sig m
      , Has (Reader Bool) sig m
@@ -638,7 +638,7 @@ codegenStmt'For
      , Has (State TState)  sig m
      , Has (Error String) sig m
      , Has (Gensym String) sig m
-     , Has (Gensym RBinding) sig m
+     , Has (Gensym EmitBinding) sig m
      , Has Trace sig m
      )
   => Stmt'
@@ -774,7 +774,7 @@ codegenFor'Body
      , Has (State TState)  sig m
      , Has (Error String) sig m
      , Has (Gensym String) sig m
-     , Has (Gensym RBinding) sig m
+     , Has (Gensym EmitBinding) sig m
      , Has Trace sig m
      )
   => Var   -- ^ index variable
@@ -943,7 +943,7 @@ codegenStmt'For'Had
      , Has (State TState)  sig m
      , Has (Error String) sig m
      , Has (Gensym String) sig m
-     , Has (Gensym RBinding) sig m
+     , Has (Gensym EmitBinding) sig m
      , Has Trace sig m
      )
   => STuple -> STuple -> Var -> Block'
@@ -984,7 +984,7 @@ codegenStmt'For'Had stB stG vIdx b = do
 mergeHadGuard
   :: ( Has (State TState) sig m
      , Has (Error String) sig m
-     , Has (Gensym RBinding) sig m
+     , Has (Gensym EmitBinding) sig m
      , Has (Reader IEnv) sig m
      , Has Trace sig m
      )
@@ -994,7 +994,7 @@ mergeHadGuard = mergeHadGuardWith (ENum 0)
 mergeHadGuardWith
   :: ( Has (State TState) sig m
      , Has (Error String) sig m
-     , Has (Gensym RBinding) sig m
+     , Has (Gensym EmitBinding) sig m
      , Has (Reader IEnv) sig m
      , Has Trace sig m
      )
@@ -1039,7 +1039,7 @@ mergeEmitted corr excluded =
 -- | Generate statements that allocate qubits if it's Nor; otherwise, keep the
 -- source statement as is.
 codegenAlloc
-  :: ( Has (Gensym RBinding) sig m
+  :: ( Has (Gensym EmitBinding) sig m
      , Has (Gensym String) sig m
      , Has (State TState)  sig m
      , Has (Error String) sig m
@@ -1102,7 +1102,7 @@ codegenCastEmit
 castWithOp
   :: ( Has (Error String) sig m
      , Has (State TState) sig m
-     , Has (Gensym RBinding) sig m
+     , Has (Gensym EmitBinding) sig m
      )
   => String -> STuple -> QTy -> m [Stmt']
 castWithOp op s newTy =
@@ -1122,7 +1122,7 @@ castWithOp op s newTy =
 castPartitionEN
   :: ( Has (Error String) sig m
      , Has (State TState) sig m
-     , Has (Gensym RBinding) sig m
+     , Has (Gensym EmitBinding) sig m
      )
   => STuple -> m [Stmt']
 castPartitionEN st@(STuple (locS, s, qtS)) = do
@@ -1145,7 +1145,7 @@ castPartitionEN st@(STuple (locS, s, qtS)) = do
 dupState
   :: ( Has (Error String) sig m
      , Has (State TState) sig m
-     , Has (Gensym RBinding) sig m
+     , Has (Gensym EmitBinding) sig m
      , Has (Reader IEnv) sig m
      , Has Trace sig m
      )
@@ -1266,7 +1266,7 @@ doubleHadCounter vCounter =
 -- | Generate from the merge scheme statements to perform the merge and the
 -- final result variable.
 codegenMergeScheme
-  :: ( Has (Gensym RBinding) sig m
+  :: ( Has (Gensym EmitBinding) sig m
      , Has (Gensym String) sig m
      , Has (State TState) sig m
      , Has (Error String) sig m
@@ -1353,7 +1353,7 @@ codegenRequires
   :: ( Has (State TState)  sig m
      , Has (Error String) sig m
      , Has (Gensym String) sig m
-     , Has (Gensym RBinding) sig m
+     , Has (Gensym EmitBinding) sig m
      )
   => [Exp'] -> m [Exp']
 codegenRequires rqs = (concat <$>) $ forM rqs $ \rq ->
@@ -1367,7 +1367,7 @@ codegenRequires rqs = (concat <$>) $ forM rqs $ \rq ->
 
 codegenMethodReturns
   :: ( Has (State TState) sig m
-     , Has (Gensym RBinding) sig m
+     , Has (Gensym EmitBinding) sig m
      , Has (Error String) sig m
      )
   => MethodType -> m ([Stmt'], [Binding'])
@@ -1531,7 +1531,7 @@ checkListCorr vsEmit eValues =
 genEmitSt
   :: ( Has (Error String) sig m
      , Has (State TState)  sig m
-     , Has (Gensym RBinding) sig m
+     , Has (Gensym EmitBinding) sig m
      )
   => m [Stmt']
 genEmitSt = do

@@ -48,6 +48,6 @@ abstract module {:options "-functionSyntax:4"} QPreludeUntyped {
   {
     if i % Pow2(j + 1) < Pow2(j) then 0 else 1
   }
-            
+
 }
 

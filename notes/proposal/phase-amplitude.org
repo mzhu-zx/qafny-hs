@@ -138,6 +138,21 @@ base of the root of unity through gcm and add them together, which will require
 a lot of arithmetic reasoning.  If we get a 2nd degree, things will be come hard
 which is equivalent to reasoning about cartisan products.
 
+* Implementation
+** Collection of Phases
+
+Although phases are classified by their degree into 3 categories, there're some
+more subtleties when incorporate that into entanglement types.
+
+- Both =Nor= and =Had= type would require collections of phases because they're
+  treated as tensor products of kets. Phases should be assigned on per-range
+  basis.
+- =EN=-typed states only requires one phase per ket basis. But, the meaning of
+  that would be different: it's a summation of (a tuple of) kets with phases.
+- =EN01= will only require one collection because the phase for states in
+  entanglement is also inseparable. 
+
+
 * Footnotes
 
 [fn:1] I'd like to design those two phases while considering the introduction

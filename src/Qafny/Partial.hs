@@ -101,8 +101,9 @@ instance Reducible Range where
 instance Reducible Partition where
   reduce = Partition . reduce . unpackPart
 
-instance Reducible RBinding where
-  reduce = RBinding . first reduce . unRBinding
+instance Reducible EmitBinding where
+  reduce (RBinding b) = RBinding $ first reduce b
+  reduce v            = v
 
 -- | Union two residual maps with the given operator and remove zero-coefficient
 -- variables

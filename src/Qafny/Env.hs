@@ -18,7 +18,7 @@ import           Text.Printf      (printf)
 --------------------------------------------------------------------------------
 -- High-Order Types
 --------------------------------------------------------------------------------
-newtype STuple = STuple { unSTup :: (Loc, Partition, QTy) } -- STuple { unS :: (Loc, Partition, QTy) }
+newtype STuple = STuple { unSTup :: (Loc, Partition, (QTy, [PhaseTy])) } -- STuple { unS :: (Loc, Partition, QTy) }
 
 instance Show STuple where
   show (STuple (loc, s, qt)) =
@@ -40,11 +40,11 @@ data TEnv = TEnv
   , _qnum :: Exp' -- assume each Q type variable is associated with a qubit num which is C type exp
   }
 
-type EmitState = Map.Map RBinding Var
+type EmitState = Map.Map EmitBinding Var
 
 data TState = TState
-  { _sSt    :: Map.Map Loc (Partition, QTy) -- partition type state
-  , _xSt    :: Map.Map Var [(Range, Loc)]   -- range reference state
+  { _sSt    :: Map.Map Loc (Partition, (QTy, [PhaseTy])) -- partition type state
+  , _xSt    :: Map.Map Var [(Range, Loc)] -- range reference state
   , _emitSt :: EmitState
   }
 
@@ -101,14 +101,14 @@ initTState = TState
   }
 
 data SplitScheme = SplitScheme
-  { schROrigin     :: Range   -- | the original range
-  , schRTo         :: Range   -- | the range splitted _to_
-  , schRsRem       :: [Range] -- | the remainder range
-  , schQty         :: QTy     -- | entanglement types
-  , schSMain       :: STuple  -- | the partition that was splitted _from_
-  --  , schSAux    :: STuple  -- | the partition that was splitted _to_
-  , schVEmitOrigin :: Var     -- | the emit variable of the original range
-  , schVsEmitAll   :: [Var]   -- | the emit variables of new ranges
+  { schROrigin     :: Range    -- | the original range
+  , schRTo         :: Range    -- | the range splitted _to_
+  , schRsRem       :: [Range]  -- | the remainder range
+  , schQty         :: QTy      -- | entanglement types
+  , schSMain       :: STuple   -- | the partition that was splitted _from_
+  , schVEmitOrigin :: Var      -- | the emit variable of the original range
+  , schVsEmitAll   :: [Var]    -- | the emit variables of new ranges
+  , schVsEmitPhaseAll :: [Maybe Var] -- | the emit variables of new phases
   }
   deriving Show
 
