@@ -82,14 +82,19 @@ WIP[fn:1]
 *** Second-degree Phase
 WIP
 
-[fn:1] I'd like to design those two phases while considering the introduction
-and elemination of those phases, i.e., how phases are transformed into a more
-expressive one and how expressive phases are contracted/eliminated to extract
-truth from it.
-
 
 ** Phase Primitives
+*** Phase Oracle
+It's reasonable to provide phase support for \(\lambda\) oracle expressions.
+# 
+For example. =λ (_ @ x) => (ω(θ, Pow2(N)) @ x)= can represent an oracle
+\(U^{2^N} = \Rou{\theta}{2^N}\).
+
+The wildcard phase here should be interpreted implicitly as a 0-degree phase for
+correctness. 
+
 *** Quantum Fourier Transform
+QFT tansforms a basis vector in the following way.[fn:2]
 \[
 \ket{x} \mapsto \sum_{k = 0}^{N - 1} \omega(xk, N) \ket{k}
 \]
@@ -132,4 +137,16 @@ degree, it's straightforward.  If it was of 1st degree, we need to match the
 base of the root of unity through gcm and add them together, which will require
 a lot of arithmetic reasoning.  If we get a 2nd degree, things will be come hard
 which is equivalent to reasoning about cartisan products.
+
+* Footnotes
+
+[fn:1] I'd like to design those two phases while considering the introduction
+and elemination of those phases, i.e., how phases are transformed into a more
+expressive one and how expressive phases are contracted/eliminated to extract
+truth from it.
+
+[fn:2] This is an =EN= vector representation. There's also an approach to
+transform it into =EN01= representation in terms of the geometry series. This is
+tricky: it's the tensor product of first-degree phase but containing high-degree
+data (I will reserve "high-order" for this case.)
 
