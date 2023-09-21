@@ -426,8 +426,9 @@ getRangeSplits
      )
   => STuple
   -> Range
-  -> m ((Range, Range), Range, [Range])
-getRangeSplits s@(STuple (loc, p, _)) rSplitTo@(Range to rstL rstR) = do
+  -> [PhaseTy]
+  -> m ((Range, Range), Range, [Range], PhaseTy)
+getRangeSplits s@(STuple (loc, p, _)) rSplitTo@(Range to rstL rstR) ptys = do
   botHuh <- ($ rSplitTo) <$> isBotI
   case botHuh of
     _ | all (== Just True)  botHuh -> throwError' errBotRx
@@ -437,19 +438,20 @@ getRangeSplits s@(STuple (loc, p, _)) rSplitTo@(Range to rstL rstR) = do
   (⊑??) <- (⊑?)
   case matched (⊑??) of
     Nothing -> throwError' errImproperRx
-    Just (rRemL, _, rRemR, rOrigin)  -> do
+    Just (rRemL, _, rRemR, rOrigin, pty)  -> do
       rsRem <- (++) <$> contractRange rRemL <*> contractRange rRemR
-      return ((rRemL, rRemR), rOrigin, rsRem)
+      return ((rRemL, rRemR), rOrigin, rsRem, pty)
   where
     -- infoSS :: String = printf "[checkScheme] from (%s) to (%s)" (show s) (show rSplitTo)
     errBotRx = printf "The range %s contains no qubit!" $ show rSplitTo
     errImproperRx = printf
       "The range %s is not a part of the partition %s!" (show rSplitTo) (show s)
     matched (⊑??) = listToMaybe -- logically, there should be at most one partition!
-      [ (Range y yl rstL, rSplitTo, Range y rstR yr, rRef)
-      | rRef@(Range y yl yr) <- unpackPart p  -- choose a range in the environment
-      , to == y                               -- must be in the same register file!
-      , rSplitTo ⊑?? rRef -- must be a sub-interval
+      [ (Range y yl rstL, rSplitTo, Range y rstR yr, rRef, pty)
+      | (rRef@(Range y yl yr), pty) <- zip (unpackPart p) ptys
+        -- ^ choose a range in the environment
+      , to == y           -- | must be in the same register file!
+      , rSplitTo ⊑?? rRef -- | must be a sub-interval
       ]
 
 
