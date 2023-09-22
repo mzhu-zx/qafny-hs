@@ -108,7 +108,7 @@ data SplitScheme = SplitScheme
   , schSMain       :: STuple   -- | the partition that was splitted _from_
   , schVEmitOrigin :: Var      -- | the emit variable of the original range
   , schVsEmitAll   :: [Var]    -- | the emit variables of new ranges
-  , schVsEmitPhaseAll :: [Maybe Var] -- | the emit variables of new phases
+  -- , schVsEmitPhaseAll :: [Maybe Var] -- | the emit variables of new phases
   }
   deriving Show
 

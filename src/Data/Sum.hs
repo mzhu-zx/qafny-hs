@@ -34,7 +34,7 @@ instance {-# OVERLAPPABLE #-} Injection f (f :+: g) where
 instance {-# OVERLAPPABLE #-} Injection f h => Injection f (h :+: g) where
   inj = Inl . inj
 
-instance Injection g (f :+: g) where
+instance {-# OVERLAPPABLE #-} Injection g (f :+: g) where
   inj = Inr
 
 projLeft :: (f :+: g) -> Maybe f

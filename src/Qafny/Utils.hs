@@ -86,14 +86,17 @@ gensymEmitRangeQTy
   => Range -> QTy-> m Var
 gensymEmitRangeQTy r qty = gensymEmitRB (rbindingOfRange r (inj qty))
 
+-- | Generate a new variable for phase representation and returns a new PhaseTy
+-- that refers to the new variable.
 gensymEmitRangePTyRepr
   :: ( Has (Gensym EmitBinding) sig m
      , Has (State TState) sig m
      )
-  => Range -> PhaseTy-> m (Maybe Var)
-gensymEmitRangePTyRepr _ PT0 = pure Nothing
-gensymEmitRangePTyRepr r t =
-  Just <$> gensymEmitRB (rbindingOfRange r (inj t))
+  => Range -> PhaseTy-> m (Maybe Var, PhaseTy)
+gensymEmitRangePTyRepr _ PT0 = pure (Nothing, PT0)
+gensymEmitRangePTyRepr r t@(PTN i pRef) = do
+  vRepr <- gensymEmitRB (rbindingOfRange r (inj t))
+  return (Just vRepr, PTN i pRef{ prRepr=vRepr })
 
 
 gensymEmitRangePTy
@@ -231,3 +234,10 @@ getMethodType v = do
         Inl ty -> throwError'' $ printf "%s is not a method but a %s" v (showEmitI 0 ty)
         Inr mty -> pure mty
     _             -> asks (^. kEnv) >>= throwError'' . show . UnknownVariableError v
+
+--------------------------------------------------------------------------------
+-- * EmitBinding Related
+
+projEmitBindingRangeQTy :: EmitBinding -> Maybe (Range, QTy)
+projEmitBindingRangeQTy (RBinding (r, Inl (Inl qty))) = Just (r, qty)
+projEmitBindingRangeQTy _                             = Nothing

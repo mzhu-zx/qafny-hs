@@ -1547,4 +1547,4 @@ genEmitSt = do
 
 --------------------------------------------------------------------------------
 instance (Has (Error String) sig m, Monad m) => MonadFail m where
-``  fail = throwError
+  fail = throwError

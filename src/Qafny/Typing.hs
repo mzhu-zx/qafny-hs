@@ -40,7 +40,7 @@ import           Qafny.Utils
     , gensymEmitRangeQTy
     , gensymLoc
     , removeEmitRangeQTys
-    , rethrowMaybe, removeEmitPartitionQTys, gensymRangeQTy, gensymEmitRB, gensymEmitRangePTyRepr
+    , rethrowMaybe, removeEmitPartitionQTys, gensymRangeQTy, gensymEmitRB, gensymEmitRangePTyRepr, projEmitBindingRangeQTy
     )
 
 -- Utils
@@ -74,7 +74,7 @@ import           Data.Maybe
     , isJust
     , listToMaybe
     , mapMaybe
-    , maybeToList
+    , maybeToList, fromJust
     )
 import qualified Data.Set                   as Set
 import           Data.Sum
@@ -286,12 +286,14 @@ contractRange
   :: ( Has (Error String) sig m
      , Has (Reader IEnv) sig m
      )
-  => Range -> m [Range]
+  => Range -> m (Maybe Range)
 contractRange r = do
   botHuh <- ($ r) <$> isBotI
   case botHuh of
-    _ | all (== Just True) botHuh -> return []
-    _ | all isJust botHuh         -> return [r] -- may or may not be, therefore leave it there
+    _ | all (== Just True) botHuh -> return Nothing
+    _ | all isJust botHuh         ->
+        -- may or may not be, therefore leave it there
+        return (Just r)
     _                             -> err botHuh
   where
     err reason = do
@@ -313,20 +315,31 @@ splitScheme'
   => STuple
   -> Range
   -> m (STuple, Maybe SplitScheme)
-splitScheme' s@(STuple (loc, p, xt@(qt, pty))) rSplitTo@(Range to rstL rstR) = do
+splitScheme' s@(STuple (loc, p, xt@(qt, ptys))) rSplitTo@(Range to rstL rstR) = do
   -- FIXME: Type checking of `qt` should happen first because splitting an EN
   -- typed partition should not be allowed.
   -- TODO: Is this correct?
   when (isEN qt) $ throwError'' errSplitEN
-
-  ((rRemL, rRemR), rOrigin, rsRem') <- getRangeSplits s rSplitTo
-  rsRem <- (++) <$> contractRange rRemL <*> contractRange rRemR
-  let rsRest = List.delete rOrigin $ unpackPart p
+  RangeSplits { rsRsPsRest=rpsRest
+              , rsRLeft=rLMaybe
+              , rsRRight=rRMaybe
+              , rsRFocused=rOrigin
+              , rsPFocused=ptyOrigin
+              } <- getRangeSplits s rSplitTo ptys
+  let rsRest = fst <$> rpsRest
+      ptysRest = snd <$> rpsRest
+      rsRem = maybeToList rLMaybe ++ maybeToList rRMaybe
       -- the ranges except the chosen one + the quotient ranges
       rsMain = rsRem ++ rsRest
       rsAux  = [rSplitTo]
       pMain  = Partition rsMain
       pAux   = Partition rsAux
+  -- generate
+  (vReprPTyMaybesSplit : vReprPTyMaybesRem) <-
+    forM (rSplitTo : rsRem) (`gensymEmitRangePTyRepr` ptyOrigin)
+  let ptysRem = snd <$> vReprPTyMaybesRem
+      ptySplitTo = snd vReprPTyMaybesSplit
+      ptysMain = ptysRem ++ ptysRest
   case rsMain of
     [] -> 
       -- ^ No need to split at all, so we're safe regardless of the qtype
@@ -339,22 +352,19 @@ splitScheme' s@(STuple (loc, p, xt@(qt, pty))) rSplitTo@(Range to rstL rstR) = d
       -- 
       -- 1. Allocate partitions, break ranges and move them around
       locAux <- gensymLoc to
-      sSt %= (at loc ?~ (pMain, xt)) . (at locAux ?~ (pAux, xt))
+      sSt %= (at loc ?~ (pMain, (qt, ptysMain))) . (at locAux ?~ (pAux, (qt, [ptySplitTo])))
       -- use sSt >>= \s' -> trace $ printf "sSt: %s" (show s')
       xRangeLocs <- use (xSt . at to) `rethrowMaybe` errXST
       let xrl =
             -- "new range -> new loc"
             [ (rAux, locAux) | rAux <- rsAux ] ++
             -- "split ranges -> old loc"
-            
-            -- "split ranges -> old loc"
             [ (rMainNew, loc) | rMainNew <- rsRem ] ++
             -- "the rest with the old range removed"
             List.filter ((/= rOrigin) . fst) xRangeLocs
-      -- trace (printf "State Filtered by %s: %s" (show rSplitTo) (show xrl))
       xSt %= (at to ?~ xrl)
       -- 2. Generate emit symbols for split ranges
-      let sMain' = (loc, pMain, xt)          -- the part that's splited _from_
+      let sMain' = (loc, pMain, (qt, ptysMain)) -- the part that's splited _from_
       case rsRem of
         [] -> case qt of
           t | t `elem` [ TEN, TEN01 ] ->
@@ -373,10 +383,9 @@ splitScheme' s@(STuple (loc, p, xt@(qt, pty))) rSplitTo@(Range to rstL rstR) = d
               removeEmitRangeQTys [(rOrigin, qt)]
               -- gensym for each split ranges
               rSyms <- (rSplitTo : rsRem) `forM` (`gensymEmitRangeQTy` qt)
-              rPhReprs <- (rSplitTo : rsRem) `forM` (`gensymEmitRangePTyRepr` pty)
-              return (vEmitR, rSyms, rPhReprs)
+              return (vEmitR, rSyms, (ptySplitTo : ptysRem))
             _    -> throwError'' $ errUnsupprtedTy ++ "\n" ++ infoSS
-          let sAux' = (locAux, pAux, xt)
+          let sAux' = (locAux, pAux, (qt, [ptySplitTo]))
           let ans = SplitScheme
                 { schROrigin = rOrigin
                 , schRTo = rSplitTo
@@ -385,7 +394,6 @@ splitScheme' s@(STuple (loc, p, xt@(qt, pty))) rSplitTo@(Range to rstL rstR) = d
                 , schSMain = STuple sMain'
                 , schVEmitOrigin = vEmitR
                 , schVsEmitAll = rSyms
-                , schVsEmitPhaseAll = rPhReprs
                 }
           -- trace $ printf "[splitScheme (post)] %s" (show ans)
           return (STuple sAux', Just ans)
@@ -402,20 +410,27 @@ splitScheme' s@(STuple (loc, p, xt@(qt, pty))) rSplitTo@(Range to rstL rstR) = d
 -- FIXME: at this moment, this is more like a placeholder. There're something to
 -- be done to generate the correct spltiScheme for the codegen to give a
 -- satisfying result.   
-duplicatePhaseTy
-  :: ( Has (Gensym EmitBinding) sig m
-     , Has (Error String) sig m
-     )
-  => Loc -> QTy -> PhaseTy
-  -> m PhaseTy
-duplicatePhaseTy _ _ PT0 = return PT0
-duplicatePhaseTy v qt (PTN i (PhaseRef { prBase=vBase, prRepr=_ })) = do
-  -- allocate a new repr variable without allocating a new base one
-  vRepr <- gensymEmitRB (LBinding (deref v, reprTy))
-  return (PTN i (PhaseRef { prBase=vBase, prRepr=vRepr }))
-  where
-    (_, reprTy) = typingPhaseEmitN i
+-- duplicatePhaseTy
+--   :: ( Has (Gensym EmitBinding) sig m
+--      , Has (Error String) sig m
+--      )
+--   => Loc -> QTy -> PhaseTy
+--   -> m PhaseTy
+-- duplicatePhaseTy _ _ PT0 = return PT0
+-- duplicatePhaseTy v qt pty@(PTN i (PhaseRef { prBase=vBase, prRepr=_ })) = do
+--   -- allocate a new repr variable without allocating a new base one
+--   vRepr <- gensymEmitRB (LBinding (deref v, pty))
+--   return (PTN i (PhaseRef { prBase=vBase, prRepr=vRepr }))
 
+data RangeSplits = RangeSplits
+  { rsRLeft :: Maybe Range
+  , rsRRight :: Maybe Range
+  , rsRSplit :: Range
+  , rsRFocused :: Range
+  , rsPFocused :: PhaseTy
+  , rsRsPsRest :: [(Range, PhaseTy)]
+  , rsRsRem :: [Range]
+  }
 
 -- | Compute, in order to split the given range from a resolved partition, which
 -- range in the partition needs to be split as well as the resulting quotient
@@ -424,10 +439,7 @@ getRangeSplits
   :: ( Has (Error String) sig m
      , Has (Reader IEnv) sig m
      )
-  => STuple
-  -> Range
-  -> [PhaseTy]
-  -> m ((Range, Range), Range, [Range], PhaseTy)
+  => STuple -> Range -> [PhaseTy] -> m RangeSplits
 getRangeSplits s@(STuple (loc, p, _)) rSplitTo@(Range to rstL rstR) ptys = do
   botHuh <- ($ rSplitTo) <$> isBotI
   case botHuh of
@@ -439,8 +451,18 @@ getRangeSplits s@(STuple (loc, p, _)) rSplitTo@(Range to rstL rstR) ptys = do
   case matched (⊑??) of
     Nothing -> throwError' errImproperRx
     Just (rRemL, _, rRemR, rOrigin, pty)  -> do
-      rsRem <- (++) <$> contractRange rRemL <*> contractRange rRemR
-      return ((rRemL, rRemR), rOrigin, rsRem, pty)
+      rRemLeft <- contractRange rRemL
+      rRemRight <- contractRange rRemR
+      let rspsRest = List.delete (rOrigin, pty) (zip (unpackPart p) ptys)
+      return $ RangeSplits
+        { rsRLeft = rRemLeft
+        , rsRRight = rRemRight
+        , rsRSplit = rSplitTo
+        , rsRFocused = rOrigin
+        , rsPFocused = pty
+        , rsRsPsRest = rspsRest
+        , rsRsRem = catMaybes [rRemLeft, rRemRight]
+        } 
   where
     -- infoSS :: String = printf "[checkScheme] from (%s) to (%s)" (show s) (show rSplitTo)
     errBotRx = printf "The range %s contains no qubit!" $ show rSplitTo
@@ -472,12 +494,14 @@ splitThenCastScheme
        , Maybe SplitScheme  -- May split if cast or not
        , Maybe CastScheme   -- May cast or not
        )
-splitThenCastScheme s'@(STuple (loc, p, qt1)) qt2 rSplitTo =
+splitThenCastScheme s'@(STuple (loc, p, (qt1, ptys))) qt2 rSplitTo =
   case (qt1, qt2) of
     (_, _) | isEN qt1 && qt1 == qt2 -> do
       -- same type therefore no cast needed,
       -- do check to see if split is also not needed
-      (_, rOrigin, rsRem) <- getRangeSplits s' rSplitTo
+      RangeSplits { rsRFocused = rOrigin
+                  , rsRsRem = rsRem
+                  } <- getRangeSplits s' rSplitTo ptys
       case rsRem of
         [] -> return (s', Nothing, Nothing)
         _  -> throwError $ errSplitEN rOrigin rsRem
@@ -527,7 +551,7 @@ typingPartitionQTy
   => Partition -> QTy -> m STuple
 typingPartitionQTy s qt = do
   st@(STuple tup) <- resolvePartition s
-  when (qt /= (tup ^. _3)) $ throwError' (errTypeMismatch st)
+  when (qt /= (tup ^. _3 ^. _1)) $ throwError' (errTypeMismatch st)
   return st
   where
     errTypeMismatch st =
@@ -643,7 +667,7 @@ castScheme
      )
   => STuple -> QTy -> m (STuple, CastScheme)
 castScheme st qtNow = do
-  let STuple(locS, sResolved, qtPrev) = st
+  let STuple(locS, sResolved, (qtPrev, _)) = st
   when (qtNow == qtPrev) $
     throwError @String  $ printf
      "Partition `%s` is of type `%s`. No retyping need to be done."
@@ -654,9 +678,11 @@ castScheme st qtNow = do
   vsOldEmit <- rqsOld `forM` uncurry findEmitRangeQTy
   removeEmitRangeQTys rqsOld
   let tNewEmit = typingQEmit qtNow
-  sSt %= (at locS ?~ (sResolved, qtNow))
+  -- FIXME: Cast phases
+  let pty' = undefined
+  sSt %= (at locS ?~ (sResolved, (qtNow, pty')))
   vsNewEmit <- unpackPart sResolved `forM` (`gensymEmitRangeQTy` qtNow)
-  return ( STuple (locS, sResolved, qtNow)
+  return ( STuple (locS, sResolved, (qtNow, pty'))
          , CastScheme { schVsOldEmit=vsOldEmit
                       , schTOldEmit=tOldEmit
                       , schVsNewEmit=vsNewEmit
@@ -685,8 +711,9 @@ matchEmitStates es1 es2 =
   filter removeEq . Map.toList $ Map.intersectionWith (,) em1 em2
   where
     removeEq (_, (v1, v2)) = v1 /= v2
-    ripLoc = Map.mapKeys (fst . unRBinding)
-    reduceKeys = Map.mapKeys reduce
+    ripLoc = (`Map.withoutKeys` Set.singleton Nothing) .
+      Map.mapKeys ((fst <$>) . projEmitBindingRangeQTy)
+    reduceKeys = Map.mapKeys (reduce . fromJust)
     reduceMap = reduceKeys . ripLoc
     (em1, em2) = (reduceMap es1, reduceMap es2)
 
@@ -716,8 +743,8 @@ mergeMatchedTState
   ts1@TState {_emitSt=eSt1}
   ts2@TState {_emitSt=eSt2}
   = (catMaybes <$>) . forM matchedRangeAndVars $ \(r, (v1, v2)) -> do
-  qt1 <- getQTy ts1 r
-  qt2 <- getQTy ts2 r
+  (qt1, _) <- getQPTy ts1 r
+  (qt2, _) <- getQPTy ts2 r
   when (qt1 /= qt2) $ throwError' "How can they be different?"
   pure $ case qt1 of
     _ | qt1 `elem` [ TEN, TEN01 ] -> Just . MEqual $
@@ -730,10 +757,11 @@ mergeMatchedTState
     _ -> Nothing
   where
     matchedRangeAndVars = matchEmitStates eSt1 eSt2
-    getQTy ts r = evalState ts $ inferRangeQTy r
+    getQPTy ts r = evalState ts $ inferRangeTy r
 
 
 -- | Merge the second STuple into the first one
+-- FIXME: Check if phase type is correct!
 mergeScheme
   :: ( Has (State TState) sig m
      , Has (Error String) sig m
@@ -743,8 +771,8 @@ mergeScheme
   -> STuple -- ^ Servent
   -> m [MergeScheme]
 mergeScheme
-  stM'@(STuple (locMain, _, qtMain))
-  stA@(STuple (locAux, sAux@(Partition rsAux), qtAux)) = do
+  stM'@(STuple (locMain, _, (qtMain, ptysMain)))
+  stA@(STuple (locAux, sAux@(Partition rsAux), (qtAux, ptysAuz))) = do
   sSt %= (`Map.withoutKeys` Set.singleton locAux) -- GC aux's loc
   forM rsAux $ \rAux@(Range _ _ erAux) -> do
     -- fetch the latest 'rsMain'
@@ -759,7 +787,7 @@ mergeScheme
         -- 'sSt'
         let pM = Partition $ rAux : rsMain
         xSt %= Map.map redirectX
-        sSt %= (at locMain ?~ (pM, qtMain)) -- update main's partition
+        sSt %= (at locMain ?~ (pM, (qtMain, ptysMain))) -- update main's partition
         return MMove
       [rCandidate@(Range x elCandidate _)] -> do
         -- | Merge the range into an existing range
@@ -768,7 +796,7 @@ mergeScheme
         let rNew = Range x elCandidate erAux
         let pM = Partition $ (\r -> bool r rNew (r == rCandidate)) <$> rsMain
         xSt %= Map.map (revampX rCandidate rAux rNew)
-        sSt %= (at locMain ?~ (pM, qtMain))
+        sSt %= (at locMain ?~ (pM, (qtMain, ptysMain)))
         return $ MJoin JoinStrategy
           { jsRMain = rCandidate
           , jsRMerged = rAux
@@ -805,8 +833,8 @@ mergeSTuples
      )
   => STuple -> STuple -> m ()
 mergeSTuples
-  stM@(STuple (locMain, sMain@(Partition rsMain), qtMain))
-  stA@(STuple (locAux, sAux@(Partition rsAux), qtAux)) =
+  stM@(STuple (locMain, sMain@(Partition rsMain), (qtMain, ptysMain)))
+  stA@(STuple (locAux, sAux@(Partition rsAux), (qtAux, ptysAux))) =
   do
     -- Sanity Check
     unless (qtMain == qtAux && qtAux == TEN) $
@@ -824,7 +852,7 @@ mergeSTuples
                   let loc' = if loc == locAux then locMain else loc])
     sSt %=
       (`Map.withoutKeys` Set.singleton locAux) . -- GC aux's loc
-      (at locMain ?~ (newPartition, TEN))        -- update main's state
+      (at locMain ?~ (newPartition, (TEN, undefined))) -- update main's state
     return ()
 
 --------------------------------------------------------------------------------
@@ -1045,14 +1073,14 @@ mergeCandidateHad
      , Has Trace sig m
      )
   => STuple -> m STuple
-mergeCandidateHad st@(STuple (_, Partition [r], THad)) = do
+mergeCandidateHad st@(STuple (_, Partition [r], (THad, ptys))) = do
   ps <- use sSt <&> Map.elems
   matched <- catMaybes <$> forM ps matchMergeable
   case matched of
     [p'] -> resolvePartition p'
     _    -> throwError' $ ambiguousCandidates matched
   where
-    matchMergeable (p'@(Partition rs), TEN) = do
+    matchMergeable (p'@(Partition rs), (TEN, ptysEN)) = do
       rsAdjacent <- lookupAdjacentRange rs r
       pure $ case rsAdjacent of
         [] -> Nothing
