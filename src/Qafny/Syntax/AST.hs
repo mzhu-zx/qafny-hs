@@ -88,9 +88,9 @@ data MethodType = MethodType
   -- Parameters for the source method (Type resolution level)
   { mtSrcParams :: [MethodElem]
   , mtSrcReturns :: [MethodElem]
-  , mtInstantiate :: Map.Map Var Range -> [(Partition, QTy)]
-  , mtReceiver :: Map.Map Var Range -> [(Partition, QTy)]
-  , mtDebugInit :: [(Partition, QTy)]
+  , mtInstantiate :: Map.Map Var Range -> [(Partition, QTy, [PhaseTy])]
+  , mtReceiver :: Map.Map Var Range -> [(Partition, QTy, [PhaseTy])]
+  -- , mtDebugInit :: [(Partition, QTy)]
   }
 
 instance Show MethodType where
@@ -132,7 +132,7 @@ instance Injection MethodType MTy where
 
 
 data Binding x
-  = Binding (XRec x Var) (XRec x Ty)
+  = Binding (XRec x Var) Ty
 
 
 
@@ -407,8 +407,8 @@ leftPartitions =
     perStmt _            = []
 
 -- | Collect all partitions with their types from spec expressions
-specPartitionQTys :: [Exp x] -> [(Partition, QTy)]
-specPartitionQTys es = [ (p, qty) | (ESpec p qty _) <- es ]
+specPartitionQTys :: [Exp x] -> [(Partition, QTy, PhaseTy)]
+specPartitionQTys es = [ (p, qty, undefined) | (ESpec p qty _) <- es ]
 
 
 (.:) :: (c -> d) -> (a -> b -> c) -> (a -> b -> d)

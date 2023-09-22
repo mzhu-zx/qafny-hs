@@ -65,7 +65,6 @@ import           Data.Maybe
     , listToMaybe
     , maybeToList
     )
-import           Data.Sum                     (Injection (inj))
 import           Qafny.Config
 import           Qafny.Env
 import           Qafny.Interval               (Interval (Interval))
@@ -79,7 +78,11 @@ import           Qafny.Syntax.Emit
     , showEmit0
     , showEmitI
     )
-import           Qafny.TypeUtils              (isEN, typingQEmit)
+import           Qafny.TypeUtils
+    ( isEN
+    , typingPhaseEmitReprN
+    , typingQEmit
+    )
 import           Qafny.Typing
     ( appkEnvWithBds
     , castScheme
@@ -95,11 +98,13 @@ import           Qafny.Typing
     , mergeMatchedTState
     , mergeSTuples
     , mergeScheme
+    , removeTStateBySTuple
     , resolveMethodApplicationArgs
     , resolveMethodApplicationRets
     , resolvePartition
     , resolvePartition'
     , resolvePartitions
+    , resolveRange
     , retypePartition
     , retypePartition1
     , splitScheme
@@ -109,7 +114,7 @@ import           Qafny.Typing
     , typingExp
     , typingGuard
     , typingPartition
-    , typingPartitionQTy, removeTStateBySTuple, resolveRange
+    , typingPartitionQTy
     )
 import           Qafny.Utils
     ( dumpSSt
@@ -124,7 +129,7 @@ import           Qafny.Utils
     , getMethodType
     , liftPartition
     , modifyEmitRangeQTy
-    , rbindingOfRangeQTy
+    , rbindingOfRange
     , removeEmitPartitionQTys
     , removeEmitRangeQTys
     , rethrowMaybe
@@ -135,6 +140,9 @@ throwError'
   => String -> m a
 throwError' = throwError @String . ("[Codegen] " ++)
 
+
+first3 :: (a -> d) -> (a, b, c) -> (d, b, c)
+first3 f (a, b, c) = (f a, b, c)
 
 --------------------------------------------------------------------------------
 -- * Introduction
@@ -176,11 +184,11 @@ codegenAST ast = do
   path <- asks stdlibPath
   let prelude = (mkIncludes path <$> includes) ++ imports
   let methodMap = collectMethodTypes ast
-  stTops <- local (kEnv %~ Map.union (inj <$> methodMap)) $ mapM codegenToplevel ast
+  stTops <- local (kEnv %~ Map.union (Sum.inj <$> methodMap)) $ mapM codegenToplevel ast
   let (states, mainMayFail) = unzip stTops
   let main :: Either String AST = sequence mainMayFail
   let astGened = (injQDafny prelude ++) <$> main <&> (++ injQDafny finale)
-  return $ (catMaybes states, astGened)
+  return (catMaybes states, astGened)
   where
 
     injQDafny = (Sum.inj <$>)
@@ -258,7 +266,7 @@ codegenToplevel'Method q@(QMethod v bds rts rqs ens (Just block)) = runWithCallS
   let (rqsCG, params, stmtsMatchParams) = appetizer
   let blockCG = mainCourse
 
-  (stmtsMatchEnsures, returns) <- GEmit.evalGensymEmitWith @RBinding countEmit $
+  (stmtsMatchEnsures, returns) <- GEmit.evalGensymEmitWith @EmitBinding countEmit $
     codegenMethodReturns mty
 
   ensCG <- codegenEnsures ens
@@ -294,7 +302,19 @@ codegenToplevel'Method q@(QMethod v bds rts rqs ens (Just block)) = runWithCallS
     -- | Compile the foward declaration of all variables produced in compiling
     -- the body
     fDecls = fmap $ uncurry fDecl
-    fDecl (RBinding (_, ty)) v' = SVar (Binding v' ty) Nothing
+
+    fDecl :: EmitBinding -> Var -> Stmt'
+    fDecl (RBinding (_, ty)) v' = SVar (Binding v' (getTy ty)) Nothing
+      where
+        getTy (Sum.Inl (Sum.Inl qty)) = typingQEmit qty
+        getTy (Sum.Inl (Sum.Inr (PTN n _))) = typingPhaseEmitReprN n
+        getTy (Sum.Inr ty') = ty'
+        getTy _             = error $
+          printf "Internal Error: %s is not a valid EmitBinding." (show ty)
+    fDecl (LBinding (_, PTN n _)) v' =
+      SVar (Binding v' (typingPhaseEmitReprN n)) Nothing
+    fDecl bd _ = error $
+      printf "Internal Error: %s is not a valid EmitBinding." (show bd)
 
     -- | Forward declare all symbols emitted during Codegen except for those to
     -- be put in the __returns__ clause.
@@ -419,13 +439,13 @@ codegenStmt' s@(_ :*=: _) =
 
 codegenStmt' (SIf e seps b) = do
   -- resolve the type of the guard
-  (stG'@(STuple (_, _, qtG)), pG) <- typingGuard e
+  (stG'@(STuple (_, _, (qtG, ptysG))), pG) <- typingGuard e
   -- perform a split to separate the focused guard range from parition
   (stG, maySplit) <- splitSchemePartition stG' pG
   stmtsSplit <- codegenSplitEmitMaybe maySplit
   -- resolve and collect partitions in the body of the IfStmt
   -- analogous to what we do in SepLogic
-  stB'@(STuple( _, sB, qtB)) <-
+  stB'@(STuple( _, sB, (qtB, ptysB))) <-
     resolvePartitions . leftPartitions . inBlock $ b
   let annotateCastB = qComment $
         printf "Cast Body Partition %s => %s" (show qtB) (show TEN)
@@ -487,7 +507,7 @@ codegenStmt'Apply ((:*=:) s EHad) = do
   r <- case unpackPart s of
     [r] -> return r
     _   -> throwError "TODO: support non-singleton partition in `*=`"
-  st@(STuple(_, _, qt)) <- resolvePartition s
+  st@(STuple(_, _, (qt, _))) <- resolvePartition s
   opCast <- opCastHad qt
   -- run split semantics here!
   (stSplit, ssMaybe) <- splitScheme st r
@@ -501,7 +521,7 @@ codegenStmt'Apply ((:*=:) s EHad) = do
     opCastHad t = throwError $ "type `" ++ show t ++ "` cannot be casted to Had type"
 
 codegenStmt'Apply stmt@(s@(Partition ranges) :*=: eLam@(EEmit (ELambda {}))) = do
-  (st'@(STuple (_, _, qt')), corr) <- resolvePartition' s
+  (st'@(STuple (_, _, (qt', _))), corr) <- resolvePartition' s
   qtLambda <- ask
   checkSubtypeQ qt' qtLambda
   -- compute the correspondence between range on surface ser and the range in
@@ -512,7 +532,7 @@ codegenStmt'Apply stmt@(s@(Partition ranges) :*=: eLam@(EEmit (ELambda {}))) = d
     _   -> throwError errRangeGt1
 
   -- do the type cast and split first
-  ((STuple (_, _, qt)), maySplit, mayCast) <- splitThenCastScheme st' qtLambda r
+  (STuple (_, _, (qt, _)), maySplit, mayCast) <- splitThenCastScheme st' qtLambda r
   stmts <- codegenSplitThenCastEmit maySplit mayCast
 
   -- resolve again for consistency
@@ -527,7 +547,7 @@ codegenStmt'Apply stmt@(s@(Partition ranges) :*=: eLam@(EEmit (ELambda {}))) = d
   -- should only be applied to the sub-partition specified in the annotation.
   [vEmit] <- unpackPart s `forM` (`findEmitRangeQTy` qt)
   ((stmts ++) <$>) . putOpt $ case qtLambda of
-    TEN -> return $ [ mkMapCall vEmit ]
+    TEN -> return [ mkMapCall vEmit ]
     TEN01 -> do
       vInner <- gensym "lambda_x"
       let offset = erLower - esLower
@@ -573,10 +593,10 @@ codegenStmt'If
 
 codegenStmt'If (SIf e _ b) = do
   -- resolve the type of the guard
-  (stG@(STuple (_, _, qtG)), pG) <- typingGuard e
+  (stG@(STuple (_, _, (qtG, _))), pG) <- typingGuard e
   trace $ printf "Partitions collected from %s:\n%s" (showEmit0 e) (showEmit0 pG)
   -- resolve the body partition
-  stB'@(STuple( _, sB, qtB)) <- resolvePartitions . leftPartitions . inBlock $ b
+  stB'@(STuple( _, sB, (qtB, _))) <- resolvePartitions . leftPartitions . inBlock $ b
   let annotateCastB = qComment $
         printf "Cast Body Partition %s => %s" (show qtB) (show TEN)
   (stmtsCastB, stB) <- case qtB of
@@ -661,7 +681,7 @@ codegenStmt'For (SFor idx boundl boundr eG invs (Just seps) body) = do
     -- trace $ "stateLoop:\n" ++ show stateLoop
     codegenFinish stateLoop
     -- get @TState >>= trace . ("staetLoop (subst):\n" ++) . show
-    pure $ stmtsBody
+    pure stmtsBody
 
   return $ concat stmtsPreGuard ++ stmtsBody
   where
@@ -680,7 +700,7 @@ codegenStmt'For (SFor idx boundl boundr eG invs (Just seps) body) = do
 
     -- | ... partially evaluted with the index variable substituted by the lower
     -- bound
-    invPQtsPre = first (reduce . substP [(idx, boundl)]) <$> invPQts
+    invPQtsPre = first3 (reduce . substP [(idx, boundl)]) <$> invPQts
 
     -- | the postcondtion of one iteration can be computed bys setting the upper
     -- bound to be the index plus one
@@ -689,7 +709,7 @@ codegenStmt'For (SFor idx boundl boundr eG invs (Just seps) body) = do
     -- | Generate code and state for the precondition after which
     -- | we only need to concern those mentioned by the loop invariants
     codegenInit = do
-      stmtsPreGuard <- invPQtsPre `forM` \(sInv, qtInv) -> case sInv of
+      stmtsPreGuard <- invPQtsPre `forM` \(sInv, qtInv, _) -> case sInv of
         Partition [rInv] -> do
           stInv <- resolvePartition sInv
           (sInvSplit, maySplit, mayCast) <- splitThenCastScheme stInv qtInv rInv
@@ -1338,7 +1358,7 @@ codegenMethodParams
   => MethodType -> m [Binding']
 codegenMethodParams MethodType{ mtSrcParams=srcParams
                               , mtInstantiate=instantiator
-                              , mtDebugInit=debugInit
+                              -- , mtDebugInit=debugInit
                               } = do
   let pureVars = collectPureBindings srcParams
       qVars = [ (v, Range v 0 card) | MTyQuantum v card <- srcParams ]

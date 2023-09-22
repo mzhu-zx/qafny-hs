@@ -95,6 +95,8 @@ throwError'
   => String -> m a
 throwError' = throwError @String . ("[Typing] " ++)
 
+uncurry3 ::  (a -> b -> c -> d) -> (a, b, c) -> d
+uncurry3 f (a, b, c) = f a b c
 
 -- | Compute the simple type of the given expression
 typingExp
@@ -335,7 +337,7 @@ splitScheme' s@(STuple (loc, p, xt@(qt, ptys))) rSplitTo@(Range to rstL rstR) = 
       pMain  = Partition rsMain
       pAux   = Partition rsAux
   -- generate
-  (vReprPTyMaybesSplit : vReprPTyMaybesRem) <-
+  ~(vReprPTyMaybesSplit : vReprPTyMaybesRem) <-
     forM (rSplitTo : rsRem) (`gensymEmitRangePTyRepr` ptyOrigin)
   let ptysRem = snd <$> vReprPTyMaybesRem
       ptySplitTo = snd vReprPTyMaybesSplit
@@ -876,21 +878,22 @@ analyzeMethodType (QMethod v bds rts rqs ens _) =
                       , mtSrcReturns=srcReturns
                       , mtInstantiate = instantiate
                       , mtReceiver = receive
-                      , mtDebugInit = mapMaybe collectSignature rqs
+                      -- , mtDebugInit = mapMaybe collectSignature rqs
                       })
   where
     collectRange :: Binding () -> MethodElem
     collectRange (Binding vq (TQReg a)) = MTyQuantum vq (aexpToExp a)
     collectRange (Binding varg t)       = MTyPure varg t
 
-    collectSignature :: Exp' -> Maybe (Partition, QTy)
-    collectSignature (ESpec s qt _) = pure (s, qt)
-    collectSignature _              = Nothing
+    -- FIXME: collect phase types as well
+    collectSignature :: Exp' -> Maybe (Partition, QTy, [PhaseTy])
+    collectSignature (ESpec s qt pexp) = pure (s, qt, undefined)
+    collectSignature _                 = Nothing
 
     go
       :: (Has (Reader (Map.Map Var Range)) sig' m')
-      => (Partition, QTy) -> m' (Partition, QTy)
-    go (s, qt) = (,qt) <$> instPart s
+      => (Partition, QTy, [PhaseTy]) -> m' (Partition, QTy, [PhaseTy])
+    go (s, qt, pty) = (,qt, pty) <$> instPart s
 
     -- instantiate a Type expression with a given mapping from variable to Range
     instPart
@@ -982,7 +985,7 @@ resolveMethodApplicationArgs es
   let inst = instantiator envArgs
   -- perform qtype check for each argument
   (resolvedSts, qArgs) <- second concat <$>
-    mapAndUnzipM (uncurry getEmitVarsAfterTyCheck) inst
+    mapAndUnzipM (uncurry getEmitVarsAfterTyCheck) ((\(a,b,c) -> (a, b)) <$> inst)
   pure (envArgs, pureArgs ++ qArgs, resolvedSts)
   where
     arityMismatch prs = throwError' $
@@ -1013,7 +1016,7 @@ resolveMethodApplicationRets envArgs
   MethodType { mtSrcReturns=retParams
              , mtReceiver=receiver
              } = do
-  qBindings :: [Var] <- concat <$> forM psRet (uncurry extendTState)
+  qBindings :: [Var] <- concat <$> forM psRet (uncurry3 extendTState)
   -- TODO: also outputs pure variables here
   -- Sanity check for now:
   let pureArgs = collectPureBindings retParams
@@ -1124,9 +1127,9 @@ tStateFromPartitionQTys
   :: ( Has (Gensym EmitBinding) sig m
      , Has (Gensym Var) sig m
      )
-  => [(Partition, QTy)] -> m TState
+  => [(Partition, QTy, [PhaseTy])] -> m TState
 tStateFromPartitionQTys pqts = execState initTState $ do
-  forM_ pqts $ uncurry extendTState
+  forM_ pqts $ uncurry3 extendTState
 
 -- | Extend the typing state with a partition and its type, generate emit
 -- symbols for every range in the partition and return all emitted symbols in
@@ -1136,10 +1139,10 @@ extendTState
      , Has (Gensym Var) sig m
      , Has (State TState) sig m
      )
-  => Partition -> QTy -> m [Var]
-extendTState p qt = do
+  => Partition -> QTy -> [PhaseTy] -> m [Var]
+extendTState p qt ptys = do
   sLoc <- gensymLoc "requires"
-  sSt %= (at sLoc ?~ (p, qt))
+  sSt %= (at sLoc ?~ (p, (qt, ptys)))
   let xMap = [ (v, [(r, sLoc)]) | r@(Range v _ _) <- unpackPart p ]
   vsREmit <- unpackPart p `forM` (\r -> (,r) <$> r `gensymEmitRangeQTy` qt)
   xSt %= Map.unionWith (++) (Map.fromListWith (++) xMap)
