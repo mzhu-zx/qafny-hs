@@ -117,10 +117,12 @@ import           Qafny.Typing
     , typingPartitionQTy
     )
 import           Qafny.Utils
-    ( dumpSSt
+    ( collectRQTyBindings
+    , dumpSSt
     , dumpSt
     , findEmitBindingsFromPartition
     , findEmitRangeQTy
+    , fst2
     , gensymEmitPartitionQTy
     , gensymEmitRB
     , gensymEmitRangeQTy
@@ -133,6 +135,7 @@ import           Qafny.Utils
     , removeEmitPartitionQTys
     , removeEmitRangeQTys
     , rethrowMaybe
+    , uncurry3
     )
 
 throwError'
@@ -804,10 +807,10 @@ codegenFor'Body
   -> Block' -- ^ body
   -> STuple -- ^ the partition to be merged into
   -> [Exp'] -- ^ emitted invariants
-  -> m ([Stmt'])
-codegenFor'Body idx boundl boundr eG body stSep@(STuple (_, Partition rsSep, qtSep)) newInvs = do
+  -> m [Stmt']
+codegenFor'Body idx boundl boundr eG body stSep@(STuple (_, Partition rsSep, (qtSep, _))) newInvs = do
   let psBody = leftPartitions . inBlock $ body
-  (stG@(STuple (_, sG, qtG)), pG) <- typingGuard eG
+  (stG@(STuple (_, sG, (qtG, _))), pG) <- typingGuard eG
   trace $ printf "The guard partition collected from %s is %s" (showEmit0 eG) (showEmit0 pG)
   trace $ printf "From invariant typing, the guard partition is %s from %s" (showEmit0 pG) (show stG)
 
@@ -815,7 +818,7 @@ codegenFor'Body idx boundl boundr eG body stSep@(STuple (_, Partition rsSep, qtS
 
   (stmtsPrelude, stmtsBody) <- case qtG of
     THad -> do
-      stB'@(STuple (_, sB, qtB)) <- resolvePartitions psBody
+      stB'@(STuple (_, sB, (qtB, _))) <- resolvePartitions psBody
 
       -- It seems that castEN semantics maybe unnecessary with invariant typing?
       (stmtsCastB, stB) <- case qtB of
@@ -1072,7 +1075,7 @@ codegenAlloc v e@(EOp2 ONor e1 e2) t@(TQReg _) = do
   vEmit <- gensymEmitRangeQTy rV TNor
   loc <- gensymLoc v
   xSt %= (at v . non [] %~ ((rV, loc) :))
-  sSt %= (at loc ?~ (sV, TNor))
+  sSt %= (at loc ?~ (sV, (TNor, [PT0])))
   return $ (::=:) vEmit eEmit
 codegenAlloc v e@(EOp2 ONor _ _) _ =
   throwError "Internal: Attempt to create a Nor partition that's not of nor type"
@@ -1145,7 +1148,7 @@ castPartitionEN
      , Has (Gensym EmitBinding) sig m
      )
   => STuple -> m [Stmt']
-castPartitionEN st@(STuple (locS, s, qtS)) = do
+castPartitionEN st@(STuple (locS, s, (qtS, _))) = do
   case qtS of
     TNor -> castWithOp "CastNorEN" st TEN
     THad -> castWithOp "CastHadEN" st TEN
@@ -1171,7 +1174,7 @@ dupState
      )
   => Partition -> m ([Stmt'], [(Var, Var)])
 dupState s' = do
-  STuple (locS, s, qtS) <- resolvePartition s'
+  STuple (locS, s, (qtS, _)) <- resolvePartition s'
   let rs = unpackPart s
   -- generate a set of fresh emit variables as the stashed partition
   -- do not manipulate the `emitSt` here
@@ -1210,7 +1213,6 @@ makeLoopRange s _ _ =
 --------------------------------------------------------------------------------
 codegenSplitEmitMaybe
   :: ( Has (Error String) sig m
-     , Has Trace sig m
      )
   => Maybe SplitScheme
   -> m [Stmt']
@@ -1346,7 +1348,7 @@ codegenRangeRepr
      )
   => Range -> m Var
 codegenRangeRepr r = do
-  STuple(_, _, qt) <- resolvePartition (Partition [r])
+  STuple(_, _, (qt, _)) <- resolvePartition (Partition [r])
   findEmitRangeQTy r qt
 
 -- | Generate method parameters from the method signature
@@ -1363,10 +1365,9 @@ codegenMethodParams MethodType{ mtSrcParams=srcParams
   let pureVars = collectPureBindings srcParams
       qVars = [ (v, Range v 0 card) | MTyQuantum v card <- srcParams ]
       inst = instantiator $ Map.fromList qVars
-  trace $ "INIT: " ++ show debugInit
   trace $ "QVARS: " ++ show qVars
   trace $ "INSTANCE: " ++ show inst
-  vqEmits <- (concat <$>) . forM inst $ uncurry findEmitBindingsFromPartition
+  vqEmits <- (concat <$>) . forM inst $ uncurry findEmitBindingsFromPartition . fst2
   pure $ pureVars ++ vqEmits
 
 codegenRequires
@@ -1381,7 +1382,7 @@ codegenRequires rqs = (concat <$>) $ forM rqs $ \rq ->
   -- indeed disjoint!
   case rq of
     ESpec s qt espec -> do
-      vsEmit <- extendTState s qt
+      vsEmit <- extendTState s qt undefined
       runReader True $ codegenSpecExp (zip vsEmit (unpackPart s)) qt espec
     _ -> return [rq]
 
@@ -1397,12 +1398,12 @@ codegenMethodReturns MethodType{ mtSrcReturns=srcReturns
   let pureBds = collectPureBindings srcReturns
       qVars = [ (v, Range v 0 card) | MTyQuantum v card <- srcReturns ]
       inst = receiver $ Map.fromList qVars
-  (stmtsAssign, bdsRet) <- (unzip . concat <$>) . forM inst $ uncurry genAndPairReturnRanges
+  (stmtsAssign, bdsRet) <- (unzip . concat <$>) . forM inst $ uncurry3 genAndPairReturnRanges
   return (stmtsAssign, pureBds ++ bdsRet)
   where
     -- genAndPairReturnRanges
     --   :: Partition -> QTy -> m [(Stmt', Binding')]
-    genAndPairReturnRanges p qt = do
+    genAndPairReturnRanges p qt _ = do
       prevBindings <- findEmitBindingsFromPartition p qt
       let prevVars = [ v | Binding v _ <- prevBindings ]
       removeEmitPartitionQTys p qt
@@ -1515,16 +1516,16 @@ codegenSpecExp vrs p (e, _) = putOpt $
         when (eV == EWildcard) mzero
         let eBoundSum = Just $ eIntv idxSum lSum rSum
         let cardSum = rSum `eEq` EEmit (ECard (EVar vE))
-        let rTen = reduce (er - el)
-        let eBoundTen = Just $ eIntv idxTen 0 rTen
-        let cardTen = rTen `eEq` EEmit (ECard (EVar vE `eAt` EVar idxSum))
+        let rTen' = reduce (er - el)
+        let eBoundTen = Just $ eIntv idxTen 0 rTen'
+        let cardTen = rTen' `eEq` EEmit (ECard (EVar vE `eAt` EVar idxSum))
         let eForallSum = EForall (natB idxSum) eBoundSum
         let eForallTen = EForall (natB idxTen) eBoundTen
         let eSel = (EVar vE `eAt` EVar idxSum) `eAt` EVar idxTen
         let eBodys = [ cardTen
                      , (EOp2 OEq eSel eV)
                      ]
-        return $ cardSum : ((eForallSum . eForallTen) <$> eBodys)
+        return $ cardSum : (eForallSum . eForallTen <$> eBodys)
     _ -> throwError' $ printf "%s is not compatible with the specification %s"
          (show p) (show e)
 
@@ -1557,12 +1558,12 @@ genEmitSt
 genEmitSt = do
   eSt <- use emitSt
   emitSt %= const Map.empty
-  forM (Map.toList eSt) go
+  forM (collectRQTyBindings (Map.toList eSt)) go
   where
     -- go :: (RBinding, Var) -> m Stmt'
-    go (rb@(RBinding (_, ty)), pv) = do
-      nv <- gensymEmitRB rb
-      pure $ SVar (Binding nv ty) (Just (EVar pv))
+    go ((r, qty), pv) = do
+      nv <- gensymEmitRB $ rbindingOfRange r (Sum.inj qty)
+      pure $ SVar (Binding nv (typingQEmit qty)) (Just (EVar pv))
 
 
 --------------------------------------------------------------------------------

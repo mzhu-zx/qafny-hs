@@ -1,38 +1,50 @@
 {-# LANGUAGE
     ScopedTypeVariables
-  , TypeApplications
   , TupleSections
+  , TypeApplications
   , TypeOperators
   #-}
 module Qafny.Utils where
 
 --
-import           Control.Effect.Error         (Error, throwError)
+import           Control.Effect.Error  (Error, throwError)
 import           Control.Effect.Lens
 import           Control.Effect.Reader
 import           Control.Effect.State
 import           Control.Effect.Trace
-import           Control.Monad                (forM)
-import           Control.Lens                 (at, (?~), (^.))
+import           Control.Lens          (at, (?~), (^.))
+import           Control.Monad         (forM)
 
-import           Data.Bifunctor               (bimap, second)
-import           Data.Functor                 ((<&>))
-import qualified Data.Map.Strict              as Map
-import qualified Data.Set                     as Set
+import           Data.Bifunctor        (bimap, second)
+import           Data.Functor          ((<&>))
+import qualified Data.Map.Strict       as Map
+import qualified Data.Set              as Set
 import           Data.Sum
-import           Text.Printf                  (printf)
+import           Text.Printf           (printf)
 
 --
-import           Effect.Gensym                (Gensym, gensym)
+import           Effect.Gensym         (Gensym, gensym)
 
 --
-import           Qafny.Env                    (TEnv, TState, emitSt, kEnv, sSt)
-import           Qafny.Error                  (QError (UnknownVariableError))
-import           Qafny.Partial                (Reducible (reduce))
+import           Data.Maybe            (catMaybes, mapMaybe)
+import           Qafny.Env             (TEnv, TState, emitSt, kEnv, sSt)
+import           Qafny.Error           (QError (UnknownVariableError))
+import           Qafny.Partial         (Reducible (reduce))
 import           Qafny.Syntax.AST
-import           Qafny.Syntax.Emit            (showEmitI)
-import           Qafny.TypeUtils              (typingQEmit, typingPhaseEmit)
-import           Qafny.Variable               (Variable (variable))
+import           Qafny.Syntax.Emit     (showEmitI)
+import           Qafny.TypeUtils       (typingPhaseEmit, typingQEmit)
+import           Qafny.Variable        (Variable (variable))
+
+
+--------------------------------------------------------------------------------
+-- * 3-Tuples
+uncurry3 ::  (a -> b -> c -> d) -> (a, b, c) -> d
+uncurry3 f (a, b, c) = f a b c
+
+fst2 :: (a, b, c) -> (a, b)
+fst2 (a, b, c) = (a, b)
+
+--------------------------------------------------------------------------------
 
 throwError''
   :: ( Has (Error String) sig m )
@@ -126,12 +138,12 @@ gensymRangeQTy
 gensymRangeQTy r qty =
   gensym $ rbindingOfRange r (inj qty)
 
-gensymEmitPartitionQTy 
+gensymEmitPartitionQTy
   :: ( Has (Gensym EmitBinding) sig m
      , Has (State TState) sig m
      )
   => Partition -> QTy -> m [Var]
-gensymEmitPartitionQTy p qty = 
+gensymEmitPartitionQTy p qty =
   forM (unpackPart p) (`gensymEmitRangeQTy` qty)
 
 liftPartition :: Monad m => (Range -> m b) -> Partition -> m [b]
@@ -200,7 +212,7 @@ exp2AExp (ENum n) = return $ ANat n
 exp2AExp e = throwError @String $
   printf "%s cannot be projected to an AExp." (show e)
 
-dumpSt 
+dumpSt
   :: ( Has (State TState) sig m
      , Has Trace sig m
      )
@@ -241,3 +253,6 @@ getMethodType v = do
 projEmitBindingRangeQTy :: EmitBinding -> Maybe (Range, QTy)
 projEmitBindingRangeQTy (RBinding (r, Inl (Inl qty))) = Just (r, qty)
 projEmitBindingRangeQTy _                             = Nothing
+
+collectRQTyBindings ::[(EmitBinding, Var)] -> [((Range, QTy), Var)]
+collectRQTyBindings = mapMaybe (\(e, v) -> projEmitBindingRangeQTy e <&> (, v))

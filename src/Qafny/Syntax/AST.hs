@@ -407,7 +407,7 @@ leftPartitions =
     perStmt _            = []
 
 -- | Collect all partitions with their types from spec expressions
-specPartitionQTys :: [Exp x] -> [(Partition, QTy, PhaseTy)]
+specPartitionQTys :: [Exp x] -> [(Partition, QTy, [PhaseTy])]
 specPartitionQTys es = [ (p, qty, undefined) | (ESpec p qty _) <- es ]
 
 

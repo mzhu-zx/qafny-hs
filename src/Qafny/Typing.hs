@@ -13,7 +13,7 @@ module Qafny.Typing where
 
 -- | Typing though Fused Effects
 
-import qualified Debug.Trace as Trace
+import qualified Debug.Trace                as Trace
 
 
 -- Effects
@@ -24,7 +24,7 @@ import           Control.Effect.Error       (Error, throwError)
 import           Control.Effect.Lens
 import           Control.Effect.NonDet
 import           Control.Effect.Reader
-import           Control.Effect.State       (State, modify, get)
+import           Control.Effect.State       (State, get, modify)
 import           Effect.Gensym              (Gensym)
 
 -- Qafny
@@ -37,10 +37,16 @@ import           Qafny.Utils
     ( exp2AExp
     , findEmitRangeQTy
     , findEmitVarsFromPartition
+    , gensymEmitRB
+    , gensymEmitRangePTyRepr
     , gensymEmitRangeQTy
     , gensymLoc
+    , gensymRangeQTy
+    , projEmitBindingRangeQTy
+    , removeEmitPartitionQTys
     , removeEmitRangeQTys
-    , rethrowMaybe, removeEmitPartitionQTys, gensymRangeQTy, gensymEmitRB, gensymEmitRangePTyRepr, projEmitBindingRangeQTy
+    , rethrowMaybe
+    , uncurry3
     )
 
 -- Utils
@@ -57,11 +63,13 @@ import           Control.Lens.Tuple
 import           Control.Monad
     ( forM
     , forM_
+    , mapAndUnzipM
     , unless
     , void
     , when
-    , zipWithM, mapAndUnzipM
+    , zipWithM
     )
+import           Data.Bifunctor             (Bifunctor (second))
 import           Data.Bool                  (bool)
 import           Data.Functor               ((<&>))
 import qualified Data.List                  as List
@@ -70,11 +78,12 @@ import qualified Data.List.NonEmpty         as NE
 import qualified Data.Map.Strict            as Map
 import           Data.Maybe
     ( catMaybes
+    , fromJust
     , fromMaybe
     , isJust
     , listToMaybe
     , mapMaybe
-    , maybeToList, fromJust
+    , maybeToList
     )
 import qualified Data.Set                   as Set
 import           Data.Sum
@@ -84,19 +93,17 @@ import           Qafny.Partial              (Reducible (reduce))
 import           Qafny.Syntax.Emit
     ( DafnyPrinter (build)
     , byComma
-    , showEmitI, showEmit0, byLineT
+    , byLineT
+    , showEmit0
+    , showEmitI
     )
 import           Text.Printf                (printf)
-import Data.Bifunctor (Bifunctor(second))
 
 
 throwError'
   :: ( Has (Error String) sig m )
   => String -> m a
 throwError' = throwError @String . ("[Typing] " ++)
-
-uncurry3 ::  (a -> b -> c -> d) -> (a, b, c) -> d
-uncurry3 f (a, b, c) = f a b c
 
 -- | Compute the simple type of the given expression
 typingExp
@@ -343,15 +350,15 @@ splitScheme' s@(STuple (loc, p, xt@(qt, ptys))) rSplitTo@(Range to rstL rstR) = 
       ptySplitTo = snd vReprPTyMaybesSplit
       ptysMain = ptysRem ++ ptysRest
   case rsMain of
-    [] -> 
+    [] ->
       -- ^ No need to split at all, so we're safe regardless of the qtype
-      -- 
+      --
       return (s, Nothing) -- no split at all!
 
     _  -> do
       -- ^ Split in partition or in both partition and a range
       -- There's a need for split.
-      -- 
+      --
       -- 1. Allocate partitions, break ranges and move them around
       locAux <- gensymLoc to
       sSt %= (at loc ?~ (pMain, (qt, ptysMain))) . (at locAux ?~ (pAux, (qt, [ptySplitTo])))
@@ -371,11 +378,11 @@ splitScheme' s@(STuple (loc, p, xt@(qt, ptys))) rSplitTo@(Range to rstL rstR) = 
         [] -> case qt of
           t | t `elem` [ TEN, TEN01 ] ->
               throwError'' errSplitEN
-          _ -> 
+          _ ->
             -- only split in partition but not in a range,
             -- therefore, no need to duplicate the range-based phases
             let sAux' = (locAux, pAux, xt)
-            in return (STuple sAux', Nothing) 
+            in return (STuple sAux', Nothing)
         _  -> do
           (vEmitR, rSyms, rPhReprs) <- case qt of
             t | t `elem` [ TNor, THad ] -> do
@@ -408,10 +415,10 @@ splitScheme' s@(STuple (loc, p, xt@(qt, ptys))) rSplitTo@(Range to rstL rstR) = 
 
 -- | Duplicate a phase type by allocating a new reference to its Repr if
 -- necessary.
--- 
+--
 -- FIXME: at this moment, this is more like a placeholder. There're something to
 -- be done to generate the correct spltiScheme for the codegen to give a
--- satisfying result.   
+-- satisfying result.
 -- duplicatePhaseTy
 --   :: ( Has (Gensym EmitBinding) sig m
 --      , Has (Error String) sig m
@@ -425,13 +432,13 @@ splitScheme' s@(STuple (loc, p, xt@(qt, ptys))) rSplitTo@(Range to rstL rstR) = 
 --   return (PTN i (PhaseRef { prBase=vBase, prRepr=vRepr }))
 
 data RangeSplits = RangeSplits
-  { rsRLeft :: Maybe Range
-  , rsRRight :: Maybe Range
-  , rsRSplit :: Range
+  { rsRLeft    :: Maybe Range
+  , rsRRight   :: Maybe Range
+  , rsRSplit   :: Range
   , rsRFocused :: Range
   , rsPFocused :: PhaseTy
   , rsRsPsRest :: [(Range, PhaseTy)]
-  , rsRsRem :: [Range]
+  , rsRsRem    :: [Range]
   }
 
 -- | Compute, in order to split the given range from a resolved partition, which
@@ -464,7 +471,7 @@ getRangeSplits s@(STuple (loc, p, _)) rSplitTo@(Range to rstL rstR) ptys = do
         , rsPFocused = pty
         , rsRsPsRest = rspsRest
         , rsRsRem = catMaybes [rRemLeft, rRemRight]
-        } 
+        }
   where
     -- infoSS :: String = printf "[checkScheme] from (%s) to (%s)" (show s) (show rSplitTo)
     errBotRx = printf "The range %s contains no qubit!" $ show rSplitTo
@@ -629,7 +636,7 @@ checkSubtypeQ t1 t2 =
   -- traceStack "" .
 
   -- traceStack "" .
-  
+
   -- traceStack "" .
 
   -- traceStack "" .
@@ -993,7 +1000,7 @@ resolveMethodApplicationArgs es
       ++ printf "Given:\n%s\nExpected:\n%s" (show es) (show prs)
 
 
-    -- type check partitions in the typing state 
+    -- type check partitions in the typing state
     getEmitVarsAfterTyCheck part q = do
       sAndMaySC <- case part of
         Partition [r] -> do
@@ -1068,7 +1075,7 @@ collectConstraints es = (Map.mapMaybe glb1 <$>) . execState Map.empty $
 
 
 -- | Given an STuple for a fragment of a Had guard match in the current
--- environment for a EN partition to be merged with this stuple. 
+-- environment for a EN partition to be merged with this stuple.
 mergeCandidateHad
   :: ( Has (State TState) sig m
      , Has (Error String) sig m
