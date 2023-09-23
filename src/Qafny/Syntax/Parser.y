@@ -162,11 +162,11 @@ range
   : id '[' expr ".." expr ']'         { Range $1 $3 $5                       }
                                                                 
 spec ::   { Exp' }
-  : '{' partition ':'  qty "↦" qspec '}'
+  : '{' partition ':'  qty "↦" tuple(qspec) '}'
                                       { ESpec $2 $4 $6                       }
 
 qspec ::  { (SpecExp', PhaseExp) }
-  : "⊗" id '.' pspec tuple(expr)
+  : "⊗" id '.' pspec expr
                                       { (SESpecNor $2 $5, $4)                   }
   | "Σ" id "∈" '[' expr ".." expr ']' '.' pspec tuple(expr)
                                       { (SESpecEN $2 (Intv $5 $7) $11, $10)  }

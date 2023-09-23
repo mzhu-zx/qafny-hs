@@ -202,7 +202,7 @@ data Exp x
   | EDafny String
   | EEmit EmitExp
   | EPartition Partition
-  | ESpec Partition QTy (XRec x (SpecExp x), PhaseExp)
+  | ESpec Partition QTy [(XRec x (SpecExp x), PhaseExp)]
   | ERepr Range
   -- ?
   -- | RInd Var Exp -- boolean at var[exp], var must be Q type
@@ -241,7 +241,7 @@ deriving instance (Ord (Exp Source))
 
 
 data SpecExp x
-  = SESpecNor  Var [XRec x (Exp x)]
+  = SESpecNor  Var (XRec x (Exp x))
   | SESpecEN   Var Intv [XRec x (Exp x)]
   | SESpecEN01 Var Intv Var Intv [XRec x (Exp x)]
   | SEWildcard
@@ -433,7 +433,7 @@ data ExpF f
   | EDafnyF String
   | EEmitF EmitExp
   | EPartitionF Partition
-  | ESpecF Partition QTy (XRec () (SpecExp ()), PhaseExp)
+  | ESpecF Partition QTy [(XRec () (SpecExp ()), PhaseExp)]
   | EReprF Range
   deriving (Functor, Foldable, Traversable, Show, Generic)
 

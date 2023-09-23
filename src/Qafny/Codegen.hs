@@ -42,7 +42,7 @@ import           Control.Monad
     , liftM3
     , unless
     , void
-    , when
+    , when, zipWithM
     )
 
 import           Data.Bifunctor
@@ -1457,39 +1457,46 @@ codegenSpecExp
   :: ( Has (Error String) sig m
      , Has (Reader Bool) sig m
      )
-  => [(Var, Range)] -> QTy -> (SpecExp', PhaseExp) -> m [Exp']
-codegenSpecExp vrs p (e, _) = putOpt $
-  case (p, e) of
-    (_, SEWildcard) -> return []
-    (TNor, SESpecNor idx es) -> do
-      checkListCorr vrs es
+  => [(Var, Range)] -> QTy -> [(SpecExp', PhaseExp)] -> m [Exp']
+codegenSpecExp vrs p specs = putOpt $ do
+  if isEN p
+    then do
+    when (length specs /= 1) $ throwError' $ printf "More then one specs!"
+    specPerPartition p (fst (head specs))
+    else do
+    -- For `nor` and `had`, one specification is given one per range
+    checkListCorr vrs specs
+    zipWithM (specPerRange p) vrs (fst <$> specs)
+
+  where
+    specPerRange TNor (v, Range _ el er) (SESpecNor idx eBody) = 
       -- In x[l .. r]
       -- @
       --   forall idx | 0 <= idx < (r - l) :: xEmit[idx] == eBody
       -- @
       let eSelect x = EEmit (ESelect (EVar x) (EVar idx))
-      return . concat $
-        [ [ reduce (er - el) `eEq` EEmit (ECard (EVar v))
-          , EForall (natB idx) eBound (eSelect v `eEq` eBody)
-          ]
-        | ((v, Range _ el er), eBody) <- zip vrs es
-        , let eBound = Just (eIntv idx (ENum 0) (reduce (er - el))) ]
-    -- Interesting...
-    --   Had and Nor are of the same spec form ....
-    (THad, SESpecNor idx es) -> do
-      checkListCorr vrs es
+          eBound = Just (eIntv idx (ENum 0) (reduce (er - el)))      
+      in return
+         [ reduce (er - el) `eEq` EEmit (ECard (EVar v))
+         , EForall (natB idx) eBound (eSelect v `eEq` eBody)
+         ]
+    specPerRange THad (v, Range _ el er) (SESpecNor idx eBody) =
       -- In x[l .. r]
       -- @
       --   forall idx | 0 <= idx < (r - l) :: xEmit[idx] == eBody
       -- @
       let eSelect x = EEmit (ESelect (EVar x) (EVar idx))
-      return . concat $
-        [ [ reduce (er - el) `eEq` EEmit (ECard (EVar v))
-          , EForall (natB idx) eBound (eSelect v `eEq` eBody)
-          ]
-        | ((v, Range _ el er), eBody) <- zip vrs es
-        , let eBound = Just (eIntv idx (ENum 0) (reduce (er - el))) ]
-    (TEN, SESpecEN idx (Intv l r) eValues) -> do
+          eBound = Just (eIntv idx (ENum 0) (reduce (er - el))) 
+      in return 
+         [ reduce (er - el) `eEq` EEmit (ECard (EVar v))
+         , EForall (natB idx) eBound (eSelect v `eEq` eBody)
+         ]
+    specPerRange _    _                  SEWildcard =
+      return []
+    specPerRange _ _ e  =
+      errIncompatibleSpec e
+
+    specPerPartition TEN (SESpecEN idx (Intv l r) eValues) = do
       checkListCorr vrs eValues
       -- In x[? .. ?] where l and r bound the indicies of basis-kets
       -- @
@@ -1502,13 +1509,17 @@ codegenSpecExp vrs p (e, _) = putOpt $
           , EForall (natB idx) eBound (EOp2 OEq (eSelect vE) eV) ]
         | ((vE, _), eV) <- zip vrs eValues
         , eV /= EWildcard ]
+
+    specPerPartition
+      TEN01
+      (SESpecEN01 idxSum (Intv lSum rSum) idxTen (Intv lTen rTen) eValues)
+       = do
       -- In x[l .. r]
       -- @
       --   forall idxS | lS <= idxS < rS ::
       --   forall idxT | 0 <= idxT < rT - lT ::
       --   xEmit[idxS][idxT] == eBody
       -- @
-    (TEN01, SESpecEN01 idxSum (Intv lSum rSum) idxTen (Intv lTen rTen) eValues) -> do
       -- todo: also emit bounds!
       checkListCorr vrs eValues
       return . concat $ do
@@ -1526,8 +1537,24 @@ codegenSpecExp vrs p (e, _) = putOpt $
                      , (EOp2 OEq eSel eV)
                      ]
         return $ cardSum : (eForallSum . eForallTen <$> eBodys)
-    _ -> throwError' $ printf "%s is not compatible with the specification %s"
+    specPerPartition _ e = throwError' $
+      printf "%s is not compatible with the specification %s"
          (show p) (show e)
+
+    errIncompatibleSpec e = throwError' $
+      printf "%s is not compatible with the specification %s"
+      (show p) (show e)
+
+
+-- | Generate a predicates over phases based on the phase type
+--
+-- FIXME: Here's a subtlety: each range maps to one phase type which in the
+-- current specification language is not supported?
+codegenPhaseSpec
+  :: ( Has (Error String) sig m
+     )
+  => PhaseTy ->  PhaseExp -> m [Exp']
+codegenPhaseSpec = undefined
 
 checkListCorr
   :: ( Has (Error String) sig m
