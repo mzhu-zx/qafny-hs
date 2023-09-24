@@ -25,7 +25,7 @@ import           Control.Effect.Lens
 import           Control.Effect.NonDet
 import           Control.Effect.Reader
 import           Control.Effect.State       (State, get, modify)
-import           Effect.Gensym              (Gensym)
+import           Effect.Gensym              (Gensym, gensym)
 
 -- Qafny
 import           Qafny.Env
@@ -46,7 +46,7 @@ import           Qafny.Utils
     , removeEmitPartitionQTys
     , removeEmitRangeQTys
     , rethrowMaybe
-    , uncurry3
+    , uncurry3, gensymEmitRangePTy
     )
 
 -- Utils
@@ -1106,9 +1106,22 @@ mergeCandidateHad st =
   throwError' $ printf "%s may not be a Had guard partition." (show st)
 
 --------------------------------------------------------------------------------
--- * Merge Typing
+-- * Phase Typing
 --------------------------------------------------------------------------------
-
+-- | Generate variables and phase types based on a phase specification.
+typingPhaseSpec
+  :: ( Has (Gensym EmitBinding) sig m
+     )
+  => PhaseExp -> m PhaseTy
+typingPhaseSpec PhaseZ = return PT0
+typingPhaseSpec PhaseWildCard = return PT0
+typingPhaseSpec p  = do
+  vEmitBase <- gensym (LBinding ("base", inj TNat))
+  vEmitRepr <- gensym (LBinding ("repr", inj (typingPhaseEmitReprN 1)))
+  let degree = case p of
+        PhaseOmega {} -> 1
+        PhaseSumOmega {} -> 2
+  return (PTN degree $ PhaseRef { prBase = vEmitBase, prRepr = vEmitRepr })
 
 --------------------------------------------------------------------------------
 -- | Helpers

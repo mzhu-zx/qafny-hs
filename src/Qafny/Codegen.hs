@@ -1,5 +1,6 @@
 {-# LANGUAGE
     CPP
+  , MultiWayIf
   , DataKinds
   , FlexibleContexts
   , FlexibleInstances
@@ -1459,14 +1460,13 @@ codegenSpecExp
      )
   => [(Var, Range)] -> QTy -> [(SpecExp', PhaseExp)] -> m [Exp']
 codegenSpecExp vrs p specs = putOpt $ do
-  if isEN p
-    then do
-    when (length specs /= 1) $ throwError' $ printf "More then one specs!"
-    specPerPartition p (fst (head specs))
-    else do
-    -- For `nor` and `had`, one specification is given one per range
-    checkListCorr vrs specs
-    zipWithM (specPerRange p) vrs (fst <$> specs)
+  if | isEN p -> do
+         when (length specs /= 1) $ throwError' $ printf "More then one specs!" 
+         specPerPartition p (fst (head specs))
+     | otherwise -> do
+         -- For `nor` and `had`, one specification is given one per range
+         checkListCorr vrs specs
+         concat <$> zipWithM (specPerRange p) vrs (fst <$> specs)
 
   where
     specPerRange TNor (v, Range _ el er) (SESpecNor idx eBody) = 
@@ -1553,8 +1553,22 @@ codegenSpecExp vrs p specs = putOpt $ do
 codegenPhaseSpec
   :: ( Has (Error String) sig m
      )
-  => PhaseTy ->  PhaseExp -> m [Exp']
-codegenPhaseSpec = undefined
+  => (Exp' -> Exp') -> PhaseTy ->  PhaseExp -> m [Exp']
+codegenPhaseSpec _ PT0 pe =
+  if | pe `elem` [ PhaseZ, PhaseWildCard ] -> return []
+     | otherwise ->
+       throwError' $ printf "%s is not a zeroth degree predicate." (show pe)
+codegenPhaseSpec quantifier (PTN 1 ref) (PhaseOmega eK eN) =
+  let assertN = EOp2 OEq eN (EVar (prBase ref))
+      assertK = EOp2 OEq eK (EVar (prRepr ref))
+  in return [assertN, quantifier assertK]
+
+codegenPhaseSpec quantifier (PTN 2 ref) (PhaseSumOmega v eK eN) =
+  let assertN = EOp2 OEq eN (EVar (prBase ref))
+      assertK = EForall (Binding v TNat) Nothing (EOp2 OEq eK (EVar (prRepr ref)))
+  in return [assertN, quantifier assertK]
+
+  
 
 checkListCorr
   :: ( Has (Error String) sig m

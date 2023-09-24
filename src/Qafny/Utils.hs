@@ -78,6 +78,7 @@ gensymLoc = (Loc <$>) . gensym . variable . Loc
 rbindingOfRange :: Range -> QTy :+: PhaseTy :+: Ty -> EmitBinding
 rbindingOfRange r b = RBinding (reduce r, b)
 
+
 gensymBase
   :: ( Has (Gensym EmitBinding) sig m )
   => Range -> m Var

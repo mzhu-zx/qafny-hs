@@ -151,7 +151,7 @@ type Bindings x = [XRec x (Binding x)]
 
 data EmitBinding
   = RBinding (Range, QTy :+: PhaseTy :+: Ty) -- range-based phase binding
-  | LBinding (Var, PhaseTy)                  -- loc-based phase binding
+  | LBinding (Var, PhaseTy :+: Ty)           -- loc-based phase binding
   deriving (Eq, Ord)
 
 instance Show EmitBinding where
