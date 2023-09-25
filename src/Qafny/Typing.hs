@@ -681,7 +681,7 @@ castScheme
      )
   => STuple -> QTy -> m (STuple, CastScheme)
 castScheme st qtNow = do
-  let STuple(locS, sResolved, (qtPrev, _)) = st
+  let STuple(locS, sResolved, (qtPrev, dgrs)) = st
   when (qtNow == qtPrev) $
     throwError @String  $ printf
      "Partition `%s` is of type `%s`. No retyping need to be done."
@@ -693,10 +693,9 @@ castScheme st qtNow = do
   removeEmitRangeQTys rqsOld
   let tNewEmit = typingQEmit qtNow
   -- FIXME: Cast phases
-  let pty' = undefined
-  sSt %= (at locS ?~ (sResolved, (qtNow, pty')))
+  sSt %= (at locS ?~ (sResolved, (qtNow, dgrs)))
   vsNewEmit <- unpackPart sResolved `forM` (`gensymEmitRangeQTy` qtNow)
-  return ( STuple (locS, sResolved, (qtNow, pty'))
+  return ( STuple (locS, sResolved, (qtNow, dgrs))
          , CastScheme { schVsOldEmit=vsOldEmit
                       , schTOldEmit=tOldEmit
                       , schVsNewEmit=vsNewEmit

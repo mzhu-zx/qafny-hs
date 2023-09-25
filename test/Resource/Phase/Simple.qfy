@@ -1,0 +1,5 @@
+method QuarterPhase(q : qreg[1])
+  requires { q [0 .. 1] : nor ↦ ⊗ i . 0 }
+{
+  q[0..1] *= λ (x => (x + 1) % 2);
+}

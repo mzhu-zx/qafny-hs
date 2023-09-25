@@ -11,18 +11,19 @@ import qualified Data.Text.Lazy.IO   as Txt.IO
 import           System.Environment  (getArgs)
 import           System.Exit         (exitFailure)
 import           Text.Printf         (printf)
+import Qafny.FileUtils (countDepth)
 
 
+parseArg :: IO (String, Int)
+parseArg = do
+  path <- fmap (head :: [String] -> String) getArgs
+  return (path, countDepth path)
 
-parseArg :: IO String
-parseArg = fmap (head :: [String] -> String) getArgs
-
-pipeline :: String -> Either String (IO (Production Txt.Text))
-pipeline s =
+pipeline :: String -> Configs -> Either String (IO (Production Txt.Text))
+pipeline s configs =
   -- do parsing, rethrow error if any
   withAST <$> scanAndParse s
   where
-    configs = defaultConfigs
     -- withAST :: AST -> IO (Production Txt.Text)
     withAST ast = do
       let prod = produceCodegen configs ast
@@ -33,12 +34,12 @@ pipeline s =
 main :: IO ()
 main =
   do
-    prog <- parseArg
-    withProg prog
+    (prog, depth') <- parseArg
+    withProg prog (defaultConfigs { depth=depth' })
   where
-    withProg prog = do
+    withProg prog config = do
       src <- readFile srcFile
-      either ((>> exitFailure) . putStrLn) (>>= writeOrReportP) (pipeline src)
+      either ((>> exitFailure) . putStrLn) (>>= writeOrReportP) (pipeline src config)
       putStrLn $ "\ESC[32mSuccess: target is emited as `" ++ tgtFile ++ "` \ESC[0m"
       where
         writeOrReportP :: Production Txt.Text -> IO ()

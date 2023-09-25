@@ -192,7 +192,8 @@ codegenAST
   => AST
   -> m ([(Var, TState)], Either String AST)
 codegenAST ast = do
-  path <- asks stdlibPath
+  Configs { stdlibPath=libPath, depth=depth' } <- ask
+  let path = concat (replicate depth' "../") ++ libPath
   let prelude = (mkIncludes path <$> includes) ++ imports
   let methodMap = collectMethodTypes ast
   stTops <- local (kEnv %~ Map.union (Sum.inj <$> methodMap)) $ mapM codegenToplevel ast
