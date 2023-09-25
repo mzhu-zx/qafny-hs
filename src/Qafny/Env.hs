@@ -18,7 +18,8 @@ import           Text.Printf      (printf)
 --------------------------------------------------------------------------------
 -- High-Order Types
 --------------------------------------------------------------------------------
-newtype STuple = STuple { unSTup :: (Loc, Partition, (QTy, [PhaseTy])) } -- STuple { unS :: (Loc, Partition, QTy) }
+-- TODO: refactor STuple to a Record  
+newtype STuple = STuple { unSTup :: (Loc, Partition, (QTy, [Int])) }
 
 instance Show STuple where
   show (STuple (loc, s, qt)) =
@@ -43,7 +44,7 @@ data TEnv = TEnv
 type EmitState = Map.Map EmitBinding Var
 
 data TState = TState
-  { _sSt    :: Map.Map Loc (Partition, (QTy, [PhaseTy])) -- partition type state
+  { _sSt    :: Map.Map Loc (Partition, (QTy, [Int])) -- partition type state
   , _xSt    :: Map.Map Var [(Range, Loc)] -- range reference state
   , _emitSt :: EmitState
   }

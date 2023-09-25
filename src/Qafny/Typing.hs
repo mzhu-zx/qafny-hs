@@ -40,8 +40,6 @@ import           Qafny.Utils
     , findEmitRangeQTy
     , findEmitVarsFromPartition
     , gensymEmitRB
-    , gensymEmitRangePTy
-    , gensymEmitRangePTyRepr
     , gensymEmitRangeQTy
     , gensymLoc
     , gensymRangeQTy
@@ -49,7 +47,7 @@ import           Qafny.Utils
     , removeEmitPartitionQTys
     , removeEmitRangeQTys
     , rethrowMaybe
-    , uncurry3
+    , uncurry3, gensymEmitRangePTyRepr, findEmitRangeDegree, gensymEmitLocDegree, onlyOne, gensymEmitRangeDegree, findEmitLocDegree
     )
 
 -- Utils
@@ -91,6 +89,7 @@ import           Data.Maybe
 import qualified Data.Set                   as Set
 import           Data.Sum
 import           Data.Sum                   (projLeft)
+import           Data.Text                  (unpack)
 import           GHC.Stack                  (HasCallStack)
 import           Qafny.Partial              (Reducible (reduce))
 import           Qafny.Syntax.Emit
@@ -242,7 +241,7 @@ inferRangeTy
      , Has (Error String) sig m
      , Has (Reader IEnv) sig m
      , Has Trace sig m)
-  => Range -> m (QTy, [PhaseTy])
+  => Range -> m (QTy, [Int])
 inferRangeTy r = (^. _3) . unSTup <$> resolvePartition (Partition [r])
 
 --------------------------------------------------------------------------------
@@ -332,26 +331,27 @@ splitScheme' s@(STuple (loc, p, xt@(qt, ptys))) rSplitTo@(Range to rstL rstR) = 
   -- typed partition should not be allowed.
   -- TODO: Is this correct?
   when (isEN qt) $ throwError'' errSplitEN
-  RangeSplits { rsRsPsRest=rpsRest
+  RangeSplits { rsRsRest=rsRest
+              , rsDsRest=dgrsRest
               , rsRLeft=rLMaybe
               , rsRRight=rRMaybe
               , rsRFocused=rOrigin
-              , rsPFocused=ptyOrigin
-              } <- getRangeSplits s rSplitTo ptys
-  let rsRest = fst <$> rpsRest
-      ptysRest = snd <$> rpsRest
-      rsRem = maybeToList rLMaybe ++ maybeToList rRMaybe
-      -- the ranges except the chosen one + the quotient ranges
+              , rsDFocused=dgrOrigin
+              , rsRsRem = rsRem
+              } <- getRangeSplits s rSplitTo
+  let -- the ranges except the chosen one + the quotient ranges
       rsMain = rsRem ++ rsRest
       rsAux  = [rSplitTo]
       pMain  = Partition rsMain
       pAux   = Partition rsAux
   -- generate
   ~(vReprPTyMaybesSplit : vReprPTyMaybesRem) <-
-    forM (rSplitTo : rsRem) (`gensymEmitRangePTyRepr` ptyOrigin)
-  let ptysRem = snd <$> vReprPTyMaybesRem
-      ptySplitTo = snd vReprPTyMaybesSplit
+    forM (rSplitTo : rsRem) (`gensymEmitRangePTyRepr` dgrOrigin)
+  ptysRest <- forM (zip rsRest dgrsRest) (uncurry findEmitRangeDegree)
+  let ptysRem = vReprPTyMaybesRem
+      ptySplitTo = vReprPTyMaybesSplit
       ptysMain = ptysRem ++ ptysRest
+      dgrsMain = (dgrOrigin <$ rsRem) ++ dgrsRest
   case rsMain of
     [] ->
       -- ^ No need to split at all, so we're safe regardless of the qtype
@@ -364,7 +364,7 @@ splitScheme' s@(STuple (loc, p, xt@(qt, ptys))) rSplitTo@(Range to rstL rstR) = 
       --
       -- 1. Allocate partitions, break ranges and move them around
       locAux <- gensymLoc to
-      sSt %= (at loc ?~ (pMain, (qt, ptysMain))) . (at locAux ?~ (pAux, (qt, [ptySplitTo])))
+      sSt %= (at loc ?~ (pMain, (qt, dgrsMain))) . (at locAux ?~ (pAux, (qt, [dgrOrigin])))
       -- use sSt >>= \s' -> trace $ printf "sSt: %s" (show s')
       xRangeLocs <- use (xSt . at to) `rethrowMaybe` errXST
       let xrl =
@@ -376,7 +376,7 @@ splitScheme' s@(STuple (loc, p, xt@(qt, ptys))) rSplitTo@(Range to rstL rstR) = 
             List.filter ((/= rOrigin) . fst) xRangeLocs
       xSt %= (at to ?~ xrl)
       -- 2. Generate emit symbols for split ranges
-      let sMain' = (loc, pMain, (qt, ptysMain)) -- the part that's splited _from_
+      let sMain' = (loc, pMain, (qt, dgrsMain)) -- the part that's splited _from_
       case rsRem of
         [] -> case qt of
           t | t `elem` [ TEN, TEN01 ] ->
@@ -397,7 +397,7 @@ splitScheme' s@(STuple (loc, p, xt@(qt, ptys))) rSplitTo@(Range to rstL rstR) = 
               rSyms <- (rSplitTo : rsRem) `forM` (`gensymEmitRangeQTy` qt)
               return (vEmitR, rSyms, (ptySplitTo : ptysRem))
             _    -> throwError'' $ errUnsupprtedTy ++ "\n" ++ infoSS
-          let sAux' = (locAux, pAux, (qt, [ptySplitTo]))
+          let sAux' = (locAux, pAux, (qt, [dgrOrigin]))
           let ans = SplitScheme
                 { schROrigin = rOrigin
                 , schRTo = rSplitTo
@@ -432,13 +432,14 @@ splitScheme' s@(STuple (loc, p, xt@(qt, ptys))) rSplitTo@(Range to rstL rstR) = 
 
 
 data RangeSplits = RangeSplits
-  { rsRLeft    :: Maybe Range
-  , rsRRight   :: Maybe Range
-  , rsRSplit   :: Range
-  , rsRFocused :: Range
-  , rsPFocused :: PhaseTy
-  , rsRsPsRest :: [(Range, PhaseTy)]
-  , rsRsRem    :: [Range]
+  { rsRLeft    :: Maybe Range -- | left remainder
+  , rsRRight   :: Maybe Range -- | right remainder
+  , rsRSplit   :: Range       -- | the split range
+  , rsRFocused :: Range       -- | the original range
+  , rsDFocused :: Int         -- | the degree of the original range
+  , rsRsRest   :: [Range]     -- | other ranges untouched
+  , rsDsRest   :: [Int]       -- | The degrees of ....
+  , rsRsRem    :: [Range]     -- | all remainders (left + right)
   }
 
 -- | Compute, in order to split the given range from a resolved partition, which
@@ -448,8 +449,8 @@ getRangeSplits
   :: ( Has (Error String) sig m
      , Has (Reader IEnv) sig m
      )
-  => STuple -> Range -> [PhaseTy] -> m RangeSplits
-getRangeSplits s@(STuple (loc, p, _)) rSplitTo@(Range to rstL rstR) ptys = do
+  => STuple -> Range -> m RangeSplits
+getRangeSplits s@(STuple (loc, p, (qty, dgrs))) rSplitTo@(Range to rstL rstR) = do
   botHuh <- ($ rSplitTo) <$> isBotI
   case botHuh of
     _ | all (== Just True)  botHuh -> throwError' errBotRx
@@ -459,27 +460,31 @@ getRangeSplits s@(STuple (loc, p, _)) rSplitTo@(Range to rstL rstR) ptys = do
   (⊑??) <- (⊑?)
   case matched (⊑??) of
     Nothing -> throwError' errImproperRx
-    Just (rRemL, _, rRemR, rOrigin, pty)  -> do
+    Just (rRemL, _, rRemR, rOrigin, idx)  -> do
       rRemLeft <- contractRange rRemL
       rRemRight <- contractRange rRemR
-      let rspsRest = List.delete (rOrigin, pty) (zip (unpackPart p) ptys)
+      let psRest = if isEN qty then [] else removeNth idx dgrs
+          rsRest = removeNth idx (unpackPart p)
       return $ RangeSplits
         { rsRLeft = rRemLeft
         , rsRRight = rRemRight
         , rsRSplit = rSplitTo
         , rsRFocused = rOrigin
-        , rsPFocused = pty
-        , rsRsPsRest = rspsRest
+        , rsDFocused = head dgrs
+        , rsRsRest = rsRest
+        , rsDsRest = psRest
         , rsRsRem = catMaybes [rRemLeft, rRemRight]
         }
   where
+    removeNth n l = let (a, b) = splitAt n l in a ++ tail b
+    nRange = length . unpackPart $ p
     -- infoSS :: String = printf "[checkScheme] from (%s) to (%s)" (show s) (show rSplitTo)
     errBotRx = printf "The range %s contains no qubit!" $ show rSplitTo
     errImproperRx = printf
       "The range %s is not a part of the partition %s!" (show rSplitTo) (show s)
     matched (⊑??) = listToMaybe -- logically, there should be at most one partition!
-      [ (Range y yl rstL, rSplitTo, Range y rstR yr, rRef, pty)
-      | (rRef@(Range y yl yr), pty) <- zip (unpackPart p) ptys
+      [ (Range y yl rstL, rSplitTo, Range y rstR yr, rRef, idx)
+      | (rRef@(Range y yl yr), idx) <- zip (unpackPart p) [0..]
         -- ^ choose a range in the environment
       , to == y           -- | must be in the same register file!
       , rSplitTo ⊑?? rRef -- | must be a sub-interval
@@ -510,7 +515,7 @@ splitThenCastScheme s'@(STuple (loc, p, (qt1, ptys))) qt2 rSplitTo =
       -- do check to see if split is also not needed
       RangeSplits { rsRFocused = rOrigin
                   , rsRsRem = rsRem
-                  } <- getRangeSplits s' rSplitTo ptys
+                  } <- getRangeSplits s' rSplitTo
       case rsRem of
         [] -> return (s', Nothing, Nothing)
         _  -> throwError $ errSplitEN rOrigin rsRem
@@ -1021,7 +1026,7 @@ resolveMethodApplicationRets envArgs
   MethodType { mtSrcReturns=retParams
              , mtReceiver=receiver
              } = do
-  qBindings :: [Var] <- concat <$> forM psRet extendTState'Degree
+  qBindings :: [Var] <- concat <$> forM psRet ((fst <$>) . extendTState'Degree)
   -- TODO: also outputs pure variables here
   -- Sanity check for now:
   let pureArgs = collectPureBindings retParams
@@ -1112,16 +1117,30 @@ analyzePhaseSpecDegree PhaseSumOmega{} = 2
 
 
 -- | Generate variables and phase types based on a phase specification.
-generatePhaseType
-  :: ( Has (Gensym EmitBinding) sig m
-     )
-  => Int -> m PhaseTy
-generatePhaseType 0 = return PT0
-generatePhaseType n = do
-  vEmitBase <- gensym (LBinding ("base", inj TNat))
-  vEmitRepr <- gensym (LBinding ("repr", inj (typingPhaseEmitReprN 1)))
-  return (PTN n $ PhaseRef { prBase = vEmitBase, prRepr = vEmitRepr })
+-- generatephasetype
+--   :: ( Has (Gensym EmitBinding) sig m
+--      )
+--   => Int -> m PhaseTy
+-- generatePhaseType 0 = return PT0
+-- generatePhaseType n = do
+--   vEmitBase <- gensym (LBinding ("base", inj n))
+--   vEmitRepr <- gensym (LBinding ("repr", inj (typingPhaseEmitReprN 1)))
+--   return (PTN n $ PhaseRef { prBase = vEmitBase, prRepr = vEmitRepr })
 
+
+-- | Query in the emit state the phase types of the given STuple
+queryPhaseType
+  :: ( Has (State TState) sig m
+     , Has (Error String) sig m
+     )
+  => STuple -> m [PhaseTy] 
+queryPhaseType (STuple (loc, Partition rs, (qt, dgrs))) =
+  if | isEN qt -> do
+         dgr <- onlyOne throwError' dgrs
+         (: []) <$> findEmitLocDegree loc dgr
+     | otherwise -> do
+         checkListCorr rs dgrs
+         forM (zip rs dgrs) $ uncurry findEmitRangeDegree
 
 --------------------------------------------------------------------------------
 -- | Helpers
@@ -1159,10 +1178,11 @@ bdTypes b = [t | Binding _ t <- b]
 tStateFromPartitionQTys
   :: ( Has (Gensym EmitBinding) sig m
      , Has (Gensym Var) sig m
+     , Has (Error String) sig m
      )
   => [(Partition, QTy, [Int])] -> m TState
 tStateFromPartitionQTys pqts = execState initTState $ do
-  forM_ pqts $ extendTState'Degree
+  forM_ pqts extendTState'Degree
 
 -- | Extend the typing state with a partition and its type, generate emit
 -- symbols for every range in the partition and return all emitted symbols in
@@ -1171,26 +1191,34 @@ extendTState
   :: ( Has (Gensym EmitBinding) sig m
      , Has (Gensym Var) sig m
      , Has (State TState) sig m
+     , Has (Error String) sig m
      )
-  => Partition -> QTy -> [PhaseTy] -> m [Var]
-extendTState p qt ptys = do
+  => Partition -> QTy -> [Int] -> m ([Var], [PhaseTy])
+extendTState p qt dgrs = do
   sLoc <- gensymLoc "requires"
-  sSt %= (at sLoc ?~ (p, (qt, ptys)))
-  let xMap = [ (v, [(r, sLoc)]) | r@(Range v _ _) <- unpackPart p ]
+  sSt %= (at sLoc ?~ (p, (qt, dgrs)))
+  let xMap = [ (v, [(r, sLoc)]) | r@(Range v _ _) <- ranges ]
+  ptys <- if | isEN qt -> do
+                 dgr <- onlyOne throwError' dgrs
+                 (: []) <$> gensymEmitLocDegree sLoc dgr
+             | otherwise -> do
+                 checkListCorr dgrs ranges
+                 forM (zip ranges dgrs) (uncurry gensymEmitRangeDegree)
   vsREmit <- unpackPart p `forM` (\r -> (,r) <$> r `gensymEmitRangeQTy` qt)
   xSt %= Map.unionWith (++) (Map.fromListWith (++) xMap)
-  return $ fst <$> vsREmit
-
-
+  return $ (,ptys) $ fst <$> vsREmit
+  where
+    ranges = unpackPart p
 
 extendTState'Degree
   :: ( Has (Gensym EmitBinding) sig m
      , Has (Gensym Var) sig m
      , Has (State TState) sig m
+     , Has (Error String) sig m
      )
-  => (Partition, QTy, [Int]) -> m [Var]
+  => (Partition, QTy, [Int]) -> m ([Var], [PhaseTy])
 extendTState'Degree (p, qt, ds) =
-  extendTState p qt =<< forM ds generatePhaseType
+  extendTState p qt ds
 
 
 -- * Lattice and Ordering Operators lifted to IEnv

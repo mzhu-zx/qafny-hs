@@ -96,13 +96,13 @@ import           Qafny.Typing
     , collectMethodTypes
     , collectPureBindings
     , extendTState
-    , generatePhaseType
     , matchEmitStates
     , matchStateCorrLoop
     , mergeCandidateHad
     , mergeMatchedTState
     , mergeSTuplesHadEN
     , mergeScheme
+    , queryPhaseType
     , removeTStateBySTuple
     , resolveMethodApplicationArgs
     , resolveMethodApplicationRets
@@ -112,6 +112,7 @@ import           Qafny.Typing
     , resolveRange
     , retypePartition
     , retypePartition1
+    , specPartitionQTys
     , splitScheme
     , splitSchemePartition
     , splitThenCastScheme
@@ -119,7 +120,7 @@ import           Qafny.Typing
     , typingExp
     , typingGuard
     , typingPartition
-    , typingPartitionQTy, specPartitionQTys
+    , typingPartitionQTy
     )
 import           Qafny.Utils
     ( checkListCorr
@@ -317,17 +318,17 @@ codegenToplevel'Method q@(QMethod v bds rts rqs ens (Just block)) = runWithCallS
     fDecls = fmap $ uncurry fDecl
 
     fDecl :: EmitBinding -> Var -> Stmt'
-    fDecl (RBinding (_, ty)) v' = SVar (Binding v' (getTy ty)) Nothing
+    fDecl (RBinding (_, ty)) v' =
+      SVar (Binding v' (getTy ty)) Nothing
       where
-        getTy (Sum.Inl (Sum.Inl qty)) = typingQEmit qty
-        getTy (Sum.Inl (Sum.Inr (PTN n _))) = typingPhaseEmitReprN n
-        getTy (Sum.Inr ty') = ty'
-        getTy _             = error $
-          printf "Internal Error: %s is not a valid EmitBinding." (show ty)
-    fDecl (LBinding (_, Sum.Inl (PTN n _))) v' =
+        getTy (Sum.Inl qty) = typingQEmit qty
+        getTy (Sum.Inr _)   = TNat
+    fDecl (LBinding (_, n)) v' =
       SVar (Binding v' (typingPhaseEmitReprN n)) Nothing
-    fDecl bd _ = error $
-      printf "Internal Error: %s is not a valid EmitBinding." (show bd)
+    fDecl (BBinding (_, _)) v' =
+      SVar (Binding v' TNat) Nothing
+    -- fDecl bd _ = error $
+    --   printf "Internal Error: %s is not a valid EmitBinding." (show bd)
 
     -- | Forward declare all symbols emitted during Codegen except for those to
     -- be put in the __returns__ clause.
@@ -558,7 +559,7 @@ codegenStmt'Apply stmt@(s@(Partition ranges) :*=: eLam@(EEmit (ELambda {}))) = d
   trace $ printf "LEFT: %s, RIGHT: %s" (show r) (show rSt)
   -- | It's important not to use the fully resolved `s` here because the OP
   -- should only be applied to the sub-partition specified in the annotation.
-  [vEmit] <- unpackPart s `forM` (`findEmitRangeQTy` qt)
+  ~[vEmit] <- unpackPart s `forM` (`findEmitRangeQTy` qt)
   ((stmts ++) <$>) . putOpt $ case qtLambda of
     TEN -> return [ mkMapCall vEmit ]
     TEN01 -> do
@@ -585,7 +586,7 @@ codegenStmt'Apply stmt@(s@(Partition ranges) :*=: eLam@(EEmit (ELambda {}))) = d
     lambdaSplit v el er = EEmit (ELambda v (bodySplit v el er))
     mkMapCall v = v ::=: callMap eLam (EVar v)
 
-codegenStmt'Apply _ = fail "What could possibly go wrong?"
+codegenStmt'Apply _ = throwError' "What could possibly go wrong?"
 
 --------------------------------------------------------------------------------
 -- * Conditional
@@ -621,7 +622,7 @@ codegenStmt'If (SIf e _ b) = do
     _    -> undefined
   return $ stmtsCastB ++ stmts
 
-codegenStmt'If _ = fail "What could go wrong?"
+codegenStmt'If _ = throwError' "What could go wrong?"
 
 -- | Code Generation of an `If` statement with a Had partition
 codegenStmt'If'Had
@@ -646,7 +647,7 @@ codegenStmt'If'Had stG stB' b = do
   stmtB <- SEmit . SBlock <$> codegenBlock b
   -- TODO: left vs right merge strategy
   (cardMain', cardStash') <- cardStatesCorr corr
-  [(stmtCard, cardMain), (stmtStash, cardStash)] <-
+  ~[(stmtCard, cardMain), (stmtStash, cardStash)] <-
     forM [cardMain', cardStash'] saveCard
   -- 3. merge duplicated body partitions and merge the body with the guard
   stB <- resolvePartition sB
@@ -794,7 +795,7 @@ codegenStmt'For (SFor idx boundl boundr eG invs (Just seps) body) = do
       trace $ show (idx, boundr)
       put . reduce $ subst [(idx, boundr)] tsLoop
 
-codegenStmt'For _ = fail "What could possibly go wrong?"
+codegenStmt'For _ = throwError' "What could possibly go wrong?"
 
 
 
@@ -1070,9 +1071,6 @@ codegenMergePhase (PTN n1 pr1) (PTN n2 pr2) = do
               vRepr2 = prRepr pr2
           return (PTN n1 pr1, [ vRepr1 ::=: (EVar vRepr1 + EVar vRepr2) ])
       | otherwise -> do
-          ~pty@(PTN _ PhaseRef { prBase=vBase
-                               , prRepr=vRepr
-                               }) <- generatePhaseType n1
           throwError' "Merging phase types of differnt types is unimplemented. "
 
 
@@ -1114,7 +1112,7 @@ codegenAlloc v e@(EOp2 ONor e1 e2) t@(TQReg _) = do
   vEmit <- gensymEmitRangeQTy rV TNor
   loc <- gensymLoc v
   xSt %= (at v . non [] %~ ((rV, loc) :))
-  sSt %= (at loc ?~ (sV, (TNor, [PT0])))
+  sSt %= (at loc ?~ (sV, (TNor, [0])))
   return $ (::=:) vEmit eEmit
 codegenAlloc v e@(EOp2 ONor _ _) _ =
   throwError "Internal: Attempt to create a Nor partition that's not of nor type"
@@ -1426,8 +1424,8 @@ codegenRequires rqs = (bimap concat concat . unzip <$>) . forM rqs $ \rq ->
   case rq of
     ESpec s qt espec -> do
       let pspec = snd <$> espec
-      ptys <- forM pspec $ generatePhaseType . analyzePhaseSpecDegree
-      vsEmit <- extendTState s qt ptys
+      let dgrs = pspec <&> analyzePhaseSpecDegree
+      (vsEmit, ptys) <- extendTState s qt dgrs
       es <- runReader True $ codegenSpecExp (zip vsEmit (unpackPart s)) qt espec ptys
       return (es, ptys)
     _ -> return ([rq], [])
@@ -1492,8 +1490,9 @@ codegenAssertion'
      )
   => Exp' -> m [Exp']
 codegenAssertion' (ESpec s qt espec) = do
-  st@(STuple (_, _, (_, qtys))) <- typingPartitionQTy s qt
+  st@(STuple (_, _, (_, dgrs))) <- typingPartitionQTy s qt
   vsEmit <- unpackPart s `forM` (`findEmitRangeQTy` qt)
+  qtys <- queryPhaseType st
   codegenSpecExp (zip vsEmit (unpackPart s)) qt espec qtys
 codegenAssertion' e = return [e]
 
@@ -1652,5 +1651,5 @@ genEmitSt = do
 
 
 --------------------------------------------------------------------------------
-instance (Has (Error String) sig m, Monad m) => MonadFail m where
-  fail = throwError
+-- instance (Has (Error String) sig m, Monad m) => MonadFail m where
+--   fail = throwError

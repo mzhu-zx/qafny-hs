@@ -86,14 +86,14 @@ gensymLoc = (Loc <$>) . gensym . variable . Loc
 -- symbol state and the __Gensym EmitBinding__ effect.
 -- $doc
 --------------------------------------------------------------------------------
-rbindingOfRange :: Range -> QTy :+: PhaseTy :+: Ty -> EmitBinding
+rbindingOfRange :: Range -> QTy :+: Int -> EmitBinding
 rbindingOfRange r b = RBinding (reduce r, b)
 
 
-gensymBase
-  :: ( Has (Gensym EmitBinding) sig m )
-  => Range -> m Var
-gensymBase r = gensym $ rbindingOfRange r (inj TNat)
+-- gensymBase
+--   :: ( Has (Gensym EmitBinding) sig m )
+--   => Range -> Int -> m Var
+-- gensymBase r i = gensym $ rbindingOfRange r (inj i)
 
 -- rbindingOfRangeQTy :: Range -> QTy -> EmitBinding
 -- rbindingOfRangeQTy r qty = RBinding (reduce r, inj qty)
@@ -115,32 +115,56 @@ gensymEmitRangeQTy r qty = gensymEmitRB (rbindingOfRange r (inj qty))
 gensymEmitRangePTyRepr
   :: ( Has (Gensym EmitBinding) sig m
      , Has (State TState) sig m
+     , Has (Error String) sig m
      )
-  => Range -> PhaseTy-> m (Maybe Var, PhaseTy)
-gensymEmitRangePTyRepr _ PT0 = pure (Nothing, PT0)
-gensymEmitRangePTyRepr r t@(PTN i pRef) = do
-  vRepr <- gensymEmitRB (rbindingOfRange r (inj t))
-  return (Just vRepr, PTN i pRef{ prRepr=vRepr })
+  => Range -> Int -> m PhaseTy
+gensymEmitRangePTyRepr _ 0 = pure PT0
+gensymEmitRangePTyRepr r i = do
+  vBase <- findEmitEB (BBinding (inj r, i))
+  phaseTyN i vBase <$> gensymEmitEB (RBinding (r, inj i))
 
-
-gensymEmitRangePTy
+-- | Generate a new Phase Type from the range and its degree and manage it in
+-- the global store.
+gensymEmitRangeDegree
   :: ( Has (Gensym EmitBinding) sig m
      , Has (State TState) sig m
      )
-  => Range -> PhaseTy-> m (Maybe (Var, Var))
-gensymEmitRangePTy r =
-  undefined
+  => Range -> Int-> m PhaseTy
+gensymEmitRangeDegree _ 0 =
+  return PT0
+gensymEmitRangeDegree r i = do
+  vRepr <- gensymEmitEB (RBinding (r, inj i))
+  vBase <- gensymEmitEB (BBinding (inj r, i))
+  return . PTN i $ PhaseRef { prBase=vBase, prRepr=vRepr }
+
+gensymEmitLocDegree
+  :: ( Has (Gensym EmitBinding) sig m
+     , Has (State TState) sig m
+     )
+  => Loc -> Int-> m PhaseTy
+gensymEmitLocDegree _ 0 =
+  return PT0
+gensymEmitLocDegree r i = do
+  vRepr <- gensymEmitEB (LBinding (r, i))
+  vBase <- gensymEmitEB (BBinding (inj r, i))
+  return . PTN i $ PhaseRef { prBase=vBase, prRepr=vRepr }
 
 
+gensymEmitEB
+  :: ( Has (Gensym EmitBinding) sig m , Has (State TState) sig m)
+  => EmitBinding -> m Var
+gensymEmitEB rb = do
+  name <- gensym rb
+  emitSt %= (at rb ?~ name)
+  return name
+
+{-# DEPRECATED gensymEmitRB "Use gensymEmitEB instead!" #-}
 gensymEmitRB
   :: ( Has (Gensym EmitBinding) sig m
      , Has (State TState) sig m
      )
   => EmitBinding -> m Var
-gensymEmitRB rb = do
-  name <- gensym rb
-  emitSt %= (at rb ?~ name)
-  return name
+gensymEmitRB = gensymEmitEB
 
 -- | Similar to 'gensymEmitRangeQTy' but gensym without adding it the 'emitSt'
 gensymRangeQTy
@@ -160,6 +184,58 @@ gensymEmitPartitionQTy p qty =
 
 liftPartition :: Monad m => (Range -> m b) -> Partition -> m [b]
 liftPartition f p = forM (unpackPart p) f
+
+findEmitEB
+  :: ( Has (State TState) sig m
+     , Has (Error String) sig m
+     )
+  => EmitBinding -> m Var
+findEmitEB eb = do
+  st <- use emitSt
+  rethrowMaybe
+    (return (st ^. at eb)) $
+    printf "the binding `%s` cannot be found in the renaming state.\n%s"
+      (show eb)
+      (show st)
+
+findEmitRangeDegree
+  :: ( Has (State TState) sig m
+     , Has (Error String) sig m
+     )
+  => Range -> Int -> m PhaseTy
+findEmitRangeDegree r 0 = return PT0
+findEmitRangeDegree r i = do
+  let rBinding = RBinding (r, inj i)
+      bBinding = BBinding (inj r, i)
+  st <- use emitSt
+  let vReprM = st ^. at rBinding
+  let vBaseM = st ^. at bBinding
+  case (,) <$>  vReprM <*> vBaseM of
+    Just (vRepr', vBase') -> return . PTN i $
+      PhaseRef { prRepr=vRepr', prBase=vBase' }
+    Nothing -> throwError @String $ 
+      printf "the phase binding of %s : %d cannot be found in the renaming state.\n%s"
+      (show r) i (show st)
+
+findEmitLocDegree
+  :: ( Has (State TState) sig m
+     , Has (Error String) sig m
+     )
+  => Loc -> Int -> m PhaseTy
+findEmitLocDegree l 0 = return PT0
+findEmitLocDegree l i = do
+  let rBinding = LBinding (l, i)
+      bBinding = BBinding (inj l, i)
+  st <- use emitSt
+  let vReprM = st ^. at rBinding
+  let vBaseM = st ^. at bBinding
+  case (,) <$>  vReprM <*> vBaseM of
+    Just (vRepr', vBase') -> return . PTN i $
+      PhaseRef { prRepr=vRepr', prBase=vBase' }
+    Nothing -> throwError @String $ 
+      printf "the phase binding of %s : %d cannot be found in the renaming state.\n%s"
+      (show l) i (show st)
+
 
 findEmitRangeQTy
   :: ( Has (State TState) sig m
@@ -264,8 +340,8 @@ getMethodType v = do
 -- * EmitBinding Related
 
 projEmitBindingRangeQTy :: EmitBinding -> Maybe (Range, QTy)
-projEmitBindingRangeQTy (RBinding (r, Inl (Inl qty))) = Just (r, qty)
-projEmitBindingRangeQTy _                             = Nothing
+projEmitBindingRangeQTy (RBinding (r, Inl qty)) = Just (r, qty)
+projEmitBindingRangeQTy _                       = Nothing 
 
 collectRQTyBindings ::[(EmitBinding, Var)] -> [((Range, QTy), Var)]
 collectRQTyBindings = mapMaybe (\(e, v) -> projEmitBindingRangeQTy e <&> (, v))

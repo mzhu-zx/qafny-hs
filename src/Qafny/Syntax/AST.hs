@@ -32,10 +32,9 @@ import           Data.Functor.Foldable.TH (makeBaseFunctor)
 import           Data.List.NonEmpty       (NonEmpty (..))
 import qualified Data.Map.Strict          as Map
 import           Data.Maybe               (fromMaybe)
-import           Data.Sum
+import           Data.Sum 
 import           GHC.Generics             hiding ((:+:))
 import           Text.Printf              (printf)
-
 --------------------------------------------------------------------------------
 
 data AExp
@@ -68,6 +67,9 @@ data PhaseTy
   = PT0
   | PTN Int PhaseRef
   deriving (Show, Eq, Ord)
+
+phaseTyN :: Int -> Var -> Var -> PhaseTy
+phaseTyN n vBase vRepr = PTN n $ PhaseRef { prBase=vBase, prRepr=vRepr }
 
 data Ty
   = TNat
@@ -150,13 +152,16 @@ type Bindings x = [XRec x (Binding x)]
 -- type EBinds = QTy :+: PhaseTy :+: Ty
 
 data EmitBinding
-  = RBinding (Range, QTy :+: PhaseTy :+: Ty) -- range-based phase binding
-  | LBinding (Var, PhaseTy :+: Ty)           -- loc-based phase binding
+  = RBinding (Range, QTy :+: Int) -- range-based bindings
+  | BBinding (Range :+: Loc, Int) -- phase binding of bases
+  | LBinding (Loc, Int)           -- loc-based bindings
   deriving (Eq, Ord)
 
 instance Show EmitBinding where
   show (RBinding t) = show t
+  show (BBinding t) = show t
   show (LBinding t) = show t
+
 
 data Op2
   = OAnd
@@ -499,10 +504,13 @@ instance (Substitutable a, Substitutable b) => Substitutable (a, b) where
   fVars = uncurry (++) . bimap fVars fVars
 
 instance Substitutable EmitBinding where
-  subst a (RBinding (r, t)) = RBinding (subst a r, t)
-  subst a b                 = b
-  fVars (RBinding (r, _)) = fVars r
-  fVars _                 = []
+  subst a (RBinding (r, t))     = RBinding (subst a r, t)
+  subst a (BBinding (Inl r, t)) = BBinding (inj (subst a r), t)
+  subst a b                     = b
+
+  fVars (RBinding (r, _))     = fVars r
+  fVars (BBinding (Inl r, _)) = fVars r
+  fVars _                     = []
 
 instance Substitutable (Map.Map EmitBinding Var) where
   subst = substMapKeys
