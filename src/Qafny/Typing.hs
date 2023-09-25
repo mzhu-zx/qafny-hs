@@ -3,6 +3,7 @@
   , FlexibleInstances
   , LambdaCase
   , MultiParamTypeClasses
+  , MultiWayIf
   , ScopedTypeVariables
   , TupleSections
   , TypeApplications
@@ -34,10 +35,12 @@ import           Qafny.Interval
 import           Qafny.Syntax.AST
 import           Qafny.TypeUtils
 import           Qafny.Utils
-    ( exp2AExp
+    ( checkListCorr
+    , exp2AExp
     , findEmitRangeQTy
     , findEmitVarsFromPartition
     , gensymEmitRB
+    , gensymEmitRangePTy
     , gensymEmitRangePTyRepr
     , gensymEmitRangeQTy
     , gensymLoc
@@ -46,7 +49,7 @@ import           Qafny.Utils
     , removeEmitPartitionQTys
     , removeEmitRangeQTys
     , rethrowMaybe
-    , uncurry3, gensymEmitRangePTy
+    , uncurry3
     )
 
 -- Utils
@@ -416,20 +419,17 @@ splitScheme' s@(STuple (loc, p, xt@(qt, ptys))) rSplitTo@(Range to rstL rstR) = 
 -- | Duplicate a phase type by allocating a new reference to its Repr if
 -- necessary.
 --
--- FIXME: at this moment, this is more like a placeholder. There're something to
--- be done to generate the correct spltiScheme for the codegen to give a
--- satisfying result.
 -- duplicatePhaseTy
 --   :: ( Has (Gensym EmitBinding) sig m
---      , Has (Error String) sig m
 --      )
 --   => Loc -> QTy -> PhaseTy
 --   -> m PhaseTy
 -- duplicatePhaseTy _ _ PT0 = return PT0
 -- duplicatePhaseTy v qt pty@(PTN i (PhaseRef { prBase=vBase, prRepr=_ })) = do
 --   -- allocate a new repr variable without allocating a new base one
---   vRepr <- gensymEmitRB (LBinding (deref v, pty))
+--   vRepr <- gensym (LBinding (deref v, inj pty))
 --   return (PTN i (PhaseRef { prBase=vBase, prRepr=vRepr }))
+
 
 data RangeSplits = RangeSplits
   { rsRLeft    :: Maybe Range
@@ -835,13 +835,15 @@ lookupAdjacentRange rs r@(Range _ el er) = do
   return  [ r' | r'@(Range x' el' er') <- rs, er' ≡? el ]
 
 
--- Merge two given partition tuples if both of them are of EN type.
-mergeSTuples
+-- | Given two STuples in EN type where the first is for the body partition and
+-- the other one is for the guard partition.
+--
+mergeSTuplesHadEN
   :: ( Has (State TState) sig m
      , Has (Error String) sig m
      )
   => STuple -> STuple -> m ()
-mergeSTuples
+mergeSTuplesHadEN
   stM@(STuple (locMain, sMain@(Partition rsMain), (qtMain, ptysMain)))
   stA@(STuple (locAux, sAux@(Partition rsAux), (qtAux, ptysAux))) =
   do
@@ -849,26 +851,21 @@ mergeSTuples
     unless (qtMain == qtAux && qtAux == TEN) $
       throwError @String $ printf "%s and %s have different Q types!"
         (show stM) (show stA)
+
     -- start merge
     let newPartition = Partition $ rsMain ++ rsAux
-    -- let vsMetaAux =  varFromPartition sAux
-    -- let newAuxLocs = Map.fromList $ [(v, locMain) | v <- vsMetaAux]
-    -- xSt %= Map.union newAuxLocs -- use Main's loc for aux
-    -- change all range reference to the merged location
     xSt %= Map.map
       (\rLoc -> [ (r, loc')
                 | (r, loc) <- rLoc,
                   let loc' = if loc == locAux then locMain else loc])
     sSt %=
       (`Map.withoutKeys` Set.singleton locAux) . -- GC aux's loc
-      (at locMain ?~ (newPartition, (TEN, undefined))) -- update main's state
+      (at locMain ?~ (newPartition, (TEN, ptysMain))) -- update main's state
     return ()
 
 --------------------------------------------------------------------------------
 -- * Method Typing
 --------------------------------------------------------------------------------
-
-
 -- Generate a method type signature through pre-&post- conditions and the
 -- origianl signature following the calling convention.
 --
@@ -893,14 +890,15 @@ analyzeMethodType (QMethod v bds rts rqs ens _) =
     collectRange (Binding varg t)       = MTyPure varg t
 
     -- FIXME: collect phase types as well
-    collectSignature :: Exp' -> Maybe (Partition, QTy, [PhaseTy])
-    collectSignature (ESpec s qt pexp) = pure (s, qt, undefined)
+    collectSignature :: Exp' -> Maybe (Partition, QTy, [Int])
+    collectSignature (ESpec s qt pexp) =
+      pure (s, qt, analyzePhaseSpecDegree . snd <$> pexp)
     collectSignature _                 = Nothing
 
     go
       :: (Has (Reader (Map.Map Var Range)) sig' m')
-      => (Partition, QTy, [PhaseTy]) -> m' (Partition, QTy, [PhaseTy])
-    go (s, qt, pty) = (,qt, pty) <$> instPart s
+      => (Partition, QTy, [Int]) -> m' (Partition, QTy, [Int])
+    go (s, qt, dgr) = (,qt, dgr) <$> instPart s
 
     -- instantiate a Type expression with a given mapping from variable to Range
     instPart
@@ -1023,7 +1021,7 @@ resolveMethodApplicationRets envArgs
   MethodType { mtSrcReturns=retParams
              , mtReceiver=receiver
              } = do
-  qBindings :: [Var] <- concat <$> forM psRet (uncurry3 extendTState)
+  qBindings :: [Var] <- concat <$> forM psRet extendTState'Degree
   -- TODO: also outputs pure variables here
   -- Sanity check for now:
   let pureArgs = collectPureBindings retParams
@@ -1033,10 +1031,6 @@ resolveMethodApplicationRets envArgs
     unimpl = throwError' "Unimplemented: method returns a pure value."
     -- partitions after the method call
     psRet = receiver envArgs
-
-    -- extendTState, but returns bindings
-    -- extendTState'Binding p qty =
-    --   extendTState p qty <&> (<&> (`Binding` typingQEmit qty))
 
 --------------------------------------------------------------------------------
 -- | Constraints
@@ -1108,24 +1102,38 @@ mergeCandidateHad st =
 --------------------------------------------------------------------------------
 -- * Phase Typing
 --------------------------------------------------------------------------------
+
+-- | Analyze the degree of a phase expression
+analyzePhaseSpecDegree :: PhaseExp -> Int
+analyzePhaseSpecDegree PhaseZ          = 0
+analyzePhaseSpecDegree PhaseWildCard   = 0
+analyzePhaseSpecDegree PhaseOmega{}    = 1
+analyzePhaseSpecDegree PhaseSumOmega{} = 2
+
+
 -- | Generate variables and phase types based on a phase specification.
-typingPhaseSpec
+generatePhaseType
   :: ( Has (Gensym EmitBinding) sig m
      )
-  => PhaseExp -> m PhaseTy
-typingPhaseSpec PhaseZ = return PT0
-typingPhaseSpec PhaseWildCard = return PT0
-typingPhaseSpec p  = do
+  => Int -> m PhaseTy
+generatePhaseType 0 = return PT0
+generatePhaseType n = do
   vEmitBase <- gensym (LBinding ("base", inj TNat))
   vEmitRepr <- gensym (LBinding ("repr", inj (typingPhaseEmitReprN 1)))
-  let degree = case p of
-        PhaseOmega {} -> 1
-        PhaseSumOmega {} -> 2
-  return (PTN degree $ PhaseRef { prBase = vEmitBase, prRepr = vEmitRepr })
+  return (PTN n $ PhaseRef { prBase = vEmitBase, prRepr = vEmitRepr })
+
 
 --------------------------------------------------------------------------------
 -- | Helpers
 --------------------------------------------------------------------------------
+-- | Collect all partitions with their types from spec expressions
+specPartitionQTys :: [Exp x] -> [(Partition, QTy, [Int])]
+specPartitionQTys es =
+  [ (p, qty, analyzePhaseSpecDegree . snd <$> specs)
+  | (ESpec p qty specs) <- es
+  ]
+
+
 -- Collect all pure variables
 collectPureBindings :: [MethodElem] -> [Binding']
 collectPureBindings params =  [ Binding v t | MTyPure v t <- params ]
@@ -1152,9 +1160,9 @@ tStateFromPartitionQTys
   :: ( Has (Gensym EmitBinding) sig m
      , Has (Gensym Var) sig m
      )
-  => [(Partition, QTy, [PhaseTy])] -> m TState
+  => [(Partition, QTy, [Int])] -> m TState
 tStateFromPartitionQTys pqts = execState initTState $ do
-  forM_ pqts $ uncurry3 extendTState
+  forM_ pqts $ extendTState'Degree
 
 -- | Extend the typing state with a partition and its type, generate emit
 -- symbols for every range in the partition and return all emitted symbols in
@@ -1172,6 +1180,17 @@ extendTState p qt ptys = do
   vsREmit <- unpackPart p `forM` (\r -> (,r) <$> r `gensymEmitRangeQTy` qt)
   xSt %= Map.unionWith (++) (Map.fromListWith (++) xMap)
   return $ fst <$> vsREmit
+
+
+
+extendTState'Degree
+  :: ( Has (Gensym EmitBinding) sig m
+     , Has (Gensym Var) sig m
+     , Has (State TState) sig m
+     )
+  => (Partition, QTy, [Int]) -> m [Var]
+extendTState'Degree (p, qt, ds) =
+  extendTState p qt =<< forM ds generatePhaseType
 
 
 -- * Lattice and Ordering Operators lifted to IEnv

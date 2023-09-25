@@ -13,7 +13,7 @@ import           Control.Effect.Reader
 import           Control.Effect.State
 import           Control.Effect.Trace
 import           Control.Lens          (at, (?~), (^.))
-import           Control.Monad         (forM)
+import           Control.Monad         (forM, unless)
 
 import           Data.Bifunctor        (bimap, second)
 import           Data.Functor          ((<&>))
@@ -45,6 +45,17 @@ fst2 :: (a, b, c) -> (a, b)
 fst2 (a, b, c) = (a, b)
 
 --------------------------------------------------------------------------------
+
+onlyOne
+  :: ( Has (Error String) sig m
+     , Show a
+     )
+  => (String -> m a) -> [a] -> m a
+onlyOne throw v =
+  case v of
+    [v'] -> return v'
+    _   -> throw $ printf "Expecting only one element, but given: %s!" (show v)
+
 
 throwError''
   :: ( Has (Error String) sig m )
@@ -179,7 +190,7 @@ findEmitVarsFromPartition
      )
   => Partition -> QTy -> m [Var]
 findEmitVarsFromPartition part q =
-  forM (unpackPart part) $ (`findEmitRangeQTy` q)
+  forM (unpackPart part) (`findEmitRangeQTy` q)
 
 
 
@@ -234,6 +245,7 @@ dumpSSt str = do
 --------------------------------------------------------------------------------
 -- * Method Types
 
+-- | Retrive the type of the given formal variable from the environment
 getMethodType
   :: ( Has (Error String) sig m
      , Has (Reader TEnv) sig m
@@ -257,3 +269,15 @@ projEmitBindingRangeQTy _                             = Nothing
 
 collectRQTyBindings ::[(EmitBinding, Var)] -> [((Range, QTy), Var)]
 collectRQTyBindings = mapMaybe (\(e, v) -> projEmitBindingRangeQTy e <&> (, v))
+
+checkListCorr
+  :: ( Has (Error String) sig m
+     , Show a
+     , Show b
+     )
+  => [a] -> [b] -> m ()
+checkListCorr vsEmit eValues =
+  unless (length vsEmit == length eValues) $
+    throwError @String $ printf
+      "the number of elements doesn't agree with each other: %s %s"
+      (show vsEmit) (show eValues)

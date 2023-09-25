@@ -164,6 +164,8 @@ range
 spec ::   { Exp' }
   : '{' partition ':'  qty "↦" tuple(qspec) '}'
                                       { ESpec $2 $4 $6                       }
+  | '{' partition ':'  qty "↦" qspec '}'
+                                      { ESpec $2 $4 [$6]                     }
 
 qspec ::  { (SpecExp', PhaseExp) }
   : "⊗" id '.' pspec expr

@@ -88,8 +88,8 @@ data MethodType = MethodType
   -- Parameters for the source method (Type resolution level)
   { mtSrcParams :: [MethodElem]
   , mtSrcReturns :: [MethodElem]
-  , mtInstantiate :: Map.Map Var Range -> [(Partition, QTy, [PhaseTy])]
-  , mtReceiver :: Map.Map Var Range -> [(Partition, QTy, [PhaseTy])]
+  , mtInstantiate :: Map.Map Var Range -> [(Partition, QTy, [Int])]
+  , mtReceiver :: Map.Map Var Range -> [(Partition, QTy, [Int])]
   -- , mtDebugInit :: [(Partition, QTy)]
   }
 
@@ -405,10 +405,6 @@ leftPartitions =
     perStmt ((:*=:) s _) = [s]
     -- TODO: query If and For recursively
     perStmt _            = []
-
--- | Collect all partitions with their types from spec expressions
-specPartitionQTys :: [Exp x] -> [(Partition, QTy, [PhaseTy])]
-specPartitionQTys es = [ (p, qty, undefined) | (ESpec p qty _) <- es ]
 
 
 (.:) :: (c -> d) -> (a -> b -> c) -> (a -> b -> d)
