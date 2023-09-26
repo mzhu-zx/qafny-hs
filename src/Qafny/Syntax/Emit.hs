@@ -223,12 +223,12 @@ instance DafnyPrinter (Exp ()) where
   build e@EHad = debugOnly e "H"
   build e@ESpec{} = debugOnly e (show e)
   build e@(EApp v es) = v <!> withParen (byComma es)
-  build (ELambda Nothing v Nothing e) = v <+> "=>" <+> e
-  build e@(ELambda (Just vPhase) v (Just pspec) e') =
-    debugOnly e (vPhase <+> "~" <+> v <+> "=>" <+> pspec <+> "~" <+> e')
+  build (ELambda binder v Nothing e) = binder <+> "=>" <+> e
+  build e@(ELambda binder v (Just pspec) e') =
+    debugOnly e (binder <+> "~" <+> v <+> "=>" <+> pspec <+> "~" <+> e')
   build e = "//" <!> show e <!> build " should not be in emitted form!"
 
-instance DafnyPrinter PhaseExp where
+instance (Show f, DafnyPrinter f) => DafnyPrinter (PhaseExpF f) where
   build p = debugOnly p $ case p of
     PhaseZ -> build "1"
     PhaseWildCard -> build "_"

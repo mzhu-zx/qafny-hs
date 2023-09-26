@@ -16,7 +16,7 @@ qComment :: String -> Stmt'
 qComment = SDafny . ("// " ++)
 
 simpleLambda :: Var -> Exp' -> Exp'
-simpleLambda v = ELambda Nothing v Nothing
+simpleLambda v = ELambda PhaseWildCard v Nothing
 
 --------------------------------------------------------------------------------
 -- * Special Constructors

@@ -1,6 +1,44 @@
-method QuarterPhase(q : qreg[1])
+method PromoteZeroPhase(q : qreg[1])
+  requires N >= 2
   requires { q [0 .. 1] : nor ↦ ⊗ i . 0 }
-  ensures  { q [0 .. 1] : en ↦ ∑ i ∈ [0 .. 1] . ω(1, 4) ~ (1) } 
+  ensures  { q [0 .. 1] : en ↦ ∑ i ∈ [0 .. 1] . ω(1, 4) ~ (0) } 
 {
-  q[0..1] *= λ (p ~ x => ω(1, 4) ~ (x + 1) % 2);
+  q[0..1] *= λ (_ ~ x => ω(1, 4) ~ x);
 }
+
+method ProgressFirstPhase(q : qreg[1])
+  requires N >= 2
+  requires { q [0 .. 1] : en ↦ ∑ i ∈ [0 .. 1] . ω(1, 4) ~ (1) }
+  ensures  { q [0 .. 1] : en ↦ ∑ i ∈ [0 .. 1] . ω(2, 4) ~ (1) } 
+{
+  q[0..1] *= λ (ω(i, N) ~ x => ω(i + 1, N) ~ x);
+}
+
+method ProgressFirstPhaseFail(q : qreg[1])
+  requires N >= 2
+  requires { q [0 .. 1] : en ↦ ∑ i ∈ [0 .. 1] . ω(1, 4) ~ (1) }
+  ensures  { q [0 .. 1] : en ↦ ∑ i ∈ [0 .. 1] . ω(2, 4) ~ (1) } 
+{
+  // failure reason:
+  //  This is not reversible: the phase applied can be independent of the
+  //  original phase iff the original phase is of the zeroth degree.
+  q[0..1] *= λ (_ ~ x => ω(i + 1, N) ~ x);
+}
+
+method PromoteFirstPhase(q : qreg[1])
+  requires N >= 2
+  requires { q [0 .. 1] : en ↦ ∑ i ∈ [0 .. 1] . ω(1, 4) ~ (1) }
+  ensures  { q [0 .. 1] : en ↦ ∑ i ∈ [0 .. 1] . Ω j ∈ [0 .. 1] . (j + 2, 4) ~ (1) } 
+{
+  q[0..1] *= λ (ω(i, N) ~ x => Ω j ∈ [0 .. 1] . (j + i + 1, N) ~ x);
+}
+
+method ProgressSecondPhase(q : qreg[1])
+  requires N >= 2
+  requires { q [0 .. 1] : en ↦ ∑ i ∈ [0 .. 1] . Ω j ∈ [0 .. 1] . (j + 2, 4) ~ (1) }
+  ensures  { q [0 .. 1] : en ↦ ∑ i ∈ [0 .. 1] . Ω j ∈ [0 .. 1] . (j + 3, 4) ~ (1) } 
+{
+  // The syntax here is questionable: we need to handle both add and multiplication
+  q[0..1] *= λ (Ω j ∈ [0 .. 1] . (j, N) ~ x => Ω k ∈ [0 .. 1] . (j + 1, N) ~ x);
+}
+

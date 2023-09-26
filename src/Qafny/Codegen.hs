@@ -1620,8 +1620,11 @@ codegenPhaseSpec quantifier (PTN 1 ref) (PhaseOmega eK eN) =
       assertK = EOp2 OEq eK (EVar (prRepr ref))
   in return [assertN, quantifier assertK]
 
-codegenPhaseSpec quantifier (PTN 2 ref) (PhaseSumOmega v eK eN) =
+codegenPhaseSpec quantifier (PTN 2 ref) (PhaseSumOmega (Range v l r) eK eN) =
   let assertN = EOp2 OEq eN (EVar (prBase ref))
+      pLength = r - l
+      -- FIXME: emit the length of the 2nd-degree range and get the inner
+      -- quantifier right
       assertK = EForall (Binding v TNat) Nothing (EOp2 OEq eK (EVar (prRepr ref)))
   in return [assertN, quantifier assertK]
 codegenPhaseSpec _ (PTN n _) e =

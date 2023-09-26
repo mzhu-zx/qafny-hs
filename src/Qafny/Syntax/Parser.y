@@ -184,7 +184,14 @@ qspec ::  { (SpecExp', PhaseExp) }
 pspec :: { PhaseExp }
   : {- empty -}                            { PhaseZ                 }
   | "ω" '(' expr ',' expr ')' '~'          { PhaseOmega $3 $5       }
-  | "Ω" id '.' '(' expr ',' expr ')' '~'   { PhaseSumOmega $2 $5 $7 }
+  | "Ω" id "∈" '[' expr ".." expr ']' '.' '(' expr ',' expr ')' '~'
+                                           { PhaseSumOmega (Range $2 $5 $7) $11 $13 }
+
+pbinder :: { PhaseBinder }
+  : {- empty -}                            { PhaseWildCard          }
+  | "ω" '(' id ',' id ')'                  { PhaseOmega $3 $5       }
+  | "Ω" id "∈" '[' expr ".." expr ']' '.' '(' id ',' id ')'
+                                           { PhaseSumOmega (Range $2 $5 $7) $11 $13 }
 
 
 tuple(p)
@@ -199,9 +206,9 @@ expr
   | "meas" id                         { EMea $2                }
   | "not" atomic                      { EOp1 ONot $2           }
   | "nor" '(' atomic ',' digits ')'   { EOp2 ONor $3 (ENum $5) }
-  | "λ" '(' id "=>" expr ')'          { ELambda Nothing $3 Nothing $5 }
-  | "λ" '(' id '~' id "=>" pspec expr ')'   
-                                      { ELambda (Just $3) $5 (Just $7) $8 }
+  | "λ" '(' id "=>" expr ')'          { ELambda PhaseWildCard $3 Nothing $5 }
+  | "λ" '(' pbinder '~' id "=>" pspec expr ')'   
+                                      { ELambda $3 $5 (Just $7) $8 }
   | id tuple(expr)                    { EApp $1 $2             }
   | "repr" '(' range ')'              { ERepr $3               }
   | logicOrExp                        { $1                     }

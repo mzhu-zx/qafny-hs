@@ -209,27 +209,31 @@ data Exp x
   | EPartition Partition
   | ESpec Partition QTy [(XRec x (SpecExp x), PhaseExp)]
   | ERepr Range
-  | ELambda (Maybe Var) Var (Maybe PhaseExp) (XRec x (Exp x))
+  | ELambda PhaseBinder Var (Maybe PhaseExp) (XRec x (Exp x))
   -- ?
   -- | RInd Var Exp -- boolean at var[exp], var must be Q type
   -- | REq Exp Exp Var Exp -- compare exp == exp and store the value in var[exp], var must be Q type
   -- | RLt Exp Exp Var Exp -- compare exp < exp and store the value in var[exp], var must be Q type
 
-data PhaseExp
+
+data PhaseExpF f
   = PhaseZ
-  | PhaseOmega Exp' Exp'
-  | PhaseSumOmega Var Exp' Exp'
+  | PhaseOmega f f
+  | PhaseSumOmega Range f f
   | PhaseWildCard
 
+type PhaseExp = PhaseExpF Exp'
+type PhaseBinder = PhaseExpF Var
 
 -- deriving instance (Typeable (Exp ()))
 -- deriving instance (Data (Exp ()))
 -- deriving instance (Typeable (Exp Source))
 -- deriving instance (Data (Exp Source))
-deriving instance (Generic PhaseExp)
-deriving instance (Show PhaseExp)
-deriving instance (Eq PhaseExp)
-deriving instance (Ord PhaseExp)
+
+deriving instance Generic f => Generic (PhaseExpF f)
+deriving instance Show f => Show (PhaseExpF f)
+deriving instance Eq f => Eq (PhaseExpF f)
+deriving instance Ord f => Ord (PhaseExpF f)
 
 deriving instance (Generic (Exp ()))
 deriving instance (Generic (Exp Source))
@@ -436,7 +440,7 @@ data ExpF f
   | EPartitionF Partition
   | ESpecF Partition QTy [(XRec () (SpecExp ()), PhaseExp)]
   | EReprF Range
-  | ELambdaF (Maybe Var) Var (Maybe PhaseExp) f
+  | ELambdaF PhaseBinder Var (Maybe PhaseExp) f
   deriving (Functor, Foldable, Traversable, Show, Generic)
 
 type instance Base (Exp ()) = ExpF
