@@ -1199,25 +1199,32 @@ allocPhaseType
      , Has (Error String) sig m
      )
   => STuple -> m [PhaseTy]
-allocPhaseType s =
-  fst <$> generatePhaseTypeThen nothing nothing s
-  where
-    nothing = const (const (return ()))
+allocPhaseType (STuple (loc, Partition rs, (qt, dgrs))) =
+  if | isEN qt -> do
+         dgr <- onlyOne throwError' dgrs
+         pty <- gensymEmitLocDegree loc dgr
+         return [pty]
+     | otherwise -> do
+         checkListCorr dgrs rs
+         forM (zip rs dgrs) (uncurry gensymEmitRangeDegree)
 
+updateTState
+  :: ( Has (State TState) sig m )
+  => STuple -> m ()
+updateTState s@(STuple (loc, p, (qt, dgrs))) =
+  sSt %= (at loc ?~ (p, (qt, dgrs)))
+
+  
 allocAndUpdatePhaseType
   :: ( Has (Gensym EmitBinding) sig m
      , Has (State TState) sig m
      , Has (Error String) sig m
      )
   => STuple -> m [PhaseTy]
-allocAndUpdatePhaseType s@(STuple (loc, p, (qt, dgrs))) =
-  generatePhaseTypeThen goLoc goRanges s
-  where
-    goLoc pty =
-      sSt %= (at loc ?~ (p, (qt, dgrs)))
-    goRange ptys =  
-      sSt %= (at loc ?~ (p, (qt, dgrs)))
-  
+allocAndUpdatePhaseType s = do
+  updateTState s
+  allocPhaseType s
+
 generatePhaseTypeThen
   :: ( Has (Gensym EmitBinding) sig m
      , Has (State TState) sig m
