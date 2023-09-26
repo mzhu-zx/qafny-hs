@@ -44,6 +44,9 @@ uncurry3 f (a, b, c) = f a b c
 fst2 :: (a, b, c) -> (a, b)
 fst2 (a, b, c) = (a, b)
 
+internalError :: a
+internalError = error "Internal Error!"
+
 --------------------------------------------------------------------------------
 
 onlyOne

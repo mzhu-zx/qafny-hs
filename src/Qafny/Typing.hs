@@ -47,7 +47,7 @@ import           Qafny.Utils
     , removeEmitPartitionQTys
     , removeEmitRangeQTys
     , rethrowMaybe
-    , uncurry3, gensymEmitRangePTyRepr, findEmitRangeDegree, gensymEmitLocDegree, onlyOne, gensymEmitRangeDegree, findEmitLocDegree
+    , uncurry3, gensymEmitRangePTyRepr, findEmitRangeDegree, gensymEmitLocDegree, onlyOne, gensymEmitRangeDegree, findEmitLocDegree, internalError
     )
 
 -- Utils
@@ -100,6 +100,7 @@ import           Qafny.Syntax.Emit
     , showEmitI
     )
 import           Text.Printf                (printf)
+import Qafny.Syntax.ASTFactory (cardV)
 
 
 throwError'
@@ -705,6 +706,60 @@ castScheme st qtNow = do
                       , schRsCast=unpackPart sResolved
                       })
 
+
+data PromotionScheme = PromotionScheme
+  { psPrefs :: [PhaseRef]
+  , psDgrPrev :: Int
+  , psDgrCurr :: Int
+  , psPromotion :: Promotion
+  }
+
+data Promotion
+  = Promote'0'1 (Exp', Exp') [Range] QTy
+
+-- | Promote phases to another level   
+promotionScheme
+  :: ( Has (Gensym EmitBinding) sig m
+     , Has (State TState) sig m
+     , Has (Error String) sig m
+     )
+  => STuple -> PhaseBinder -> PhaseExp -> m (Maybe PromotionScheme)
+promotionScheme st@(STuple (_, Partition rs, (qt, _))) pb pe = do
+  let dgrBind = analyzePhaseSpecDegree pb
+      dgrSpec = analyzePhaseSpecDegree pe
+  case (dgrBind, dgrSpec) of
+    (db, ds) | db == ds -> return Nothing
+    (0, 1) -> promote'0'1 pe
+    (1, 2) -> promote'1'2
+    (db, ds) | db > ds -> errDemotion db ds
+    (db, ds) -> errUnimplementedPrompt db ds
+  where
+    -- Promote 0 to 1
+    promote'0'1
+      :: ( Has (Gensym EmitBinding) sig m'
+         , Has (State TState) sig m'
+         , Has (Error String) sig m'
+         )
+      => PhaseExp -> m' (Maybe PromotionScheme)
+    promote'0'1 (PhaseOmega i n) = do
+      ptys <- allocPhaseType st
+      let prefs = getPhaseRef <$> ptys
+      return . Just $ PromotionScheme
+        { psPrefs = prefs
+        , psDgrPrev = 0
+        , psDgrCurr = 1
+        , psPromotion = Promote'0'1 (i, n) rs qt
+        }
+    promote'0'1 _ = internalError
+
+
+    -- Promote 1 to 2
+    promote'1'2 = undefined
+    errDemotion i j = throwError' $
+      printf "Demote %d to %d is not allowed." i j
+    errUnimplementedPrompt i j =  throwError' $
+      printf "Promoting %d to %d is undefined." i j
+
 -- | The same as 'castScheme', for compatibility
 retypePartition
   :: ( Has (Error String) sig m
@@ -1108,11 +1163,21 @@ mergeCandidateHad st =
 --------------------------------------------------------------------------------
 
 -- | Analyze the degree of a phase expression
-analyzePhaseSpecDegree :: PhaseExp -> Int
+analyzePhaseSpecDegree :: PhaseExpF f -> Int
 analyzePhaseSpecDegree PhaseZ          = 0
 analyzePhaseSpecDegree PhaseWildCard   = 0
 analyzePhaseSpecDegree PhaseOmega{}    = 1
 analyzePhaseSpecDegree PhaseSumOmega{} = 2
+
+
+-- dispatchPhaseSpec :: (forall k . PhaseExpF' f k -> g) -> PhaseExpF f -> g
+-- dispatchPhaseSpec f = construct
+--   where
+--     construct PhaseZ = f (PhaseZ')
+--     construct PhaseWildCard = f (PhaseWildCard')
+--     construct (PhaseOmega a b) = f (PhaseOmega' a b)
+--     construct (PhaseSumOmega r a b) = f (PhaseSumOmega' r a b)
+    
 
 
 -- | Generate variables and phase types based on a phase specification.
@@ -1125,6 +1190,52 @@ analyzePhaseSpecDegree PhaseSumOmega{} = 2
 --   vEmitBase <- gensym (LBinding ("base", inj n))
 --   vEmitRepr <- gensym (LBinding ("repr", inj (typingPhaseEmitReprN 1)))
 --   return (PTN n $ PhaseRef { prBase = vEmitBase, prRepr = vEmitRepr })
+
+-- | Generate a new phase type based on the STuple.
+--  
+allocPhaseType
+  :: ( Has (Gensym EmitBinding) sig m
+     , Has (State TState) sig m
+     , Has (Error String) sig m
+     )
+  => STuple -> m [PhaseTy]
+allocPhaseType s =
+  fst <$> generatePhaseTypeThen nothing nothing s
+  where
+    nothing = const (const (return ()))
+
+allocAndUpdatePhaseType
+  :: ( Has (Gensym EmitBinding) sig m
+     , Has (State TState) sig m
+     , Has (Error String) sig m
+     )
+  => STuple -> m [PhaseTy]
+allocAndUpdatePhaseType s@(STuple (loc, p, (qt, dgrs))) =
+  generatePhaseTypeThen goLoc goRanges s
+  where
+    goLoc pty =
+      sSt %= (at loc ?~ (p, (qt, dgrs)))
+    goRange ptys =  
+      sSt %= (at loc ?~ (p, (qt, dgrs)))
+  
+generatePhaseTypeThen
+  :: ( Has (Gensym EmitBinding) sig m
+     , Has (State TState) sig m
+     , Has (Error String) sig m
+     )
+  => (PhaseTy -> m g) -- do when it's EN
+  -> ([PhaseTy] -> m g) -- do when it isn't
+  -> STuple
+  -> m ([PhaseTy], g)
+generatePhaseTypeThen fLoc fOthers (STuple (loc, Partition rs, (qt, dgrs))) =
+  if | isEN qt -> do
+         dgr <- onlyOne throwError' dgrs
+         pty <- gensymEmitLocDegree loc dgr
+         ([pty],) <$> fLoc pty
+     | otherwise -> do
+         checkListCorr dgrs rs
+         ptys <- forM (zip rs dgrs) (uncurry gensymEmitRangeDegree)
+         (ptys,) <$> fOthers ptys 
 
 
 -- | Query in the emit state the phase types of the given STuple
@@ -1197,12 +1308,7 @@ extendTState p qt dgrs = do
   sLoc <- gensymLoc "requires"
   sSt %= (at sLoc ?~ (p, (qt, dgrs)))
   let xMap = [ (v, [(r, sLoc)]) | r@(Range v _ _) <- ranges ]
-  ptys <- if | isEN qt -> do
-                 dgr <- onlyOne throwError' dgrs
-                 (: []) <$> gensymEmitLocDegree sLoc dgr
-             | otherwise -> do
-                 checkListCorr dgrs ranges
-                 forM (zip ranges dgrs) (uncurry gensymEmitRangeDegree)
+  ptys <- allocPhaseType (STuple (sLoc, p, (qt, dgrs)))
   vsREmit <- unpackPart p `forM` (\r -> (,r) <$> r `gensymEmitRangeQTy` qt)
   xSt %= Map.unionWith (++) (Map.fromListWith (++) xMap)
   return $ (,ptys) $ fst <$> vsREmit

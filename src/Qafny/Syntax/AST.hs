@@ -1,11 +1,15 @@
 {-# LANGUAGE
-    DeriveAnyClass
+    DataKinds
+  , DeriveAnyClass
+  , RankNTypes
+  , ImpredicativeTypes
   , DeriveFoldable
   , DeriveFunctor
   , DeriveGeneric
   , DeriveTraversable
   , FlexibleContexts
   , FlexibleInstances
+  , GADTs
   , MultiParamTypeClasses
   , StandaloneDeriving
   , TemplateHaskell
@@ -13,7 +17,6 @@
   , TypeFamilies
   , TypeOperators
   , UndecidableInstances
-  , GADTs
   #-}
 
 module Qafny.Syntax.AST where
@@ -29,11 +32,13 @@ import           Data.Functor.Foldable
     , Recursive (cata, project)
     )
 import           Data.Functor.Foldable.TH (makeBaseFunctor)
+import           Data.Kind                (Type)
 import           Data.List.NonEmpty       (NonEmpty (..))
 import qualified Data.Map.Strict          as Map
 import           Data.Maybe               (fromMaybe)
-import           Data.Sum 
+import           Data.Sum
 import           GHC.Generics             hiding ((:+:))
+import           GHC.Natural              (Natural)
 import           Text.Printf              (printf)
 --------------------------------------------------------------------------------
 
@@ -44,18 +49,18 @@ data AExp
 
 aexpToExp :: AExp -> Exp ()
 aexpToExp (ANat i) = ENum i
-aexpToExp (AVar v) = EVar v 
+aexpToExp (AVar v) = EVar v
 
 -- | The good thing about this design is that I don't need to modify the
 -- emitState when creating a new phaseRef.
--- 
+--
 -- The only bad thing is that everytime
 -- I want to get the pointer to the phase, I need to resolve through `sSt`,
 -- which is not too bad because phase are designed to live with partitiions
 -- instead of with ranges :)
--- 
+--
 -- TODO: move this into the proposal
--- 
+--
 data PhaseRef = PhaseRef
   { prBase :: Var -- | pointer to the base
   , prRepr :: Var -- | pointer to its representation
@@ -70,6 +75,10 @@ data PhaseTy
 
 phaseTyN :: Int -> Var -> Var -> PhaseTy
 phaseTyN n vBase vRepr = PTN n $ PhaseRef { prBase=vBase, prRepr=vRepr }
+
+getPhaseRef :: PhaseTy -> PhaseRef
+getPhaseRef (PTN _ r) = r
+getPhaseRef _ = undefined
 
 data Ty
   = TNat
@@ -88,10 +97,10 @@ data MethodElem
 
 data MethodType = MethodType
   -- Parameters for the source method (Type resolution level)
-  { mtSrcParams :: [MethodElem]
-  , mtSrcReturns :: [MethodElem]
+  { mtSrcParams   :: [MethodElem]
+  , mtSrcReturns  :: [MethodElem]
   , mtInstantiate :: Map.Map Var Range -> [(Partition, QTy, [Int])]
-  , mtReceiver :: Map.Map Var Range -> [(Partition, QTy, [Int])]
+  , mtReceiver    :: Map.Map Var Range -> [(Partition, QTy, [Int])]
   -- , mtDebugInit :: [(Partition, QTy)]
   }
 
@@ -118,12 +127,12 @@ newtype MTy = MTy { unMTy :: Ty :+: MethodType }
 instance Show MTy where
   show (MTy (Inl t)) = show t
   show (MTy (Inr m)) = show (mtSrcParams m) ++ show (mtSrcReturns m)
-  
+
 projTy :: MTy -> Maybe Ty
-projTy = projLeft . unMTy 
+projTy = projLeft . unMTy
 
 projMethodTy :: MTy -> Maybe MethodType
-projMethodTy = projRight . unMTy 
+projMethodTy = projRight . unMTy
 
 instance Injection Ty MTy where
   inj = MTy . inj
@@ -207,7 +216,7 @@ data Exp x
   | EDafny String
   | EEmit EmitExp
   | EPartition Partition
-  | ESpec Partition QTy [(XRec x (SpecExp x), PhaseExp)]
+  | ESpec Partition QTy [(XRec x (SpecExp x), PhaseExp )]
   | ERepr Range
   | ELambda PhaseBinder Var (Maybe PhaseExp) (XRec x (Exp x))
   -- ?
@@ -216,13 +225,19 @@ data Exp x
   -- | RLt Exp Exp Var Exp -- compare exp < exp and store the value in var[exp], var must be Q type
 
 
-data PhaseExpF f
-  = PhaseZ
-  | PhaseOmega f f
-  | PhaseSumOmega Range f f
-  | PhaseWildCard
+data PhaseExpF f :: Type where
+  PhaseZ :: PhaseExpF f
+  PhaseOmega :: f -> f -> PhaseExpF f
+  PhaseSumOmega :: Range -> f -> f -> PhaseExpF f
+  PhaseWildCard :: PhaseExpF f
 
-type PhaseExp = PhaseExpF Exp'
+-- data PhaseExpF' f :: Natural -> Type where
+--   PhaseZ' :: PhaseExpF' f 0
+--   PhaseOmega' :: f -> f -> PhaseExpF' f 1
+--   PhaseSumOmega' :: Range -> f -> f -> PhaseExpF' f 2
+--   PhaseWildCard' :: PhaseExpF' f 0
+
+type PhaseExp = PhaseExpF Exp' 
 type PhaseBinder = PhaseExpF Var
 
 -- deriving instance (Typeable (Exp ()))
@@ -325,7 +340,7 @@ data Intv = Intv (Exp ()) (Exp ())
   deriving (Eq, Show, Ord-- , Data, Typeable
            )
 
--- Range includes the left but exclude the right 
+-- Range includes the left but exclude the right
 data Range = Range Var (Exp ()) (Exp ())
   deriving (Eq, Ord-- , Data, Typeable
            )

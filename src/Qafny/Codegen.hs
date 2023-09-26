@@ -86,7 +86,9 @@ import           Qafny.TypeUtils
     , typingQEmit
     )
 import           Qafny.Typing
-    ( analyzeMethodType
+    ( Promotion (..)
+    , PromotionScheme (..)
+    , analyzeMethodType
     , analyzePhaseSpecDegree
     , appkEnvWithBds
     , castScheme
@@ -120,7 +122,7 @@ import           Qafny.Typing
     , typingExp
     , typingGuard
     , typingPartition
-    , typingPartitionQTy
+    , typingPartitionQTy, promotionScheme
     )
 import           Qafny.Utils
     ( checkListCorr
@@ -136,6 +138,7 @@ import           Qafny.Utils
     , gensymLoc
     , gensymRangeQTy
     , getMethodType
+    , internalError
     , liftPartition
     , modifyEmitRangeQTy
     , onlyOne
@@ -143,7 +146,7 @@ import           Qafny.Utils
     , removeEmitPartitionQTys
     , removeEmitRangeQTys
     , rethrowMaybe
-    , uncurry3
+    , uncurry3, gensymEmitEB
     )
 
 throwError'
@@ -535,12 +538,12 @@ codegenStmt'Apply ((:*=:) s EHad) = do
     opCastHad TNor = return "CastNorHad"
     opCastHad t = throwError $ "type `" ++ show t ++ "` cannot be casted to Had type"
 
-codegenStmt'Apply stmt@(s@(Partition ranges) :*=: eLam@(ELambda {})) = do
+codegenStmt'Apply stmt@(s@(Partition ranges) :*=: eLam@(ELambda pbinder _ pexpMaybe _)) = do
   (st'@(STuple (_, _, (qt', _))), corr) <- resolvePartition' s
   qtLambda <- ask
   checkSubtypeQ qt' qtLambda
-  -- compute the correspondence between range on surface ser and the range in
-  -- partition record
+  -- compute the correspondence between range written and the range in partition
+  -- record
   r@(Range _ erLower erUpper) <- case ranges of
     []  -> throwError "Parser says no!"
     [x] -> return x
@@ -551,7 +554,11 @@ codegenStmt'Apply stmt@(s@(Partition ranges) :*=: eLam@(ELambda {})) = do
   stmts <- codegenSplitThenCastEmit maySplit mayCast
 
   -- resolve again for consistency
-  (_, corr') <- resolvePartition' s
+  (stS', corr') <- resolvePartition' s
+
+  stmtsPhase <- case pexpMaybe of
+    Just pexp -> promotionScheme stS' pbinder pexp >>= codegenPromotionMaybe
+    Nothing -> pure []
 
   rSt@(Range _ esLower esUpper) <-
     maybe (throwError' (errNotInCorr r corr')) return
@@ -561,7 +568,7 @@ codegenStmt'Apply stmt@(s@(Partition ranges) :*=: eLam@(ELambda {})) = do
   -- | It's important not to use the fully resolved `s` here because the OP
   -- should only be applied to the sub-partition specified in the annotation.
   ~[vEmit] <- unpackPart s `forM` (`findEmitRangeQTy` qt)
-  ((stmts ++) <$>) . putOpt $ case qtLambda of
+  ((stmts ++) . (stmtsPhase ++) <$>) . putOpt $ case qtLambda of
     TEN -> return [ mkMapCall vEmit ]
     TEN01 -> do
       vInner <- gensym "lambda_x"
@@ -1257,6 +1264,7 @@ codegenSplitEmitMaybe
 codegenSplitEmitMaybe = maybe (return []) codegenSplitEmit
 
 -- | Generate emit variables and split operations from a given split scheme.
+-- FIXME: implement split for phases as well
 codegenSplitEmit
   :: ( Has (Error String) sig m
      )
@@ -1650,8 +1658,55 @@ genEmitSt = do
   where
     -- go :: (RBinding, Var) -> m Stmt'
     go ((r, qty), pv) = do
-      nv <- gensymEmitRB $ rbindingOfRange r (Sum.inj qty)
+      nv <- gensymEmitEB $ rbindingOfRange r (Sum.inj qty)
       pure $ SVar (Binding nv (typingQEmit qty)) (Just (EVar pv))
+
+--------------------------------------------------------------------------------
+-- * Phase Related
+--------------------------------------------------------------------------------
+
+codegenPromotionMaybe
+  :: ( Has (Gensym EmitBinding) sig m
+     , Has (State TState) sig m
+     , Has (Error String) sig m
+     )
+  => Maybe PromotionScheme -> m [Stmt']
+codegenPromotionMaybe = (concat <$>) . mapM codegenPromotion . maybeToList
+
+codegenPromotion
+  :: ( Has (Gensym EmitBinding) sig m
+     , Has (State TState) sig m
+     , Has (Error String) sig m
+     )
+  => PromotionScheme -> m [Stmt']
+codegenPromotion
+  PromotionScheme { psPrefs=prefs
+                  , psPromotion=promotion
+                  } =
+  case promotion of
+    Promote'0'1 (i, n) rs qt ->
+      codegenPromote'0'1 qt rs prefs (i, n)
+
+-- | Promote a 0th-degree phase to 1st-degree phase
+codegenPromote'0'1
+  :: ( Has (Gensym EmitBinding) sig m
+     , Has (State TState) sig m
+     , Has (Error String) sig m
+     )
+  => QTy -> [Range] -> [PhaseRef] -> (Exp', Exp') -> m [Stmt']
+codegenPromote'0'1 qt rs prefs (i, n) = do
+  vRs <- forM rs (`findEmitRangeQTy` qt)
+  let eCardVRs = cardV <$> vRs
+      ty = typingPhaseEmitReprN 1
+  return . concat $
+    [ [ vRepr ::=: (EEmit $ EMakeSeq ty eCard i)
+      , vBase ::=: n
+      ]
+    | (pref, eCard) <- zip prefs eCardVRs
+    , let vRepr = prRepr pref
+          vBase = prBase pref
+    ]
+codegenPromote'0'1 _ _ _ _ = internalError
 
 
 --------------------------------------------------------------------------------

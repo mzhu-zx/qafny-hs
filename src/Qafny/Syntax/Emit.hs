@@ -14,6 +14,7 @@ import           Data.Maybe             (maybeToList)
 import           Data.Sum
 import           Data.Text.Lazy         (Text, unpack)
 import qualified Data.Text.Lazy.Builder as TB
+import           Data.Tuple             (swap)
 
 -------------------- Builder --------------------
 
@@ -108,11 +109,11 @@ instance DafnyPrinter AST where
   build = by line
 
 instance DafnyPrinter Ty where
-  build TNat      = build "nat"
-  build TInt      = build "int"
-  build TBool     = build "bool"
-  build (TQReg n) = "qreg" <+> n
-  build (TSeq t)  = "seq<" <!> t <!> ">"
+  build TNat               = build "nat"
+  build TInt               = build "int"
+  build TBool              = build "bool"
+  build (TQReg n)          = "qreg" <+> n
+  build (TSeq t)           = "seq<" <!> t <!> ">"
   build t@(TEmit (TAny s)) = debugOnly t $ build s
 
 instance DafnyPrinter MethodType where
@@ -122,7 +123,7 @@ instance DafnyPrinter MethodType where
 instance DafnyPrinter MethodElem where
   build t = debugOnly t $ buildSub t
     where
-      buildSub (MTyPure x ty) = debugOnly t $ x <+> ":" <+> ty
+      buildSub (MTyPure x ty)   = debugOnly t $ x <+> ":" <+> ty
       buildSub (MTyQuantum x e) = x <!> "[" <!> e <!> "]"
 
 instance DafnyPrinter AExp where
@@ -203,9 +204,9 @@ instance DafnyPrinter (Stmt ()) where
 
       buildEmit :: EmitStmt -> Builder
       buildEmit (SVars bds e) = "var" <+> byComma bds <+> ":=" <+> e
-      buildEmit (vs :*:=: e) = byComma vs <+> ":=" <+> e
+      buildEmit (vs :*:=: e)  = byComma vs <+> ":=" <+> e
       -- buildEmit (SIfDafny e b) = "if " <!> withParen (build e) <!> b
-      buildEmit _              = error "Should have been handled!!"
+      buildEmit _             = error "Should have been handled!!"
 
 instance DafnyPrinter GuardExp where
   build (GEPartition p _) = build p
@@ -221,18 +222,35 @@ instance DafnyPrinter (Exp ()) where
     where beb (Just eb') = " | " <!> eb'
           beb Nothing    = mempty
   build e@EHad = debugOnly e "H"
-  build e@ESpec{} = debugOnly e (show e)
+  build e@(ESpec p qt specs) = debugOnly e $
+    "{" <+> p <+> ":" <+> qt  <+> "↦" <+> byComma (swap <$> specs) <+> "}"
   build e@(EApp v es) = v <!> withParen (byComma es)
   build (ELambda binder v Nothing e) = binder <+> "=>" <+> e
   build e@(ELambda binder v (Just pspec) e') =
     debugOnly e (binder <+> "~" <+> v <+> "=>" <+> pspec <+> "~" <+> e')
   build e = "//" <!> show e <!> build " should not be in emitted form!"
 
+instance DafnyPrinter (SpecExp ()) where
+  build s = debugOnly s $ buildSubterm
+    where
+      buildSubterm = case s of
+        SEWildcard -> build "_"
+        SESpecNor v1 e2 -> "⊗" <+> v1 <+> '.' <+> e2
+        SESpecEN v1 (Intv e1 e2) e3 ->
+          "Σ" <+> v1 <+> "∈" <+> '[' <!> e1 <+> ".." <+> e2 <!> ']' <+> '.' <+>
+          withParen (byComma e3)
+        SESpecEN01 v1 (Intv e1 e2) v2 (Intv e3 e4) e5 ->
+          "Σ" <+> v1 <+> "∈" <+> '[' <!> e1 <+> ".." <+> e2 <!> ']' <+> '.' <+>
+          "⊗" <+> v2 <+> "∈" <+> '[' <!> e3 <+> ".." <+> e4 <!> ']' <+> '.' <+>
+          withParen (byComma e5)
+
+
+
 instance (Show f, DafnyPrinter f) => DafnyPrinter (PhaseExpF f) where
   build p = debugOnly p $ case p of
-    PhaseZ -> build "1"
-    PhaseWildCard -> build "_"
-    PhaseOmega e1 e2 -> "ω" <!> withParen (byComma [e1, e2])
+    PhaseZ                -> build "1"
+    PhaseWildCard         -> build "_"
+    PhaseOmega e1 e2      -> "ω" <!> withParen (byComma [e1, e2])
     PhaseSumOmega i e1 e2 -> "Ω" <+> i <+> "." <+> withParen (byComma [e1, e2])
 
 instance DafnyPrinter EmitExp where
@@ -270,7 +288,7 @@ buildOp2 op b1 b2 =  parenOpt b1 <!> opSign <!> parenOpt b2
         OOr  -> withParen
         OMod -> withParen -- mod is a fragile operator
         _    -> id
-        
+
     opSign :: String
     opSign =
       case op of

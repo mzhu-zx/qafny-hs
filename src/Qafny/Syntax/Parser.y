@@ -188,7 +188,7 @@ pspec :: { PhaseExp }
                                            { PhaseSumOmega (Range $2 $5 $7) $11 $13 }
 
 pbinder :: { PhaseBinder }
-  : {- empty -}                            { PhaseWildCard          }
+  : '_'                                    { PhaseWildCard          }
   | "ω" '(' id ',' id ')'                  { PhaseOmega $3 $5       }
   | "Ω" id "∈" '[' expr ".." expr ']' '.' '(' id ',' id ')'
                                            { PhaseSumOmega (Range $2 $5 $7) $11 $13 }

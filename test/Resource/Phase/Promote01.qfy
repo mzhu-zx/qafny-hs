@@ -1,0 +1,7 @@
+method PromoteZeroPhase(q : qreg[1])
+  requires N >= 2
+  requires { q [0 .. 1] : nor ↦ ⊗ i . 0 }
+  ensures  { q [0 .. 1] : en ↦ ∑ i ∈ [0 .. 1] . ω(1, 4) ~ (0) } 
+{
+  q[0..1] *= λ (_ ~ x => ω(1, 4) ~ x);
+}
