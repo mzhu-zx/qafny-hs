@@ -9,12 +9,14 @@ import           Qafny.Partial (reduce)
 wild :: Var
 wild =  "_"
 
-constExp :: Exp' -> EmitExp
-constExp = ELambda wild
+constExp :: Exp' -> Exp'
+constExp = simpleLambda wild
 
 qComment :: String -> Stmt'
 qComment = SDafny . ("// " ++)
 
+simpleLambda :: Var -> Exp' -> Exp'
+simpleLambda v = ELambda Nothing v Nothing
 
 --------------------------------------------------------------------------------
 -- * Special Constructors

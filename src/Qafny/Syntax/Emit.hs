@@ -198,8 +198,8 @@ instance DafnyPrinter (Stmt ()) where
         e1 <+> "*=" <+> λHuh e2
       buildStmt e = "// undefined builder for Stmt : " <!> show e
 
-      λHuh e@(EEmit (ELambda {})) = "λ" <+> e
-      λHuh e                      = build e
+      λHuh e@(ELambda {}) = "λ" <+> e
+      λHuh e              = build e
 
       buildEmit :: EmitStmt -> Builder
       buildEmit (SVars bds e) = "var" <+> byComma bds <+> ":=" <+> e
@@ -223,10 +223,19 @@ instance DafnyPrinter (Exp ()) where
   build e@EHad = debugOnly e "H"
   build e@ESpec{} = debugOnly e (show e)
   build e@(EApp v es) = v <!> withParen (byComma es)
+  build (ELambda Nothing v Nothing e) = v <+> "=>" <+> e
+  build e@(ELambda (Just vPhase) v (Just pspec) e') =
+    debugOnly e (vPhase <+> "~" <+> v <+> "=>" <+> pspec <+> "~" <+> e')
   build e = "//" <!> show e <!> build " should not be in emitted form!"
 
+instance DafnyPrinter PhaseExp where
+  build p = debugOnly p $ case p of
+    PhaseZ -> build "1"
+    PhaseWildCard -> build "_"
+    PhaseOmega e1 e2 -> "ω" <!> withParen (byComma [e1, e2])
+    PhaseSumOmega i e1 e2 -> "Ω" <+> i <+> "." <+> withParen (byComma [e1, e2])
+
 instance DafnyPrinter EmitExp where
-  build (ELambda v e) = v <!> " => " <!> e
   build (ESelect e1 e2) = e1 <!> "[" <!> e2 <!> "]"
   build (ESlice e1 e2 e3) = e1 <!> "[" <!> e2 <!> ".." <!> e3 <!> "]"
   build EMtSeq = build "[]"

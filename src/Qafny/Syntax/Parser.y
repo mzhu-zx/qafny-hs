@@ -82,6 +82,7 @@ id                    { ( _, L.TId $$     ) }
 ":="                  { ( _, L.TAssign    ) }
 "*="                  { ( _, L.TApply     ) }
 ".."                  { ( _, L.TDots      ) }
+'~'                   { ( _, L.TTilde     ) }
 
 %%
 AST
@@ -182,8 +183,8 @@ qspec ::  { (SpecExp', PhaseExp) }
 -- phase specification
 pspec :: { PhaseExp }
   : {- empty -}                            { PhaseZ                 }
-  | "ω" '(' expr ',' expr ')'              { PhaseOmega $3 $5       }
-  | "Ω" id '.' '(' expr ',' expr ')'       { PhaseSumOmega $2 $5 $7 }
+  | "ω" '(' expr ',' expr ')' '~'          { PhaseOmega $3 $5       }
+  | "Ω" id '.' '(' expr ',' expr ')' '~'   { PhaseSumOmega $2 $5 $7 }
 
 
 tuple(p)
@@ -198,7 +199,9 @@ expr
   | "meas" id                         { EMea $2                }
   | "not" atomic                      { EOp1 ONot $2           }
   | "nor" '(' atomic ',' digits ')'   { EOp2 ONor $3 (ENum $5) }
-  | "λ" '(' id "=>" expr ')'          { EEmit $ ELambda $3 $5  }
+  | "λ" '(' id "=>" expr ')'          { ELambda Nothing $3 Nothing $5 }
+  | "λ" '(' id '~' id "=>" pspec expr ')'   
+                                      { ELambda (Just $3) $5 (Just $7) $8 }
   | id tuple(expr)                    { EApp $1 $2             }
   | "repr" '(' range ')'              { ERepr $3               }
   | logicOrExp                        { $1                     }

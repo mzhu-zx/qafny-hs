@@ -535,7 +535,7 @@ codegenStmt'Apply ((:*=:) s EHad) = do
     opCastHad TNor = return "CastNorHad"
     opCastHad t = throwError $ "type `" ++ show t ++ "` cannot be casted to Had type"
 
-codegenStmt'Apply stmt@(s@(Partition ranges) :*=: eLam@(EEmit (ELambda {}))) = do
+codegenStmt'Apply stmt@(s@(Partition ranges) :*=: eLam@(ELambda {})) = do
   (st'@(STuple (_, _, (qt', _))), corr) <- resolvePartition' s
   qtLambda <- ask
   checkSubtypeQ qt' qtLambda
@@ -584,7 +584,7 @@ codegenStmt'Apply stmt@(s@(Partition ranges) :*=: eLam@(EEmit (ELambda {}))) = d
                   , sliceV v er (cardV v)
                   ]
     bodySplit v el er =  EEmit $ splitMap3 v el er eLam
-    lambdaSplit v el er = EEmit (ELambda v (bodySplit v el er))
+    lambdaSplit v el er = simpleLambda v (bodySplit v el er)
     mkMapCall v = v ::=: callMap eLam (EVar v)
 
 codegenStmt'Apply _ = throwError' "What could possibly go wrong?"
@@ -1313,7 +1313,7 @@ addENHad1 vEmit idx =
   where
     vfresh = "x__lambda"
     eLamPlusPow2 =
-      EEmit . ELambda vfresh $
+      simpleLambda vfresh $
         EOp2 OAdd (EVar vfresh) (EEmit (ECall "Pow2" [idx]))
 
 
@@ -1347,7 +1347,7 @@ codegenMergeScheme = mapM $ \scheme -> do
           vEmitResult <- gensymEmitRangeQTy rResult qtMain
           vBind <- gensym "lambda_x"
           let stmt = vEmitResult ::=: callMap ef (EVar vEmitMain)
-              ef   = EEmit (ELambda vBind (EVar vBind + EVar vEmitMerged))
+              ef   = simpleLambda vBind (EVar vBind + EVar vEmitMerged)
           return (stmt, vEmitMain)
         (TEN, THad) -> do
           let (Range _ lBound rBound) = rMain

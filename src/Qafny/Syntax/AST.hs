@@ -209,6 +209,7 @@ data Exp x
   | EPartition Partition
   | ESpec Partition QTy [(XRec x (SpecExp x), PhaseExp)]
   | ERepr Range
+  | ELambda (Maybe Var) Var (Maybe PhaseExp) (XRec x (Exp x))
   -- ?
   -- | RInd Var Exp -- boolean at var[exp], var must be Q type
   -- | REq Exp Exp Var Exp -- compare exp == exp and store the value in var[exp], var must be Q type
@@ -273,9 +274,8 @@ showExp e = show e
 
 -- | EmitExp : Unsafe Expressions for Codegen Only
 data EmitExp
-  = ELambda Var (Exp ())
-  | EMtSeq
-  | EMakeSeq Ty (Exp ()) EmitExp
+  = EMtSeq
+  | EMakeSeq Ty (Exp ()) Exp'
   | ECard (Exp ())
   | ECall Var [Exp ()]
   | ESelect (Exp ()) (Exp ())
@@ -436,6 +436,7 @@ data ExpF f
   | EPartitionF Partition
   | ESpecF Partition QTy [(XRec () (SpecExp ()), PhaseExp)]
   | EReprF Range
+  | ELambdaF (Maybe Var) Var (Maybe PhaseExp) f
   deriving (Functor, Foldable, Traversable, Show, Generic)
 
 type instance Base (Exp ()) = ExpF

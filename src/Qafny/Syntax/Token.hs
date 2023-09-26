@@ -29,7 +29,7 @@ data Token
   | TUnicodeSumOmega
 
   -- Delimiters
-  | TLPar | TRPar
+  | TLPar | TRPar | TTilde
   | TLAng | TRAng
   | TLBrace | TRBrace
   | TLBracket | TRBracket

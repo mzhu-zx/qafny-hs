@@ -86,6 +86,7 @@ token :-
   @arrow           { emit $  TArrow              }
   @age             { emit $  TGe                 }
   @ale             { emit $  TLe                 }
+  \~               { emit $  TTilde              }
   \*               { emit $  TMul                }
   \+               { emit $  TAdd                }
   \-               { emit $  TSub                }
