@@ -1,0 +1,14 @@
+method TestScalarVariables(n : nat, m : nat)
+  requires n >= 0
+  requires m >= 0
+{
+  // Pass
+}
+
+method TestScalarVariablesFail(n : nat, m : nat)
+  requires n >= 0
+  requires m >= 0
+  requires q <= 0
+{
+  // Fail
+}

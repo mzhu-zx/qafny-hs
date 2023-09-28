@@ -9,6 +9,7 @@ module Qafny.Syntax.Emit where
 import           Qafny.Syntax.AST
 
 import           Control.Arrow          (Arrow (first))
+import qualified Data.Map.Strict  as Map
 import           Control.Monad.Reader
 import           Data.Maybe             (maybeToList)
 import           Data.Sum
@@ -225,7 +226,7 @@ instance DafnyPrinter (Exp ()) where
   build e@(ESpec p qt specs) = debugOnly e $
     "{" <+> p <+> ":" <+> qt  <+> "↦" <+> byComma (swap <$> specs) <+> "}"
   build e@(EApp v es) = v <!> withParen (byComma es)
-  build (ELambda binder v Nothing e) = binder <+> "=>" <+> e
+  build (ELambda PhaseWildCard v Nothing e) = v <+> "=>" <+> e
   build e@(ELambda binder v (Just pspec) e') =
     debugOnly e (binder <+> "~" <+> v <+> "=>" <+> pspec <+> "~" <+> e')
   build e = "//" <!> show e <!> build " should not be in emitted form!"
@@ -273,6 +274,18 @@ instance DafnyPrinter Partition where
 
 instance (Show a, Show b, DafnyPrinter a, DafnyPrinter b) => DafnyPrinter (a, b) where
   build t@(a, b) = debugOnly t $ withParen . byComma $ [build a, build b]
+
+
+instance (Show k, Show v, DafnyPrinter k, DafnyPrinter v) => DafnyPrinter (Map.Map k v) where
+  build m' = debugOnly m $
+    byLineT ((indent <>) . row <$> m)
+    where
+      m = Map.toList m'
+      row (a, b) = a <+> "↦" <+> b
+
+instance DafnyPrinter MTy where
+  build (MTy (Inl t)) = build t
+  build (MTy (Inr m)) = byComma (mtSrcParams m) <+> "↪" <+> byComma (mtSrcReturns m)
 
 
 -- | Warning: don't emit parentheses in `buildOp2` because `EOpChained` relies

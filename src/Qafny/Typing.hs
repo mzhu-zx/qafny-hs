@@ -36,18 +36,26 @@ import           Qafny.Syntax.AST
 import           Qafny.TypeUtils
 import           Qafny.Utils
     ( checkListCorr
+    , dumpSt
     , exp2AExp
+    , findEmitLocDegree
+    , findEmitRangeDegree
     , findEmitRangeQTy
     , findEmitVarsFromPartition
+    , gensymEmitLocDegree
     , gensymEmitRB
+    , gensymEmitRangeDegree
+    , gensymEmitRangePTyRepr
     , gensymEmitRangeQTy
     , gensymLoc
     , gensymRangeQTy
+    , internalError
+    , onlyOne
     , projEmitBindingRangeQTy
     , removeEmitPartitionQTys
     , removeEmitRangeQTys
     , rethrowMaybe
-    , uncurry3, gensymEmitRangePTyRepr, findEmitRangeDegree, gensymEmitLocDegree, onlyOne, gensymEmitRangeDegree, findEmitLocDegree, internalError
+    , uncurry3
     )
 
 -- Utils
@@ -92,6 +100,8 @@ import           Data.Sum                   (projLeft)
 import           Data.Text                  (unpack)
 import           GHC.Stack                  (HasCallStack)
 import           Qafny.Partial              (Reducible (reduce))
+import           Qafny.Syntax.ASTFactory    (cardV)
+import           Qafny.Syntax.ASTUtils      (getPhaseRef)
 import           Qafny.Syntax.Emit
     ( DafnyPrinter (build)
     , byComma
@@ -100,7 +110,6 @@ import           Qafny.Syntax.Emit
     , showEmitI
     )
 import           Text.Printf                (printf)
-import Qafny.Syntax.ASTFactory (cardV)
 
 
 throwError'
@@ -110,8 +119,7 @@ throwError' = throwError @String . ("[Typing] " ++)
 
 -- | Compute the simple type of the given expression
 typingExp
-  :: ( Has (State TState) sig m
-     , Has (Reader TEnv) sig m
+  :: ( Has (Reader TEnv) sig m
      , Has (Error String) sig m
      , HasCallStack
      )
@@ -708,41 +716,45 @@ castScheme st qtNow = do
 
 
 data PromotionScheme = PromotionScheme
-  { psPrefs :: [PhaseRef]
-  , psDgrPrev :: Int
-  , psDgrCurr :: Int
+  { psPrefs     :: [PhaseRef]
+  , psDgrPrev   :: Int
+  , psDgrCurr   :: Int
   , psPromotion :: Promotion
   }
 
 data Promotion
   = Promote'0'1 (Exp', Exp') [Range] QTy
 
--- | Promote phases to another level   
+-- | Promote phases to another level
 promotionScheme
   :: ( Has (Gensym EmitBinding) sig m
      , Has (State TState) sig m
      , Has (Error String) sig m
+     , Has Trace sig m
      )
   => STuple -> PhaseBinder -> PhaseExp -> m (Maybe PromotionScheme)
-promotionScheme st@(STuple (_, Partition rs, (qt, _))) pb pe = do
+promotionScheme st@(STuple (loc, Partition rs, (qt, ptysSt))) pb pe = do
   let dgrBind = analyzePhaseSpecDegree pb
       dgrSpec = analyzePhaseSpecDegree pe
   case (dgrBind, dgrSpec) of
     (db, ds) | db == ds -> return Nothing
-    (0, 1) -> promote'0'1 pe
-    (1, 2) -> promote'1'2
-    (db, ds) | db > ds -> errDemotion db ds
-    (db, ds) -> errUnimplementedPrompt db ds
+    (0, 1)              -> promote'0'1 pe
+    (1, 2)              -> promote'1'2
+    (db, ds) | db > ds  -> errDemotion db ds
+    (db, ds)            -> errUnimplementedPrompt db ds
   where
     -- Promote 0 to 1
     promote'0'1
       :: ( Has (Gensym EmitBinding) sig m'
          , Has (State TState) sig m'
          , Has (Error String) sig m'
+         , Has Trace sig m'
          )
       => PhaseExp -> m' (Maybe PromotionScheme)
     promote'0'1 (PhaseOmega i n) = do
-      ptys <- allocPhaseType st
+      let fstSt = modifyPty (1 <$) st
+      ptys <- allocAndUpdatePhaseType fstSt
+      dumpSt "After promotion"
       let prefs = getPhaseRef <$> ptys
       return . Just $ PromotionScheme
         { psPrefs = prefs
@@ -1094,8 +1106,13 @@ resolveMethodApplicationRets envArgs
 --------------------------------------------------------------------------------
 -- | Constraints
 --------------------------------------------------------------------------------
+
+-- | Collect constraints from specification expressions. Return collected
+-- variables as well as interval information associated with.
 collectConstraints
-  :: ( Has (Error String) sig m )
+  :: ( Has (Error String) sig m
+     , Has (Reader TEnv) sig m
+     )
   => [Exp'] -> m (Map.Map Var (Interval Exp'))
 collectConstraints es = (Map.mapMaybe glb1 <$>) . execState Map.empty $
   forM normalizedEs collectIntv
@@ -1107,8 +1124,11 @@ collectConstraints es = (Map.mapMaybe glb1 <$>) . execState Map.empty $
             OGt -> pure $ Interval (e2 + 1) maxE
             OGe -> pure $ Interval e2 maxE
             _   -> failUninterp e
+      ty <- typingExp (EVar v1)
+      when (ty /= TNat) $ throwError' (errNotScalar v1 ty)
       modify $ Map.insertWith (++) v1 [intv]
 
+    errNotScalar v ty = printf "%s : %s is not a scalar variable."  v (show ty)
     -- pick 100 here to avoid overflow in computation
     maxE = fromInteger $ toInteger (maxBound @Int - 100)
 
@@ -1177,7 +1197,7 @@ analyzePhaseSpecDegree PhaseSumOmega{} = 2
 --     construct PhaseWildCard = f (PhaseWildCard')
 --     construct (PhaseOmega a b) = f (PhaseOmega' a b)
 --     construct (PhaseSumOmega r a b) = f (PhaseSumOmega' r a b)
-    
+
 
 
 -- | Generate variables and phase types based on a phase specification.
@@ -1192,7 +1212,7 @@ analyzePhaseSpecDegree PhaseSumOmega{} = 2
 --   return (PTN n $ PhaseRef { prBase = vEmitBase, prRepr = vEmitRepr })
 
 -- | Generate a new phase type based on the STuple.
---  
+--
 allocPhaseType
   :: ( Has (Gensym EmitBinding) sig m
      , Has (State TState) sig m
@@ -1214,7 +1234,7 @@ updateTState
 updateTState s@(STuple (loc, p, (qt, dgrs))) =
   sSt %= (at loc ?~ (p, (qt, dgrs)))
 
-  
+
 allocAndUpdatePhaseType
   :: ( Has (Gensym EmitBinding) sig m
      , Has (State TState) sig m
@@ -1242,7 +1262,7 @@ generatePhaseTypeThen fLoc fOthers (STuple (loc, Partition rs, (qt, dgrs))) =
      | otherwise -> do
          checkListCorr dgrs rs
          ptys <- forM (zip rs dgrs) (uncurry gensymEmitRangeDegree)
-         (ptys,) <$> fOthers ptys 
+         (ptys,) <$> fOthers ptys
 
 
 -- | Query in the emit state the phase types of the given STuple
@@ -1250,7 +1270,7 @@ queryPhaseType
   :: ( Has (State TState) sig m
      , Has (Error String) sig m
      )
-  => STuple -> m [PhaseTy] 
+  => STuple -> m [PhaseTy]
 queryPhaseType (STuple (loc, Partition rs, (qt, dgrs))) =
   if | isEN qt -> do
          dgr <- onlyOne throwError' dgrs

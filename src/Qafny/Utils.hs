@@ -26,13 +26,13 @@ import           Text.Printf           (printf)
 import           Effect.Gensym         (Gensym, gensym)
 
 --
-import           Data.Maybe            (catMaybes, mapMaybe)
+import           Data.Maybe            (mapMaybe)
 import           Qafny.Env             (TEnv, TState, emitSt, kEnv, sSt)
 import           Qafny.Error           (QError (UnknownVariableError))
 import           Qafny.Partial         (Reducible (reduce))
 import           Qafny.Syntax.AST
 import           Qafny.Syntax.Emit     (showEmitI)
-import           Qafny.TypeUtils       (typingPhaseEmit, typingQEmit)
+import           Qafny.TypeUtils       (typingQEmit)
 import           Qafny.Variable        (Variable (variable))
 
 
@@ -57,7 +57,7 @@ onlyOne
 onlyOne throw v =
   case v of
     [v'] -> return v'
-    _   -> throw $ printf "Expecting only one element, but given: %s!" (show v)
+    _    -> throw $ printf "Expecting only one element, but given: %s!" (show v)
 
 
 throwError''
@@ -216,7 +216,7 @@ findEmitRangeDegree r i = do
   case (,) <$>  vReprM <*> vBaseM of
     Just (vRepr', vBase') -> return . PTN i $
       PhaseRef { prRepr=vRepr', prBase=vBase' }
-    Nothing -> throwError @String $ 
+    Nothing -> throwError @String $
       printf "the phase binding of %s : %d cannot be found in the renaming state.\n%s"
       (show r) i (show st)
 
@@ -235,7 +235,7 @@ findEmitLocDegree l i = do
   case (,) <$>  vReprM <*> vBaseM of
     Just (vRepr', vBase') -> return . PTN i $
       PhaseRef { prRepr=vRepr', prBase=vBase' }
-    Nothing -> throwError @String $ 
+    Nothing -> throwError @String $
       printf "the phase binding of %s : %d cannot be found in the renaming state.\n%s"
       (show l) i (show st)
 
@@ -344,7 +344,7 @@ getMethodType v = do
 
 projEmitBindingRangeQTy :: EmitBinding -> Maybe (Range, QTy)
 projEmitBindingRangeQTy (RBinding (r, Inl qty)) = Just (r, qty)
-projEmitBindingRangeQTy _                       = Nothing 
+projEmitBindingRangeQTy _                       = Nothing
 
 collectRQTyBindings ::[(EmitBinding, Var)] -> [((Range, QTy), Var)]
 collectRQTyBindings = mapMaybe (\(e, v) -> projEmitBindingRangeQTy e <&> (, v))

@@ -1,0 +1,8 @@
+// Test if phases in `requires` and `ensures` are correctly extracted.
+
+method Intros1(q : qreg[1], N : nat)
+  requires N >= 2
+  requires { q [0 .. 1] : en ↦ ∑ i ∈ [0 .. 1] . ω(1, 4) ~ (0) } 
+{
+  // Do Nothing Here
+}

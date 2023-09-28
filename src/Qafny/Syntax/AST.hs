@@ -31,14 +31,12 @@ import           Data.Functor.Foldable
     , Corecursive (embed)
     , Recursive (cata, project)
     )
-import           Data.Functor.Foldable.TH (makeBaseFunctor)
 import           Data.Kind                (Type)
 import           Data.List.NonEmpty       (NonEmpty (..))
 import qualified Data.Map.Strict          as Map
 import           Data.Maybe               (fromMaybe)
 import           Data.Sum
 import           GHC.Generics             hiding ((:+:))
-import           GHC.Natural              (Natural)
 import           Text.Printf              (printf)
 --------------------------------------------------------------------------------
 
@@ -75,10 +73,6 @@ data PhaseTy
 
 phaseTyN :: Int -> Var -> Var -> PhaseTy
 phaseTyN n vBase vRepr = PTN n $ PhaseRef { prBase=vBase, prRepr=vRepr }
-
-getPhaseRef :: PhaseTy -> PhaseRef
-getPhaseRef (PTN _ r) = r
-getPhaseRef _ = undefined
 
 data Ty
   = TNat
@@ -167,9 +161,9 @@ data EmitBinding
   deriving (Eq, Ord)
 
 instance Show EmitBinding where
-  show (RBinding t) = show t
-  show (BBinding t) = show t
-  show (LBinding t) = show t
+  show (RBinding t) = "R" ++ show t
+  show (BBinding t) = "B" ++ show t
+  show (LBinding t) = "L" ++ show t
 
 
 data Op2

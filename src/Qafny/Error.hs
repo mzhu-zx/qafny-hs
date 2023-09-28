@@ -4,6 +4,7 @@ import qualified Data.Map.Strict  as Map
 
 import           Qafny.Syntax.AST (Loc, Partition, Range, MTy, Var)
 import           Text.Printf      (printf)
+import Qafny.Syntax.Emit (showEmitI)
 
 data QError = UnknownVariableError Var (Map.Map Var MTy)
             | UnknownPartitionError Partition
@@ -12,7 +13,7 @@ data QError = UnknownVariableError Var (Map.Map Var MTy)
 
 instance Show QError where
   show (UnknownVariableError v env) =
-    printf "Variable [%s] is not in the scope!\n%s" v (show env)
+    printf "Variable [%s] is not in the scope!\n\nCurrent environment:\n%s" v (showEmitI 4 env)
   show (UnknownPartitionError s) =
     printf "Partition [%s] is not in the scope!" (show s)
   show (UnknownRangeError r) =

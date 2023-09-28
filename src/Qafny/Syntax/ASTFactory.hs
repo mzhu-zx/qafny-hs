@@ -1,7 +1,7 @@
 module Qafny.Syntax.ASTFactory where
 
+import           Qafny.Partial    (reduce)
 import           Qafny.Syntax.AST
-import           Qafny.Partial (reduce)
 
 --------------------------------------------------------------------------------
 -- | AST Constants
@@ -67,3 +67,8 @@ cardV = EEmit . ECard . EVar
 mkAssignment ::  Var -> Var -> Stmt'
 mkAssignment v1 v2 = v1 ::=: EVar v2
 
+
+-- Erase phase arguments in a lambda term
+lambdaUnphase :: Exp' -> Exp'
+lambdaUnphase (ELambda _ v _ e) = ELambda PhaseWildCard v Nothing e
+lambdaUnphase _                 = error "Internal"

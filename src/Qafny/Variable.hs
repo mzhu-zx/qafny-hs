@@ -68,6 +68,7 @@ instance (Variable a, Variable b) => Variable (a :+: b) where
 
 instance Variable EmitBinding where
   variable (RBinding r) = variable r
+  variable (BBinding b) = variable b
   variable (LBinding v) = variable v
 
 instance Variable Loc where
