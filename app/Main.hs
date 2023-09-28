@@ -1,17 +1,22 @@
 module Main (main) where
 
 import           Qafny.Config
-import           Qafny.Runner        (Production (..), produceCodegen)
+import           Qafny.Runner
+    ( Production (..)
+    , collectErrors
+    , produceCodegen
+    )
 import           Qafny.Syntax.Emit   (texify)
 import           Qafny.Syntax.Parser (scanAndParse)
 
 import qualified Data.Text.Lazy      as Txt
 import qualified Data.Text.Lazy.IO   as Txt.IO
 
+import           Control.Monad       (forM_)
+import           Qafny.FileUtils     (countDepth)
 import           System.Environment  (getArgs)
 import           System.Exit         (exitFailure)
 import           Text.Printf         (printf)
-import Qafny.FileUtils (countDepth)
 
 
 parseArg :: IO (String, Int)
@@ -43,10 +48,10 @@ main =
       putStrLn $ "\ESC[32mSuccess: target is emited as `" ++ tgtFile ++ "` \ESC[0m"
       where
         writeOrReportP :: Production Txt.Text -> IO ()
-        writeOrReportP (Production {pResult=res, pState=st})  = do
+        writeOrReportP prod@(Production {pResult=res, pState=st, pDetail=details})  = do
           wrapUp <- case res of
-            Left err -> do
-              putStrLn $ "\ESC[31m[Error]\ESC[93m " ++ err ++ "\ESC[0m"
+            Left _ -> do
+              forM_ (collectErrors prod) (pError . formatMethodError)
               return exitFailure
             Right txt -> do
               putStrLn "Pipeline Finished!\n"
@@ -55,6 +60,10 @@ main =
           putStrLn $ "Statistics from Codegen:\n" ++
             concatMap showEachSt st
           wrapUp
+
+        formatMethodError (m, e) = printf "(\ESC[3m%s\ESC[0m\ESC[93m): %s" m e
+        pError err = putStrLn $ "\ESC[31m[Error]\ESC[93m " ++ err ++ "\ESC[0m"
+
         showEachSt (v, st) =
           printf "\nThe final state of the method `%s`:\n%s\n" v (show st)
         srcFile = "./test/Resource/" ++ prog ++ ".qfy"

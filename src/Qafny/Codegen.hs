@@ -65,7 +65,7 @@ import           Data.List                    (find)
 import           Data.Maybe
     ( catMaybes
     , listToMaybe
-    , maybeToList
+    , maybeToList, mapMaybe
     )
 import           Qafny.Config
 import           Qafny.Env
@@ -196,18 +196,20 @@ codegenAST
      , Has Trace sig m
      )
   => AST
-  -> m ([(Var, TState)], Either String AST)
+  -> m ([((Var, TState), Either String Toplevel')], Either String AST)
 codegenAST ast = do
   Configs { stdlibPath=libPath, depth=depth' } <- ask
   let path = concat (replicate depth' "../") ++ libPath
   let prelude = (mkIncludes path <$> includes) ++ imports
   let methodMap = collectMethodTypes ast
   stTops <- local (kEnv %~ Map.union (Sum.inj <$> methodMap)) $ mapM codegenToplevel ast
-  let (states, mainMayFail) = unzip stTops
+  let methodOutcomes = mapMaybe methodOnly stTops
+  let (_, mainMayFail) = unzip stTops
   let main :: Either String AST = sequence mainMayFail
   let astGened = (injQDafny prelude ++) <$> main <&> (++ injQDafny finale)
-  return (catMaybes states, astGened)
+  return (methodOutcomes, astGened)
   where
+    methodOnly (qOrM, a) = qOrM <&> (, a)
 
     injQDafny = (Sum.inj <$>)
     mkIncludes path s =
