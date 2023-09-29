@@ -84,7 +84,7 @@ import           Qafny.Syntax.Emit
 import           Qafny.TypeUtils
     ( isEN
     , typingPhaseEmitReprN
-    , typingQEmit
+    , typingQEmit, bindingsFromPtys
     )
 import           Qafny.Typing
     ( Promotion (..)
@@ -289,9 +289,9 @@ codegenToplevel'Method q@(QMethod v bds rts rqs ens (Just block)) = runWithCallS
 
   let (rqsCG, params, stmtsMatchParams) = appetizer
   let blockCG = mainCourse
-
+  dumpSt "Main Course"
   (stmtsMatchEnsures, returns) <- GEmit.evalGensymEmitWith @EmitBinding countEmit $
-    codegenMethodReturns mty
+    runReader iEnv . codegenMethodReturns $ mty
 
   ensCG <- codegenEnsures ens
 
@@ -317,6 +317,7 @@ codegenToplevel'Method q@(QMethod v bds rts rqs ens (Just block)) = runWithCallS
       (es, ptys) <- codegenRequires rqs
       methodBindings <- codegenMethodParams mty ptys
       stmtsCopy <- genEmitSt
+      dumpSt "genEmitSt"
       return (es, methodBindings, stmtsCopy)
 
     codegenMethodBody iEnv =
@@ -1427,17 +1428,12 @@ codegenMethodParams
   let pureVars = collectPureBindings srcParams
       qVars = [ (v, Range v 0 card) | MTyQuantum v card <- srcParams ]
       inst = instantiator $ Map.fromList qVars
-      pVars = concat
-        [ [Binding vRepr ty, Binding vBase TNat]
-        | (n, PhaseRef {prRepr=vRepr, prBase=vBase}) <- getPhaseRefN ptysResolved
-        , let ty = typingPhaseEmitReprN n
-        ]
-
+      pVars = bindingsFromPtys ptysResolved
   trace $ "QVARS: " ++ show qVars
   trace $ "INSTANCE: " ++ show inst
   trace $ "PVars" ++ show pVars
   vqEmits <- (concat <$>) . forM inst $ uncurry findEmitBindingsFromPartition . fst2
-  let
+  dumpSt "MethodParams"
   pure $ pureVars ++ vqEmits ++ pVars
 
 
@@ -1467,6 +1463,8 @@ codegenMethodReturns
   :: ( Has (State TState) sig m
      , Has (Gensym EmitBinding) sig m
      , Has (Error String) sig m
+     , Has (Reader IEnv) sig m
+     , Has Trace sig m
      )
   => MethodType -> m ([Stmt'], [Binding'])
 codegenMethodReturns MethodType{ mtSrcReturns=srcReturns
@@ -1475,12 +1473,16 @@ codegenMethodReturns MethodType{ mtSrcReturns=srcReturns
   let pureBds = collectPureBindings srcReturns
       qVars = [ (v, Range v 0 card) | MTyQuantum v card <- srcReturns ]
       inst = receiver $ Map.fromList qVars
+  sts <- forM (fst2 <$> inst) (uncurry typingPartitionQTy)
+  trace (show sts)
+  ptys <- forM sts queryPhaseType
+  let pVars = bindingsFromPtys $ concat ptys
   (stmtsAssign, bdsRet) <- (unzip . concat <$>) . forM inst $ uncurry3 genAndPairReturnRanges
-  return (stmtsAssign, pureBds ++ bdsRet)
+  return (stmtsAssign, pureBds ++ bdsRet ++ pVars)
   where
     -- genAndPairReturnRanges
     --   :: Partition -> QTy -> m [(Stmt', Binding')]
-    genAndPairReturnRanges p qt _ = do
+    genAndPairReturnRanges p qt dgrs = do
       prevBindings <- findEmitBindingsFromPartition p qt
       let prevVars = [ v | Binding v _ <- prevBindings ]
       removeEmitPartitionQTys p qt
@@ -1682,6 +1684,7 @@ genEmitSt
      )
   => m [Stmt']
 genEmitSt = do
+  FIXME HERE 
   eSt <- use emitSt
   emitSt %= const Map.empty
   forM (collectRQTyBindings (Map.toList eSt)) go

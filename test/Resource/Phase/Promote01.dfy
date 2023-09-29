@@ -11,12 +11,13 @@ import opened Power2
 import opened Power
 import opened DivMod
 
-method PromoteZeroPhase (q_seq'nat'_0__emit : seq<nat>) returns (q_seq'nat'_5__emit : seq<nat>)
+method PromoteZeroPhase (N : nat, q_seq'nat'_0__emit : seq<nat>) returns (q_seq'nat'_5__emit : seq<nat>)
   requires N >= 2
   requires 1 == |q_seq'nat'_0__emit|
   requires (forall i : nat | 0 <= i < 1 :: q_seq'nat'_0__emit[i] == 0)
   ensures 4 == loc__loc__requires_0_1_4__emit
-  ensures (forall i : nat | 0 <= i < 1 :: 1 == loc__loc__requires_0_1_3__emit)
+  ensures 1 == |loc__loc__requires_0_1_3__emit|
+  ensures (forall i : nat | 0 <= i < 1 :: 1 == loc__loc__requires_0_1_3__emit[i])
   ensures 1 == |q_seq'nat'_5__emit|
   ensures (forall i : nat | 0 <= i < 1 :: q_seq'nat'_5__emit[i] == 0)
 {

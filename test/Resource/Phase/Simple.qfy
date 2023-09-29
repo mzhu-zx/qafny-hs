@@ -1,4 +1,4 @@
-method PromoteZeroPhase(q : qreg[1])
+method PromoteZeroPhase(q : qreg[1], N : nat)
   requires N >= 2
   requires { q [0 .. 1] : nor ↦ ⊗ i . 0 }
   ensures  { q [0 .. 1] : en ↦ ∑ i ∈ [0 .. 1] . ω(1, 4) ~ (0) } 
@@ -6,7 +6,7 @@ method PromoteZeroPhase(q : qreg[1])
   q[0..1] *= λ (_ ~ x => ω(1, 4) ~ x);
 }
 
-method ProgressFirstPhase(q : qreg[1])
+method ProgressFirstPhase(q : qreg[1], N : nat)
   requires N >= 2
   requires { q [0 .. 1] : en ↦ ∑ i ∈ [0 .. 1] . ω(1, 4) ~ (1) }
   ensures  { q [0 .. 1] : en ↦ ∑ i ∈ [0 .. 1] . ω(2, 4) ~ (1) } 
@@ -14,7 +14,7 @@ method ProgressFirstPhase(q : qreg[1])
   q[0..1] *= λ (ω(i, N) ~ x => ω(i + 1, N) ~ x);
 }
 
-method ProgressFirstPhaseFail(q : qreg[1])
+method ProgressFirstPhaseFail(q : qreg[1], N : nat)
   requires N >= 2
   requires { q [0 .. 1] : en ↦ ∑ i ∈ [0 .. 1] . ω(1, 4) ~ (1) }
   ensures  { q [0 .. 1] : en ↦ ∑ i ∈ [0 .. 1] . ω(2, 4) ~ (1) } 
@@ -25,7 +25,7 @@ method ProgressFirstPhaseFail(q : qreg[1])
   q[0..1] *= λ (_ ~ x => ω(i + 1, N) ~ x);
 }
 
-method PromoteFirstPhase(q : qreg[1])
+method PromoteFirstPhase(q : qreg[1], N : nat)
   requires N >= 2
   requires { q [0 .. 1] : en ↦ ∑ i ∈ [0 .. 1] . ω(1, 4) ~ (1) }
   ensures  { q [0 .. 1] : en ↦ ∑ i ∈ [0 .. 1] . Ω j ∈ [0 .. 1] . (j + 2, 4) ~ (1) } 
@@ -33,7 +33,7 @@ method PromoteFirstPhase(q : qreg[1])
   q[0..1] *= λ (ω(i, N) ~ x => Ω j ∈ [0 .. 1] . (j + i + 1, N) ~ x);
 }
 
-method ProgressSecondPhase(q : qreg[1])
+method ProgressSecondPhase(q : qreg[1], N : nat)
   requires N >= 2
   requires { q [0 .. 1] : en ↦ ∑ i ∈ [0 .. 1] . Ω j ∈ [0 .. 1] . (j + 2, 4) ~ (1) }
   ensures  { q [0 .. 1] : en ↦ ∑ i ∈ [0 .. 1] . Ω j ∈ [0 .. 1] . (j + 3, 4) ~ (1) } 

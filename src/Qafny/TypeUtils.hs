@@ -5,10 +5,17 @@ module Qafny.TypeUtils where
 
 -- | Pure utility functions related to types
 
-import           Control.Lens       (over)
+import           Control.Lens          (over)
 import           Control.Lens.Tuple
-import           Qafny.Env          (STuple (..))
-import           Qafny.Syntax.AST   (PhaseTy (..), QTy (..), Ty (..))
+import           Qafny.Env             (STuple (..))
+import           Qafny.Syntax.AST
+    ( Binding (..)
+    , PhaseRef (..)
+    , PhaseTy (..)
+    , QTy (..)
+    , Ty (..)
+    )
+import           Qafny.Syntax.ASTUtils (getPhaseRefN)
 
 
 
@@ -42,3 +49,10 @@ isEN _     = False
 -- | STuple
 modifyPty :: ([Int] -> [Int]) -> STuple -> STuple
 modifyPty f (STuple st) = STuple $ over (_3. _2) f st
+
+bindingsFromPtys :: [PhaseTy] -> [Binding ()]
+bindingsFromPtys ptys = concat
+  [ [Binding vRepr ty, Binding vBase TNat]
+  | (n, PhaseRef {prRepr=vRepr, prBase=vBase}) <- getPhaseRefN ptys
+  , let ty = typingPhaseEmitReprN n
+  ]
