@@ -1,0 +1,11 @@
+// Tests for 1st-Degree Phase Oracles 
+
+method AddQuarter(q : qreg[1], N : nat)
+  requires N >= 2
+  requires { q [0 .. 1] : en ↦ ∑ i ∈ [0 .. 1] . ω(1, 4) ~ (0) } 
+  ensures  { q [0 .. 1] : en ↦ ∑ i ∈ [0 .. 1] . ω(2, 4) ~ (0) } 
+{
+  assert  { q [0 .. 1] : en ↦ ∑ i ∈ [0 .. 1] . ω(1, 4) ~ (0) } ;
+
+  q[0..1] *= λ (ω(i, N) ~ x => ω(i + 1, N) ~ x);
+}

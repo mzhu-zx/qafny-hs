@@ -330,6 +330,7 @@ codegenToplevel'Method q@(QMethod v bds rts rqs ens (Just block)) = runWithCallS
       runReader TEN .  -- | resolve λ to EN on default
       runReader True .
       -- ((,) <$> genEmitSt <*>) .
+      ((dumpSt "begin block") >>) .
       codegenBlock
 
     -- | Compile the foward declaration of all variables produced in compiling
@@ -571,10 +572,12 @@ codegenStmt'Apply stmt@(s@(Partition ranges) :*=: eLam@(ELambda pbinder _ pexpMa
   -- resolve again for consistency
   (stS', corr') <- resolvePartition' s
 
+  -- handle promotions in phases
   stmtsPhase <- case pexpMaybe of
     Just pexp -> promotionScheme stS' pbinder pexp >>= codegenPromotionMaybe
     Nothing   -> pure []
 
+  -- resolve againnnnn for consistency
   (stS', corr') <- resolvePartition' s
 
 

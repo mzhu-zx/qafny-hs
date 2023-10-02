@@ -30,7 +30,7 @@ import           Qafny.Typing             (Promotion (..), PromotionScheme (..))
 import           Qafny.Utils              (findEmitRangeQTy, internalError)
 
 
--- | Code Generation through Fused Effects
+-- | Phase-Related Code Generation
 
 
 throwError'
@@ -43,7 +43,7 @@ first3 :: (a -> d) -> (a, b, c) -> (d, b, c)
 first3 f (a, b, c) = (f a, b, c)
 
 --------------------------------------------------------------------------------
--- * Phase Related
+-- * Generating Phase Promotion
 --------------------------------------------------------------------------------
 
 codegenPromotionMaybe
@@ -88,3 +88,8 @@ codegenPromote'0'1 qt rs prefs (i, n) = do
     , let vRepr = prRepr pref
           vBase = prBase pref
     ]
+
+--------------------------------------------------------------------------------
+-- * Generating PhaseLambda
+--------------------------------------------------------------------------------
+
