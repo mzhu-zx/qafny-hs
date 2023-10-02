@@ -1,15 +1,16 @@
 {-# LANGUAGE
     FlexibleInstances
-  , TypeSynonymInstances
   , TypeOperators
+  , TypeSynonymInstances
   #-}
 
 module Qafny.Variable where
 
 import           Data.Sum
 import           Qafny.Syntax.AST
+import           Qafny.Syntax.EmitBinding
+import           Qafny.TypeUtils  (typingQEmit)
 import           Text.Printf      (printf)
-import Qafny.TypeUtils (typingQEmit)
 
 class Variable s where
   variable :: s -> String
@@ -39,7 +40,7 @@ instance Variable Op2 where
 instance Variable (Exp ()) where
   variable (ENum n) = variable n
   variable (EVar v) = variable v
-  -- TODO: I need a way to specify compact vs full spec 
+  -- TODO: I need a way to specify compact vs full spec
   variable (EOp2 op e1 e2) =
     if True
     then "compact"
@@ -56,7 +57,7 @@ instance Variable (Binding ()) where
   variable (Binding s t) = variable (s, t)
 
 instance Variable PhaseTy where
-  variable PT0 = "phase_0_"
+  variable PT0       = "phase_0_"
   variable (PTN n _) = printf "phase_%d_" n
 
 instance Variable QTy where

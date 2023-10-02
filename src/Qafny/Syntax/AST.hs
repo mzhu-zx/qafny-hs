@@ -154,17 +154,6 @@ type Bindings x = [XRec x (Binding x)]
 
 -- type EBinds = QTy :+: PhaseTy :+: Ty
 
-data EmitBinding
-  = RBinding (Range, QTy :+: Int) -- range-based bindings
-  | BBinding (Range :+: Loc, Int) -- phase binding of bases
-  | LBinding (Loc, Int)           -- loc-based bindings
-  deriving (Eq, Ord)
-
-instance Show EmitBinding where
-  show (RBinding t) = "R" ++ show t
-  show (BBinding t) = "B" ++ show t
-  show (LBinding t) = "L" ++ show t
-
 
 data Op2
   = OAnd
@@ -516,19 +505,6 @@ instance (Substitutable a) => Substitutable [a] where
 instance (Substitutable a, Substitutable b) => Substitutable (a, b) where
   subst a = bimap (subst a) (subst a)
   fVars = uncurry (++) . bimap fVars fVars
-
-instance Substitutable EmitBinding where
-  subst a (RBinding (r, t))     = RBinding (subst a r, t)
-  subst a (BBinding (Inl r, t)) = BBinding (inj (subst a r), t)
-  subst a b                     = b
-
-  fVars (RBinding (r, _))     = fVars r
-  fVars (BBinding (Inl r, _)) = fVars r
-  fVars _                     = []
-
-instance Substitutable (Map.Map EmitBinding Var) where
-  subst = substMapKeys
-  fVars = fVarMapKeys
 
 substMapKeys :: (Ord k, Substitutable k) => AEnv -> Map.Map k v -> Map.Map k v
 substMapKeys a = Map.mapKeys (subst a)

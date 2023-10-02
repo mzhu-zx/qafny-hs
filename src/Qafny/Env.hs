@@ -13,6 +13,8 @@ import           Data.List        (intercalate)
 import qualified Data.Map.Strict  as Map
 import           Qafny.Partial
 import           Qafny.Syntax.AST
+import           Qafny.Syntax.EmitBinding
+
 import           Text.Printf      (printf)
 
 --------------------------------------------------------------------------------

@@ -6,7 +6,7 @@ import           Data.Maybe                      (catMaybes)
 import           Qafny.Codegen                   (codegenAST)
 import           Qafny.Config                    (Configs)
 import           Qafny.Env
-import           Qafny.Syntax.AST                (AST, QMethod, Toplevel', Var)
+import           Qafny.Syntax.AST                (AST, Toplevel', Var)
 import           Qafny.Syntax.Parser             (scanAndParse)
 
 --------------------------------------------------------------------------------

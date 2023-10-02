@@ -33,6 +33,7 @@ import           Qafny.Env
 import           Qafny.Error                (QError (..))
 import           Qafny.Interval
 import           Qafny.Syntax.AST
+import           Qafny.Syntax.EmitBinding
 import           Qafny.TypeUtils
 import           Qafny.Utils
     ( checkListCorr
@@ -1245,24 +1246,24 @@ allocAndUpdatePhaseType s = do
   updateTState s
   allocPhaseType s
 
-generatePhaseTypeThen
-  :: ( Has (Gensym EmitBinding) sig m
-     , Has (State TState) sig m
-     , Has (Error String) sig m
-     )
-  => (PhaseTy -> m g) -- do when it's EN
-  -> ([PhaseTy] -> m g) -- do when it isn't
-  -> STuple
-  -> m ([PhaseTy], g)
-generatePhaseTypeThen fLoc fOthers (STuple (loc, Partition rs, (qt, dgrs))) =
-  if | isEN qt -> do
-         dgr <- onlyOne throwError' dgrs
-         pty <- gensymEmitLocDegree loc dgr
-         ([pty],) <$> fLoc pty
-     | otherwise -> do
-         checkListCorr dgrs rs
-         ptys <- forM (zip rs dgrs) (uncurry gensymEmitRangeDegree)
-         (ptys,) <$> fOthers ptys
+-- generatePhaseTypeThen
+--   :: ( Has (Gensym EmitBinding) sig m
+--      , Has (State TState) sig m
+--      , Has (Error String) sig m
+--      )
+--   => (PhaseTy -> m g) -- do when it's EN
+--   -> ([PhaseTy] -> m g) -- do when it isn't
+--   -> STuple
+--   -> m ([PhaseTy], g)
+-- generatePhaseTypeThen fLoc fOthers (STuple (loc, Partition rs, (qt, dgrs))) =
+--   if | isEN qt -> do
+--          dgr <- onlyOne throwError' dgrs
+--          pty <- gensymEmitLocDegree loc dgr
+--          ([pty],) <$> fLoc pty
+--      | otherwise -> do
+--          checkListCorr dgrs rs
+--          ptys <- forM (zip rs dgrs) (uncurry gensymEmitRangeDegree)
+--          (ptys,) <$> fOthers ptys
 
 
 -- | Query in the emit state the phase types of the given STuple

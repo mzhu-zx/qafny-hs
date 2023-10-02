@@ -1,9 +1,11 @@
-{-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE
+    TypeApplications
+  #-}
 module Qafny.Gensym(resumeGensym) where
 
-import qualified Carrier.Gensym.Emit as GEmit
-import qualified Carrier.Gensym.Meta as GMeta
-import           Qafny.Syntax.AST           (EmitBinding)
+import qualified Carrier.Gensym.Emit      as GEmit
+import qualified Carrier.Gensym.Meta      as GMeta
+import           Qafny.Syntax.EmitBinding (EmitBinding)
 
 -- runGensym
 --   :: Monad m

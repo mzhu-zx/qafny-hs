@@ -7,14 +7,15 @@
 
 module Qafny.Partial where
 import           Data.Bifunctor
-import           Data.Bool             (bool)
+import           Data.Bool               (bool)
 import           Data.Functor.Foldable
     ( Corecursive (embed)
     , Recursive (project)
     )
-import qualified Data.Map.Strict       as Map
-import           Data.Maybe            (isJust)
+import qualified Data.Map.Strict         as Map
+import           Data.Maybe              (isJust)
 import           Qafny.Syntax.AST
+import           Qafny.Syntax.EmitBinding
 
 --------------------------------------------------------------------------------
 -- $doc

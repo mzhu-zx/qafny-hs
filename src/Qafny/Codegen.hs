@@ -18,7 +18,9 @@ module Qafny.Codegen (codegenAST) where
 
 
 -- Effects
+import qualified Control.Carrier.Error.Either as ErrE
 import           Control.Carrier.Reader       (runReader)
+import           Control.Carrier.State.Strict (runState)
 import           Control.Effect.Catch
 import           Control.Effect.Error         (Error, throwError)
 import           Control.Effect.Lens
@@ -47,26 +49,25 @@ import           Control.Monad
     , zipWithM
     )
 
+import           Control.Arrow                ((&&&))
+import           Control.Exception            (throw)
 import           Data.Bifunctor
+import           Data.Bool                    (bool)
 import           Data.Functor                 ((<&>))
+import           Data.List                    (find)
 import qualified Data.List                    as List
 import           Data.List.NonEmpty           (NonEmpty (..))
 import qualified Data.Map.Strict              as Map
+import           Data.Maybe
+    ( catMaybes
+    , listToMaybe
+    , mapMaybe
+    , maybeToList
+    )
 import qualified Data.Sum                     as Sum
 import           Text.Printf                  (printf)
 
 -- Qafny
-import qualified Control.Carrier.Error.Either as ErrE
-import           Control.Carrier.State.Strict (runState)
-import           Control.Effect.Fail          (Fail)
-import           Control.Exception            (throw)
-import           Data.Bool                    (bool)
-import           Data.List                    (find)
-import           Data.Maybe
-    ( catMaybes
-    , listToMaybe
-    , maybeToList, mapMaybe
-    )
 import           Qafny.Config
 import           Qafny.Env
 import           Qafny.Interval               (Interval (Interval))
@@ -81,18 +82,18 @@ import           Qafny.Syntax.Emit
     , showEmit0
     , showEmitI
     )
+import           Qafny.Syntax.EmitBinding
 import           Qafny.TypeUtils
-    ( isEN
+    ( bindingsFromPtys
+    , isEN
     , typingPhaseEmitReprN
-    , typingQEmit, bindingsFromPtys
+    , typingQEmit
     )
 import           Qafny.Typing
     ( Promotion (..)
     , PromotionScheme (..)
-    , analyzeMethodType
     , analyzePhaseSpecDegree
     , appkEnvWithBds
-    , castScheme
     , checkSubtype
     , checkSubtypeQ
     , collectConstraints
@@ -113,7 +114,6 @@ import           Qafny.Typing
     , resolvePartition
     , resolvePartition'
     , resolvePartitions
-    , resolveRange
     , retypePartition
     , retypePartition1
     , specPartitionQTys
@@ -124,10 +124,11 @@ import           Qafny.Typing
     , typingExp
     , typingGuard
     , typingPartition
-    , typingPartitionQTy
+    , typingPartitionQTy, allocPhaseType, allocAndUpdatePhaseType
     )
 import           Qafny.Utils
-    ( checkListCorr
+    ( bindingFromEmitBinding
+    , checkListCorr
     , collectRQTyBindings
     , dumpSSt
     , dumpSt
@@ -1473,22 +1474,26 @@ codegenMethodReturns MethodType{ mtSrcReturns=srcReturns
   let pureBds = collectPureBindings srcReturns
       qVars = [ (v, Range v 0 card) | MTyQuantum v card <- srcReturns ]
       inst = receiver $ Map.fromList qVars
+  -- perform type checking
   sts <- forM (fst2 <$> inst) (uncurry typingPartitionQTy)
-  trace (show sts)
-  ptys <- forM sts queryPhaseType
-  let pVars = bindingsFromPtys $ concat ptys
+  ptys <- concat <$>forM sts queryPhaseType
+  ptysNew <- concat <$> forM sts allocAndUpdatePhaseType
+  let (stmtsP, bdsP) = unzip $ pairPhaseTys ptysNew ptys
   (stmtsAssign, bdsRet) <- (unzip . concat <$>) . forM inst $ uncurry3 genAndPairReturnRanges
-  return (stmtsAssign, pureBds ++ bdsRet ++ pVars)
+  return (stmtsAssign ++ stmtsP, pureBds ++ bdsRet ++ bdsP)
   where
     -- genAndPairReturnRanges
     --   :: Partition -> QTy -> m [(Stmt', Binding')]
     genAndPairReturnRanges p qt dgrs = do
       prevBindings <- findEmitBindingsFromPartition p qt
       let prevVars = [ v | Binding v _ <- prevBindings ]
-      removeEmitPartitionQTys p qt
+      removeEmitPartitionQTys p qt -- Q: Do I really need to remove by hand?
       newVars <- gensymEmitPartitionQTy p qt
       let emitTy = typingQEmit qt
       pure $ zipWith (pairAndBind emitTy) newVars prevVars
+    pairPhaseTys ptysNew ptysPre =
+      zipWith pairEachRef (bindingsFromPtys ptysNew) (bindingsFromPtys ptysPre)
+    pairEachRef (Binding vNew ty) (Binding vOld _) = pairAndBind ty vNew vOld
     pairAndBind emitTy nv pv = (mkAssignment nv pv, (`Binding` emitTy) nv)
 
 
@@ -1684,15 +1689,14 @@ genEmitSt
      )
   => m [Stmt']
 genEmitSt = do
-  FIXME HERE 
   eSt <- use emitSt
   emitSt %= const Map.empty
-  forM (collectRQTyBindings (Map.toList eSt)) go
+  forM ((fst &&& bindingFromEmitBinding) <$> Map.toList eSt) go
   where
     -- go :: (RBinding, Var) -> m Stmt'
-    go ((r, qty), pv) = do
-      nv <- gensymEmitEB $ rbindingOfRange r (Sum.inj qty)
-      pure $ SVar (Binding nv (typingQEmit qty)) (Just (EVar pv))
+    go (ebd, Binding v t) = do
+      nv <- gensymEmitEB ebd
+      pure $ SVar (Binding nv t) (Just (EVar v))
 
 --------------------------------------------------------------------------------
 -- * Phase Related
