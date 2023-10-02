@@ -9,8 +9,12 @@ import           Qafny.Syntax.AST
 wild :: Var
 wild =  "_"
 
+constLambda :: Exp' -> Exp'
+constLambda = simpleLambda wild
+
+{-# DEPRECATED constExp "Use constLambda instead" #-}
 constExp :: Exp' -> Exp'
-constExp = simpleLambda wild
+constExp = constLambda
 
 qComment :: String -> Stmt'
 qComment = SDafny . ("// " ++)

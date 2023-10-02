@@ -20,6 +20,8 @@ method Intros1 (N : nat, q_seq'nat'_2__emit : seq<nat>, loc__loc__requires_0_1_0
   requires (forall i : nat | 0 <= i < 1 :: q_seq'nat'_2__emit[i] == 0)
 {
   var q_seq'nat'_3__emit : seq<nat> := q_seq'nat'_2__emit;
+  var loc__loc__requires_0_1_4__emit : nat := loc__loc__requires_0_1_1__emit;
+  var loc__loc__requires_0_1_5__emit : seq<nat> := loc__loc__requires_0_1_0__emit;
   // Forward Declaration
   reveal Map();
   reveal Pow2();

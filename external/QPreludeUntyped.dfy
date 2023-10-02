@@ -15,17 +15,22 @@ abstract module {:options "-functionSyntax:4"} QPreludeUntyped {
     requires forall k : nat | k < |q| :: q[k] == 0 || q[k] == 1
     ensures |h| == |q| && forall k : nat | k < |q| ::
     (q[k] == 0 ==> h[k] == 1) && (q[k] == 1 ==> h[k] == 0)
-  ;
 
-  function CastNorEN(q : seq<nat>) : (c : seq<nat>)
+
+  function {:opaque} CastNorEN(q : seq<nat>) : (c : seq<nat>)
     requires forall k : nat | k < |q| :: q[k] == 0 || q[k] == 1
+    ensures (forall k : nat | k < |q| :: q[k] == 0) ==> c == [0]
     ensures c == [LittleEndianNat.ToNatRight(q)]
-  ;
+  {
+    if q == SeqZero(|q|)
+      then [LittleEndianNat.ToNatRight(q)]
+      else [LittleEndianNat.ToNatRight(q)]
+  }
 
   function CastNorEN01(q : seq<nat>) : (c : seq<seq<nat>>)
     requires forall k : nat | k < |q| :: q[k] == 0 || q[k] == 1
-    ensures c ==  [q]
-  ;
+    ensures c == [q]
+
 
   // (|0⟩ + α|1⟩) ⊗ (|0⟩ + α|1⟩) ⊗ (|0⟩ + β|1⟩)
   // |0, 0, 0⟩ + α|1, 0, 0⟩ + ...
@@ -35,13 +40,13 @@ abstract module {:options "-functionSyntax:4"} QPreludeUntyped {
     ensures |c| == Pow2(|q|) && forall i : nat | i < |c| :: |c[i]| == |q|
     ensures forall i : nat | i < Pow2(|q|) :: 
             forall j : nat | j < |q| :: Locate(i, j) == c[i][j]
-  ;
+
 
   function CastHadEN01'1(q : seq<int>) : (c : seq<seq<nat>>)
     requires |q| == 1
     requires forall k : nat | k < |q| :: q[k] == 1 || q[k] == -1
     ensures c == [[0], [1]]
-  ;
+
 
 
   function Locate(i : nat, j : nat) : nat

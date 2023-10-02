@@ -1,0 +1,7 @@
+method ApplyIdentity(q : qreg[1], N : nat)
+  requires N >= 2
+  requires { q [0 .. 1] : nor ↦ ⊗ i . 0 }
+  ensures  { q [0 .. 1] : en ↦ ∑ i ∈ [0 .. 1] .  (0) } 
+{
+  q[0..1] *= λ (x => x);
+}
