@@ -265,6 +265,7 @@ instance DafnyPrinter EmitExp where
     foldl (\el (op, er) -> buildOp2 op el (build er)) (build e) eos
   build (ECard e) = "|" <!> e <!> build "|"
   build (ECall e es) = e <!> withParen (byComma es)
+  build (EMultiLambda vs e) = withParen (byComma vs) <+> "=>" <+> e
 
 instance DafnyPrinter Range where
   build rr@(Range v l r) = debugOnly rr $ build (ESlice (EVar v) l r)

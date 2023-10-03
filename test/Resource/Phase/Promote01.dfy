@@ -11,7 +11,7 @@ import opened Power2
 import opened Power
 import opened DivMod
 
-method PromoteZeroPhase (N : nat, q_seq'nat'_0__emit : seq<nat>) returns (q_seq'nat'_7__emit : seq<nat>, loc__loc__requires_0_1_5__emit : seq<nat>, loc__loc__requires_0_1_6__emit : nat)
+method PromoteZeroPhaseIdentity (N : nat, q_seq'nat'_0__emit : seq<nat>) returns (q_seq'nat'_7__emit : seq<nat>, loc__loc__requires_0_1_5__emit : seq<nat>, loc__loc__requires_0_1_6__emit : nat)
   requires N >= 2
   requires 1 == |q_seq'nat'_0__emit|
   requires (forall i : nat | 0 <= i < 1 :: q_seq'nat'_0__emit[i] == 0)

@@ -151,7 +151,7 @@ import           Qafny.Utils
     , rethrowMaybe
     , uncurry3
     )
-import Qafny.Codegen.Phase (codegenPromotionMaybe)
+import Qafny.Codegen.Phase (codegenPromotionMaybe, codegenPhaseLambda, codegenPromotion)
 import GHC.ByteOrder (ByteOrder(LittleEndian))
 
 throwError'
@@ -574,12 +574,15 @@ codegenStmt'Apply stmt@(s@(Partition ranges) :*=: eLam@(ELambda pbinder _ pexpMa
 
   -- handle promotions in phases
   stmtsPhase <- case pexpMaybe of
-    Just pexp -> promotionScheme stS' pbinder pexp >>= codegenPromotionMaybe
+    Just pexp -> do
+      promoteMaybe <- promotionScheme stS' pbinder pexp;
+      case promoteMaybe of
+        Just promote -> codegenPromotion promote
+        Nothing      -> codegenPhaseLambda stS' pbinder pexp
     Nothing   -> pure []
 
   -- resolve againnnnn for consistency
   (stS', corr') <- resolvePartition' s
-
 
   rSt@(Range _ esLower esUpper) <-
     maybe (throwError' (errNotInCorr r corr')) return

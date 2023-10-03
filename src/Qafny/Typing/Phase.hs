@@ -31,8 +31,10 @@ import           Qafny.Utils
 -- Utils
 import           Control.Effect.Trace
 import           Control.Lens             (at, (%~), (?~), (^.))
-import           Control.Monad            (forM)
+import           Control.Monad            (forM, when)
+import           Data.List                (nub)
 import           Qafny.Syntax.ASTUtils    (getPhaseRef)
+import           Qafny.Syntax.Emit        (showEmitI)
 import           Text.Printf              (printf)
 
 throwError'
@@ -54,6 +56,10 @@ data Promotion
   = Promote'0'1 (Exp', Exp') [Range] QTy
 
 -- | Promote phases to another level
+-- - The degree of the binder should agree with the degree of the tuple
+-- - The degree of the spec can be different from the one of the binder: this is
+--   where the promotion kicks in
+--
 promotionScheme
   :: ( Has (Gensym EmitBinding) sig m
      , Has (State TState) sig m
@@ -62,14 +68,27 @@ promotionScheme
      )
   => STuple -> PhaseBinder -> PhaseExp -> m (Maybe PromotionScheme)
 promotionScheme st@(STuple (loc, Partition rs, (qt, dgrsSt))) pb pe = do
+  -- FIXME: for now, the simple dirty way is to restrict `dgrsSt` to have only
+  -- one consistent degree. So the promotionScheme can act on the entire
+  -- partition, which I think is a good idea for now.  Unless one specified a
+  -- weird phase in the precondition, there's no statement available for you to
+  -- construct a partition with multiple different degrees.
+
+  -- intro degrees
+  dgrSt <- onlyOne throwError' $ nub dgrsSt
   let dgrBind = analyzePhaseSpecDegree pb
       dgrSpec = analyzePhaseSpecDegree pe
+
+  -- check if binder's and specexp's degrees match
+  when (dgrSt /= dgrBind) $ throwError' (errDgrMismatch dgrSt dgrBind)
+
+  -- check what promotion can be done here
   case (dgrBind, dgrSpec) of
-    (db, ds) | db == ds -> return Nothing
-    (0, 1)              -> promote'0'1 pe
-    (1, 2)              -> promote'1'2
-    (db, ds) | db > ds  -> errDemotion db ds
-    (db, ds)            -> errUnimplementedPrompt db ds
+    (dBind, dSpec) | dBind == dSpec -> return Nothing
+    (0, 1)                          -> promote'0'1 pe
+    (1, 2)                          -> promote'1'2
+    (dBind, dSpec) | dBind > dSpec  -> errDemotion dBind dSpec
+    (dBind, dSpec)                  -> errUnimplementedPrompt dBind dSpec
   where
     -- Promote 0 to 1
     promote'0'1
@@ -94,6 +113,9 @@ promotionScheme st@(STuple (loc, Partition rs, (qt, dgrsSt))) pb pe = do
 
 
     -- Promote 1 to 2
+    errDgrMismatch dSt dbinder =
+      printf "Degree %d doesn't match the degree of the binder %s : %d"
+      dSt (showEmitI 4 dbinder) dbinder
     promote'1'2 = undefined
     errDemotion i j = throwError' $
       printf "Demote %d to %d is not allowed." i j

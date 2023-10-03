@@ -22,6 +22,10 @@ qComment = SDafny . ("// " ++)
 simpleLambda :: Var -> Exp' -> Exp'
 simpleLambda v = ELambda PhaseWildCard v Nothing
 
+multiLambda :: [Var] -> Exp' -> Exp'
+multiLambda v = EEmit . EMultiLambda v
+
+
 --------------------------------------------------------------------------------
 -- * Special Constructors
 --------------------------------------------------------------------------------
@@ -63,6 +67,10 @@ sliceV x l r = EEmit (ESlice (EVar x) (reduce l) (reduce r))
 
 callMap :: Exp' -> Exp' -> Exp'
 callMap f e = EEmit (ECall "Map" [f, e])
+
+callMaps :: Exp' -> [Exp'] -> Exp'
+callMaps f es = EEmit (ECall "Map" (f : es))
+
 
 
 cardV :: Var -> Exp'

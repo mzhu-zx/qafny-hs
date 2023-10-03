@@ -17,17 +17,31 @@ module Qafny.Codegen.Phase where
 
 import           Control.Effect.Error
 import           Control.Effect.State
+import           Control.Monad            (forM)
 import           Effect.Gensym
 
-import           Control.Monad            (forM)
+import           Data.Functor             ((<&>))
+import           Data.List                (nub)
 import           Data.Maybe               (maybeToList)
+
 import           Qafny.Env
 import           Qafny.Syntax.AST
-import           Qafny.Syntax.ASTFactory  (cardV, simpleLambda, constLambda)
+import           Qafny.Syntax.ASTFactory  (cardV, constLambda, simpleLambda, callMap, multiLambda)
+import           Qafny.Syntax.ASTUtils    (getPhaseRefN)
+import           Qafny.Syntax.Emit        (showEmit0)
 import           Qafny.Syntax.EmitBinding
 import           Qafny.TypeUtils
-import           Qafny.Typing             (Promotion (..), PromotionScheme (..))
-import           Qafny.Utils              (findEmitRangeQTy, internalError)
+import           Qafny.Typing
+    ( Promotion (..)
+    , PromotionScheme (..)
+    , queryPhaseType
+    )
+import           Qafny.Utils
+    ( findEmitRangeQTy
+    , internalError
+    , onlyOne
+    )
+import           Text.Printf              (printf)
 
 
 -- | Phase-Related Code Generation
@@ -92,4 +106,21 @@ codegenPromote'0'1 qt rs prefs (i, n) = do
 --------------------------------------------------------------------------------
 -- * Generating PhaseLambda
 --------------------------------------------------------------------------------
-
+codegenPhaseLambda
+  :: ( Has (State TState) sig m
+     , Has (Error String) sig m
+     )
+  => STuple -> PhaseBinder -> PhaseExp -> m [Stmt']
+codegenPhaseLambda st pb pe = do
+  (dgrs, prefs) <- queryPhaseType st <&> unzip . getPhaseRefN
+  dgrSt <- onlyOne throwError' $ nub dgrs
+  concat <$> forM prefs (go dgrSt pb pe)
+  where
+    go 1 (PhaseOmega bi bBase) (PhaseOmega ei eBase)
+      PhaseRef { prRepr=vRepr, prBase=vBase} =
+      return [ vRepr ::=: callMap (multiLambda [bi, bBase] ei) (EVar vRepr)
+             , vBase ::=: subst [(bBase, EVar vBase)] eBase
+             ]
+    go dgr _ _ _ = throwError' $
+      printf "At least one of the binder %s and the specficiation %s is not of degree %d."
+      (showEmit0 pb) (showEmit0 pe) dgr

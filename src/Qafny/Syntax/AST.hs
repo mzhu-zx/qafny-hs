@@ -283,6 +283,7 @@ data EmitExp
   | ESelect (Exp ()) (Exp ())
   | ESlice (Exp ()) (Exp ()) (Exp ())
   | EDafnyVar Var
+  | EMultiLambda [Var] (Exp ())
   | EOpChained (Exp ()) [(Op2, Exp ())]
   deriving  (Show, Eq, Ord-- , Data, Typeable
             )

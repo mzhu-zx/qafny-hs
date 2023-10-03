@@ -1,25 +1,16 @@
-method PromoteZeroPhase(q : qreg[1], N : nat)
+// method PromoteZeroPhaseIncorrect(q : qreg[1], N : nat)
+//   requires N >= 2
+//   requires { q [0 .. 1] : en ↦ ∑ i ∈ [0 .. 1] . ω(1, 4) ~ (0) }
+//   ensures  { q [0 .. 1] : en ↦ ∑ i ∈ [0 .. 1] . ω(1, 4) ~ (0) } 
+// {
+//   q[0..1] *= λ (_ ~ x => ω(1, 4) ~ x);
+// }
+
+
+method PromoteZeroPhaseIdentity(q : qreg[1], N : nat)
   requires N >= 2
   requires { q [0 .. 1] : nor ↦ ⊗ i . 0 }
   ensures  { q [0 .. 1] : en ↦ ∑ i ∈ [0 .. 1] . ω(1, 4) ~ (0) } 
 {
   q[0..1] *= λ (_ ~ x => ω(1, 4) ~ x);
 }
-
-method PromoteZeroPhaseIncorrect(q : qreg[1], N : nat)
-  requires N >= 2
-  requires { q [0 .. 1] : en ↦ ∑ i ∈ [0 .. 1] . ω(1, 4) ~ (0) }
-  ensures  { q [0 .. 1] : en ↦ ∑ i ∈ [0 .. 1] . ω(1, 4) ~ (0) } 
-{
-  q[0..1] *= λ (_ ~ x => ω(1, 4) ~ x);
-}
-
-
-method PromoteZeroPhaseBinder(q : qreg[1], N : nat)
-  requires N >= 2
-  requires { q [0 .. 1] : nor ↦ ⊗ i . 0 }
-  ensures  { q [0 .. 1] : en ↦ ∑ i ∈ [0 .. 1] . ω(1, 4) ~ (0) } 
-{
-  q[0..1] *= λ (ω(i, N) ~ x => ω(i + 1, N) ~ x);
-}
-
