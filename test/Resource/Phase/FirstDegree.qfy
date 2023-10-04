@@ -5,7 +5,24 @@ method AddQuarter(q : qreg[1], N : nat)
   requires { q [0 .. 1] : en ↦ ∑ i ∈ [0 .. 1] . ω(1, 4) ~ (0) } 
   ensures  { q [0 .. 1] : en ↦ ∑ i ∈ [0 .. 1] . ω(2, 4) ~ (0) } 
 {
-  assert  { q [0 .. 1] : en ↦ ∑ i ∈ [0 .. 1] . ω(1, 4) ~ (0) } ;
-
   q[0..1] *= λ (ω(i, N) ~ x => ω(i + 1, N) ~ x);
 }
+
+method AddQuarterN(q : qreg[1], N : nat)
+  requires N >= 2
+  requires { q [0 .. 1] : en ↦ ∑ i ∈ [0 .. 1] . ω(1, 4) ~ (0) } 
+  ensures  { q [0 .. 1] : en ↦ ∑ i ∈ [0 .. 1] . ω(2, 8) ~ (0) } 
+{
+  q[0..1] *= λ (ω(i, N) ~ x => ω(i + 1, N + N) ~ x);
+}
+
+
+method AddQuarterIndex(q : qreg[1], N : nat)
+  requires N >= 2
+  requires { q [0 .. 2] : en ↦ ∑ i ∈ [0 .. 4] . ω(i, 4) ~ (i) } 
+  ensures  { q [0 .. 2] : en ↦ ∑ i ∈ [0 .. 1] . ω(i + 1, 8) ~ (i) } 
+{
+  q[0..1] *= λ (ω(i, N) ~ x => ω(i + 1, N + N) ~ x);
+}
+
+

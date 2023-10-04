@@ -26,7 +26,12 @@ import           Data.Maybe               (maybeToList)
 
 import           Qafny.Env
 import           Qafny.Syntax.AST
-import           Qafny.Syntax.ASTFactory  (cardV, constLambda, simpleLambda, callMap, multiLambda)
+import           Qafny.Syntax.ASTFactory
+    ( callMap
+    , cardV
+    , constLambda
+    , simpleLambda
+    )
 import           Qafny.Syntax.ASTUtils    (getPhaseRefN)
 import           Qafny.Syntax.Emit        (showEmit0)
 import           Qafny.Syntax.EmitBinding
@@ -38,7 +43,6 @@ import           Qafny.Typing
     )
 import           Qafny.Utils
     ( findEmitRangeQTy
-    , internalError
     , onlyOne
     )
 import           Text.Printf              (printf)
@@ -118,9 +122,10 @@ codegenPhaseLambda st pb pe = do
   where
     go 1 (PhaseOmega bi bBase) (PhaseOmega ei eBase)
       PhaseRef { prRepr=vRepr, prBase=vBase} =
-      return [ vRepr ::=: callMap (multiLambda [bi, bBase] ei) (EVar vRepr)
-             , vBase ::=: subst [(bBase, EVar vBase)] eBase
-             ]
+      let substBase = subst [(bBase, EVar vBase)] in
+        return [ vRepr ::=: callMap (simpleLambda bi (substBase ei)) (EVar vRepr)
+               , vBase ::=: subst [(bBase, EVar vBase)] eBase
+               ]
     go dgr _ _ _ = throwError' $
       printf "At least one of the binder %s and the specficiation %s is not of degree %d."
       (showEmit0 pb) (showEmit0 pe) dgr

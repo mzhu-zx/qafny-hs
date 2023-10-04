@@ -14,7 +14,7 @@ abstract module {:options "-functionSyntax:4"} QPreludeUntyped {
   function CastNorHad(q : seq<nat>) : (h : seq<int>) 
     requires forall k : nat | k < |q| :: q[k] == 0 || q[k] == 1
     ensures |h| == |q| && forall k : nat | k < |q| ::
-    (q[k] == 0 ==> h[k] == 1) && (q[k] == 1 ==> h[k] == 0)
+    (q[k] == 0 ==> h[k] == 1) && (q[k] == 1 ==> h[k] == (- 1))
 
 
   function {:opaque} CastNorEN(q : seq<nat>) : (c : seq<nat>)

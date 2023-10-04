@@ -50,8 +50,10 @@ main =
         writeOrReportP :: Production Txt.Text -> IO ()
         writeOrReportP prod@(Production {pResult=res, pState=st, pDetail=details})  = do
           wrapUp <- case res of
-            Left _ -> do
-              forM_ (collectErrors prod) (pError . formatMethodError)
+            Left txt -> do
+              if null (pDetail prod)
+                then pError txt
+                else forM_ (collectErrors prod) (pError . formatMethodError)
               return exitFailure
             Right txt -> do
               putStrLn "Pipeline Finished!\n"

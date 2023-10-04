@@ -1,0 +1,5 @@
+module PhaseEstimation(q : qreg[n], p : qreg[m], n : nat, m : nat, phi : nat)
+  requires n >= 0
+  requires m >= 0
+  requires { q [0 .. n] : nor ↦ ⊗ i . 0 }
+  requires { p [0 .. m] : en ↦ Σ i ∈ [0 .. Pow2(m)] . }

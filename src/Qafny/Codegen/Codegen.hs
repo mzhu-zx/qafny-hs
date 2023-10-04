@@ -19,6 +19,7 @@ module Qafny.Codegen.Codegen (codegenAST) where
 
 -- Effects
 import qualified Control.Carrier.Error.Either as ErrE
+import qualified Control.Carrier.Error.Church as ErrC
 import           Control.Carrier.Reader       (runReader)
 import           Control.Carrier.State.Strict (runState)
 import           Control.Effect.Catch
@@ -54,7 +55,6 @@ import           Control.Exception            (throw)
 import           Data.Bifunctor
 import           Data.Bool                    (bool)
 import           Data.Functor                 ((<&>))
-import           Data.List                    (find)
 import qualified Data.List                    as List
 import           Data.List.NonEmpty           (NonEmpty (..))
 import qualified Data.Map.Strict              as Map
@@ -153,6 +153,7 @@ import           Qafny.Utils
     )
 import Qafny.Codegen.Phase (codegenPromotionMaybe, codegenPhaseLambda, codegenPromotion)
 import GHC.ByteOrder (ByteOrder(LittleEndian))
+import qualified Control.Carrier.Error.Church as ErrC
 
 throwError'
   :: ( Has (Error String) sig m )
@@ -199,11 +200,11 @@ codegenAST
      )
   => AST
   -> m ([((Var, TState), Either String Toplevel')], Either String AST)
-codegenAST ast = do
+codegenAST ast = ErrC.runError handleASTError return  $ do
   Configs { stdlibPath=libPath, depth=depth' } <- ask
   let path = concat (replicate depth' "../") ++ libPath
   let prelude = (mkIncludes path <$> includes) ++ imports
-  let methodMap = collectMethodTypes ast
+  methodMap <- collectMethodTypes ast
   stTops <- local (kEnv %~ Map.union (Sum.inj <$> methodMap)) $ mapM codegenToplevel ast
   let methodOutcomes = mapMaybe methodOnly stTops
   let (_, mainMayFail) = unzip stTops
@@ -211,6 +212,8 @@ codegenAST ast = do
   let astGened = (injQDafny prelude ++) <$> main <&> (++ injQDafny finale)
   return (methodOutcomes, astGened)
   where
+    handleASTError = (return . ([],) . Left)
+
     methodOnly (qOrM, a) = qOrM <&> (, a)
 
     injQDafny = (Sum.inj <$>)

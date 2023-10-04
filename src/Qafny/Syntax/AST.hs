@@ -228,7 +228,7 @@ type PhaseBinder = PhaseExpF Var
 -- deriving instance (Typeable (Exp Source))
 -- deriving instance (Data (Exp Source))
 
-deriving instance Generic f => Generic (PhaseExpF f)
+deriving instance Generic (PhaseExpF f)
 deriving instance Show f => Show (PhaseExpF f)
 deriving instance Eq f => Eq (PhaseExpF f)
 deriving instance Ord f => Ord (PhaseExpF f)

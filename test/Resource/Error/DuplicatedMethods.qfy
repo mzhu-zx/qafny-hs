@@ -1,0 +1,15 @@
+// Test if duplicated programs are rejected.
+method A()
+{
+
+}
+
+method B()
+{
+
+}
+
+method A()
+{
+
+}

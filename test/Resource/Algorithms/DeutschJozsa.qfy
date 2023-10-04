@@ -1,0 +1,35 @@
+method DeutschJozsaGates(q : qreg[n], p : qreg[1], n : nat, f : nat -> nat) : 
+  requires n >= 1
+  requires { q[0 .. n] : nor ↦ ⊗ i . 0 }
+  requires { p[0 .. 1] : nor ↦ ⊗ i . 1 }
+  #requires (forall i | 0 <= i < Pow2(n) :: f.requires(i) && (f(i) == 0 || f(i) == 1)
+  ensures { q[0 .. n], p[0 .. 1] : en ↦ ∑ i ∈ [0 .. Pow2(n)] . Ω j ∈ [0 .. Pow2(n)] . (f(j) + i * j, 2) ~ ( i, _ ) }
+{
+  q[0 .. n] *= H;
+  p[0 .. 1] *= H;
+
+  // this oracle + syntax is not yet implemented
+  // We can indeed add one special case by casting the left to EN and stay the
+  // right one.
+
+  q[0 .. n], p[0 .. 1] *= λ ((x, y) => (x, ((y + f(x)) % 2)));
+
+  assert { q[0 .. n], p[0 .. 1] : en ↦ ∑ i ∈ [0 .. Pow2(n)] . ω (f(i), 2) ~ ( i, _ ) };
+
+  q[0 .. n] *= qft;
+  
+  assert { q[0 .. n], p[0 .. 1] : en ↦ ∑ i ∈ [0 .. Pow2(n)] . Ω j ∈ [0 .. Pow2(n)] . (f(j) + i * j, 2) ~ ( i, _ ) };
+}
+
+
+
+method DeutschJozsaMeasurement(q : qreg[n], p : qreg[1], n : nat, f : nat -> nat)
+  requires { q[0 .. n], p[0 .. 1] : en ↦ ∑ i ∈ [0 .. Pow2(n)] . Ω j ∈ [0 .. Pow2(n)] . (f(j) + i * j, 2) ~ ( i, _ ) }
+{
+  k, prob := measure q[0 .. n];
+
+  assert prob(k) == Prob (∑ i ∈ [0 .. Pow2(n)] . Ω j ∈ [0 .. Pow2(n)] . (f(k) + i * k, 2));
+
+  // then specialize `k` to 0 for reasoning ....
+}
+

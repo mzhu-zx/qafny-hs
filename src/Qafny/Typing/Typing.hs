@@ -1132,12 +1132,23 @@ collectPureBindings :: [MethodElem] -> [Binding']
 collectPureBindings params =  [ Binding v t | MTyPure v t <- params ]
 
 -- Compute types of methods from the toplevel
-collectMethodTypes :: AST -> Map.Map Var MethodType
-collectMethodTypes a = run $ execState Map.empty $
+collectMethodTypes
+  :: (Has (Error String) sig m)
+  => AST  -> m (Map.Map Var MethodType)
+collectMethodTypes a = execState @(Map.Map Var MethodType) Map.empty $
   forM_ a go
   where
-    go (Toplevel (Inl q@(QMethod {}))) =
-      modify (uncurry Map.insert (analyzeMethodType q))
+    go :: ( Has (Error String) sig m'
+          , Has (State (Map.Map Var MethodType)) sig m'
+          )
+       => Toplevel () -> m' ()
+    go (Toplevel (Inl q@(QMethod {}))) = do
+      let (idMethod, methodTy) = analyzeMethodType q
+      existsMaybe <- (Map.!? idMethod) <$> get @(Map.Map Var MethodType)
+      case existsMaybe of
+        Just _ ->
+          throwError' $ printf "Duplicated definitions of the method %s." idMethod
+        _ -> modify (Map.insert idMethod methodTy)
     go _ = pure ()
 
 appkEnvWithBds :: Bindings () -> TEnv -> TEnv
