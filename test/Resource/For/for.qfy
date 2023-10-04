@@ -1,14 +1,22 @@
 method For0 (n : nat)
-  requires n > 0
+  requires n >= 2
 {
   var q : qreg[n] := nor(n, 0);
   var p : qreg[n] := nor(n, 0);
 
   q[0 .. n] *= H;
-  for i in [0 .. n] with q[i .. (i + 1)]
+
+  if (q[0 .. 1])
+    separates p[0 .. n]
+  {
+     p[0 .. n] *= λ (x => x);
+  }
+
+
+  for i in [1 .. n] with q[i .. (i + 1)]
     separates q[0 .. i], p[0 .. n]
     invariant { q [i .. n] : had ↦ ⊗ k . 1 }
-    invariant { q [0 .. i], p [0 .. n] : en ↦ ∑ j ∈ [0 .. Pow2(i)] . (i, 0) }
+    invariant { q [0 .. i], p [0 .. n] : en ↦ ∑ j ∈ [0 .. Pow2(i)] . (j, 0) }
   {
     p[0 .. n] *= λ (x => x);
   }

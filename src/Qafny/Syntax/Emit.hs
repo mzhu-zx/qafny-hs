@@ -217,6 +217,7 @@ instance DafnyPrinter (Exp ()) where
   build (EVar v) = build v
   build (EBool b) = build $ if b then "true" else "false"
   build (EEmit e) = build e
+  build (EOp1 ONeg e1) = "-" <+> e1
   build (EOp2 op e1 e2) = buildOp2 op (build e1) (build e2)
   -- parentheses are critical to forall expressions!
   build (EForall x eb e) = withParen $ "forall " <!> x  <!> beb eb <!>  " :: " <!> e

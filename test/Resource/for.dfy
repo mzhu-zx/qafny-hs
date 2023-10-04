@@ -1,48 +1,41 @@
 include "../../external//QPreludeUntyped.dfy"
 include "../../external//libraries/src/Collections/Sequences/Seq.dfy"
 include "../../external//libraries/src/NonlinearArithmetic/Power2.dfy"
+include "../../external//libraries/src/NonlinearArithmetic/Power.dfy"
 
-// target Dafny version: 3.12.0
+// target Dafny version: 4.2.0
 abstract module QafnyDefault {
 import opened QPreludeUntyped
 import opened Seq
 import opened Power2
+import opened Power
+import opened DivMod
 
 method For0 (n : nat)
   requires n > 0
 {
   // Forward Declaration
-  var p_0_n___seqL_nat_R___8__emit : seq<nat>;
-  var p_0_n___seqL_nat_R___7__emit : seq<nat>;
-  var q_0_n___seqL_nat_R___6__emit : seq<nat>;
-  var q_0_n___seqL_nat_R___5__emit : seq<nat>;
-  var q_0_n___seqL_nat_R___4__emit : seq<nat>;
-  var p_0_n___seqL_nat_R___3__emit : seq<nat>;
-  var q_0_n___seqL_nat_R___2__emit : seq<nat>;
-  var p_0_n___seqL_nat_R___1__emit : seq<nat>;
-  var q_0_n___seqL_nat_R___0__emit : seq<nat>;
+  var p_seq'nat'_9__emit : seq<nat>;
+  var q_seq'nat'_8__emit : seq<nat>;
+  var q_seq'nat'_7__emit : seq<nat>;
+  var q_seq'nat'_6__emit : seq<nat>;
+  var p_seq'nat'_5__emit : seq<nat>;
+  var q_seq'nat'_4__emit : seq<nat>;
+  var q_seq'nat'_3__emit : seq<nat>;
+  var q_seq'nat'_2__emit : seq<nat>;
+  var p_seq'nat'_1__emit : seq<nat>;
+  var q_seq'nat'_0__emit : seq<nat>;
+  reveal Map();
+  reveal Pow2();
   
   // Method Definition
-  q_0_n___seqL_nat_R___0__emit := seq<nat>(n, _ => 0);
-  p_0_n___seqL_nat_R___1__emit := seq<nat>(n, _ => 0);
-  // Cast TNor ==> THad
-  q_0_n___seqL_nat_R___2__emit := CastNorHad(q_0_n___seqL_nat_R___0__emit);
-  // Cast TNor ==> TEN
-  p_0_n___seqL_nat_R___3__emit := CastNorEN(p_0_n___seqL_nat_R___1__emit);
-  q_0_n___seqL_nat_R___4__emit := q_0_n___seqL_nat_R___5__emit;
-  // Retype from Had to EN and initialize with 0
-  q_0_n___seqL_nat_R___6__emit := seq<nat>(|q_0_n___seqL_nat_R___6__emit|, _ => 0);
+  q_seq'nat'_0__emit := seq<nat>(n, _ => 0);
+  p_seq'nat'_1__emit := seq<nat>(n, _ => 0);
+  // Cast (TNor,[0]) ==> THad
+  q_seq'nat'_2__emit := CastNorHad(q_seq'nat'_0__emit);
+  p_seq'nat'_5__emit := p_seq'nat'_1__emit;
+  q_seq'nat'_3__emit := q_seq'nat'_2__emit;
   for i := 0 to n
-  {
-    p_0_n___seqL_nat_R___7__emit := p_0_n___seqL_nat_R___8__emit;
-    {
-      p_0_n___seqL_nat_R___8__emit := Map(x => x + 1 % 2, p_0_n___seqL_nat_R___8__emit);
-    }
-
-    p_0_n___seqL_nat_R___8__emit := p_0_n___seqL_nat_R___8__emit + p_0_n___seqL_nat_R___7__emit;
-    q_0_n___seqL_nat_R___6__emit := q_0_n___seqL_nat_R___6__emit + Map(x__lambda => x__lambda + Pow2(i), q_0_n___seqL_nat_R___6__emit);
-  }
-
-}
-
-}
+    invariant //EOp1 ONeg (EVar "i") should not be in emitted form! + n == |q_seq'nat'_3__emit|
+    invariant (forall k : nat | 0 <= k < //EOp1 ONeg (EVar "i") should not be in emitted form! + n :: q_seq'nat'_3__emit[k] == 1)
+    invar

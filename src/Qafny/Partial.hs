@@ -3,6 +3,7 @@
   , GeneralizedNewtypeDeriving
   , TupleSections
   , TypeFamilies
+  , TypeOperators
   #-}
 
 module Qafny.Partial where
@@ -14,6 +15,8 @@ import           Data.Functor.Foldable
     )
 import qualified Data.Map.Strict         as Map
 import           Data.Maybe              (isJust)
+import Data.Sum as Sum
+
 import           Qafny.Syntax.AST
 import           Qafny.Syntax.EmitBinding
 
@@ -29,7 +32,9 @@ import           Qafny.Syntax.EmitBinding
 --------------------------------------------------------------------------------
 
 -- | Result of performing partial evaluation
-type PResult = (Map.Map Var Int, Int)
+type PMap = Map.Map (Var Sum.:+: Exp') Int
+
+type PResult = (PMap, Int)
 
 class PEval a where
   evalP :: a -> PResult
@@ -37,7 +42,7 @@ class PEval a where
 
 instance PEval Exp' where
   evalP (ENum i) = (Map.empty, i)
-  evalP (EVar v) = (Map.singleton v 1, 0)
+  evalP (EVar v) = (Map.singleton (inj v) 1, 0)
   evalP (EOp1 ONeg e1) =
     let (m1, v1) = evalP e1 in (Map.map negate m1, negate v1)
 
@@ -48,7 +53,7 @@ instance PEval Exp' where
       OAdd -> (evalResidue (+) m1 m2, v1 + v2)
       OSub -> (evalResidue (+) m1 (Map.map negate m2), v1 - v2)
       _    -> undefined
-  evalP e = error $ (show e) ++ " is not available in the partial engine"
+  evalP e = (Map.singleton (inj e) 1, 0)
 
   reflectP (m, i) =
     let m' = Map.filter (/= 0) m
@@ -70,8 +75,11 @@ instance PEval Exp' where
 
       -- I really mean this instead of 'sum' because 'sum' will insert an
       -- undesired leading '0' term.
-      addExps :: Var -> Int -> Exp'
-      addExps v cnt = foldr1 (+) (replicate (abs cnt) (EVar v))
+      addExps :: (Var Sum.:+: Exp') -> Int -> Exp'
+      addExps v cnt = foldr1 (+) (replicate (abs cnt) (var' v))
+
+      var' (Sum.Inl v) = EVar v
+      var' (Sum.Inr e) = e
 
 class Reducible a where
   reduce :: a -> a
@@ -110,9 +118,9 @@ instance Reducible EmitBinding where
 -- variables
 evalResidue
   :: (Int -> Int -> Int)
-  -> Map.Map Var Int
-  -> Map.Map Var Int
-  -> Map.Map Var Int
+  -> PMap
+  -> PMap
+  -> PMap
 evalResidue f s1 s2 = Map.filter (/= 0) $ Map.unionWith f s1 s2
 
 staticValue :: PResult -> Maybe Int
