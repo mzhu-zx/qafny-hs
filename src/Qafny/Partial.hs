@@ -48,7 +48,7 @@ instance PEval Exp' where
       OAdd -> (evalResidue (+) m1 m2, v1 + v2)
       OSub -> (evalResidue (+) m1 (Map.map negate m2), v1 - v2)
       _    -> undefined
-  evalP e = undefined
+  evalP e = error $ (show e) ++ " is not available in the partial engine"
 
   reflectP (m, i) =
     let m' = Map.filter (/= 0) m
