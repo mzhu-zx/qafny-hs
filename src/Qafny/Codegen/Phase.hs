@@ -41,10 +41,7 @@ import           Qafny.Typing
     , PromotionScheme (..)
     , queryPhaseType
     )
-import           Qafny.Utils
-    ( findEmitRangeQTy
-    , onlyOne
-    )
+import           Qafny.Utils              (findEmitRangeQTy, onlyOne)
 import           Text.Printf              (printf)
 
 

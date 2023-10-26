@@ -17,12 +17,12 @@ method AddQuarterN(q : qreg[1], N : nat)
 }
 
 
-method AddQuarterIndex(q : qreg[1], N : nat)
+method AddQuarterIndex(q : qreg[2], N : nat)
   requires N >= 2
   requires { q [0 .. 2] : en ↦ ∑ i ∈ [0 .. 4] . ω(i, 4) ~ (i) } 
-  ensures  { q [0 .. 2] : en ↦ ∑ i ∈ [0 .. 1] . ω(i + 1, 8) ~ (i) } 
+  ensures  { q [0 .. 2] : en ↦ ∑ i ∈ [0 .. 4] . ω(i + 1, 8) ~ (i) } 
 {
-  q[0..1] *= λ (ω(i, N) ~ x => ω(i + 1, N + N) ~ x);
+  q[0..2] *= λ (ω(i, N) ~ x => ω(i + 1, N + N) ~ x);
 }
 
 

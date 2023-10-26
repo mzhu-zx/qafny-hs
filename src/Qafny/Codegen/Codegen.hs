@@ -18,8 +18,8 @@ module Qafny.Codegen.Codegen (codegenAST) where
 
 
 -- Effects
-import qualified Control.Carrier.Error.Either as ErrE
 import qualified Control.Carrier.Error.Church as ErrC
+import qualified Control.Carrier.Error.Either as ErrE
 import           Control.Carrier.Reader       (runReader)
 import           Control.Carrier.State.Strict (runState)
 import           Control.Effect.Catch
@@ -68,6 +68,11 @@ import qualified Data.Sum                     as Sum
 import           Text.Printf                  (printf)
 
 -- Qafny
+import           Qafny.Codegen.Phase
+    ( codegenPhaseLambda
+    , codegenPromotion
+    , codegenPromotionMaybe
+    )
 import           Qafny.Config
 import           Qafny.Env
 import           Qafny.Interval               (Interval (Interval))
@@ -91,6 +96,8 @@ import           Qafny.TypeUtils
 import           Qafny.Typing
     ( Promotion (..)
     , PromotionScheme (..)
+    , allocAndUpdatePhaseType
+    , allocPhaseType
     , analyzePhaseSpecDegree
     , appkEnvWithBds
     , checkSubtype
@@ -123,8 +130,9 @@ import           Qafny.Typing
     , typingExp
     , typingGuard
     , typingPartition
-    , typingPartitionQTy, allocPhaseType, allocAndUpdatePhaseType
+    , typingPartitionQTy
     )
+import           Qafny.Typing.Error
 import           Qafny.Utils
     ( bindingFromEmitBinding
     , checkListCorr
@@ -151,9 +159,6 @@ import           Qafny.Utils
     , rethrowMaybe
     , uncurry3
     )
-import Qafny.Codegen.Phase (codegenPromotionMaybe, codegenPhaseLambda, codegenPromotion)
-import GHC.ByteOrder (ByteOrder(LittleEndian))
-import qualified Control.Carrier.Error.Church as ErrC
 
 throwError'
   :: ( Has (Error String) sig m )
@@ -569,7 +574,7 @@ codegenStmt'Apply stmt@(s@(Partition ranges) :*=: eLam@(ELambda pbinder _ pexpMa
     _   -> throwError errRangeGt1
 
   -- do the type cast and split first
-  (STuple (_, _, (qt, _)), maySplit, mayCast) <- splitThenCastScheme st' qtLambda r
+  (STuple (_, _, (qt, _)), maySplit, mayCast) <- hdlSC st' $ splitThenCastScheme st' qtLambda r
   stmts <- codegenSplitThenCastEmit maySplit mayCast
 
   -- resolve again for consistency
@@ -608,6 +613,13 @@ codegenStmt'Apply stmt@(s@(Partition ranges) :*=: eLam@(ELambda pbinder _ pexpMa
       return [ vEmit ::=: body ]
     _    -> throwError' "I have no idea what to do in this case ..."
   where
+    hdlSC stuple m  = do
+      a <- ErrE.runError @SCError m
+      case a of
+        -- Left (SplitENError{}) -> return (stuple, Nothing, Nothing)
+        Left err -> throwError $ show err
+        Right v -> return v
+
     errNotInCorr r corr = printf "%s is not in the corr. %s" (show r) (show corr)
     errRangeGt1 :: String
     errRangeGt1 = printf "%s contains more than 1 range no!" (show ranges)
@@ -765,7 +777,7 @@ codegenStmt'For (SFor idx boundl boundr eG invs (Just seps) body) = do
       stmtsPreGuard <- invPQtsPre `forM` \(sInv, qtInv, _) -> case sInv of
         Partition [rInv] -> do
           stInv <- resolvePartition sInv
-          (sInvSplit, maySplit, mayCast) <- splitThenCastScheme stInv qtInv rInv
+          (sInvSplit, maySplit, mayCast) <- hdlSCError $ splitThenCastScheme stInv qtInv rInv
           codegenSplitThenCastEmit maySplit mayCast
         _                ->
           -- Q: What is a reasonable split if there are 2 ranges? Would this have

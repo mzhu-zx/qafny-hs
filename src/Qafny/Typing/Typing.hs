@@ -14,25 +14,26 @@ module Qafny.Typing.Typing where
 
 -- | Typing though Fused Effects
 
-import qualified Debug.Trace                as Trace
+import qualified Debug.Trace                  as Trace
 
 
 -- Effects
-import           Control.Carrier.Reader     (runReader)
-import           Control.Carrier.State.Lazy (execState)
+import qualified Control.Carrier.Error.Either as ErrE
+import           Control.Carrier.Reader       (runReader)
+import           Control.Carrier.State.Lazy   (execState)
 import           Control.Effect.Catch
-import           Control.Effect.Error       (Error, throwError)
+import           Control.Effect.Error         (Error, throwError)
 import           Control.Effect.Lens
 import           Control.Effect.NonDet
 import           Control.Effect.Reader
-import           Control.Effect.State       (State, get, modify)
-import           Effect.Gensym              (Gensym, gensym)
+import           Control.Effect.State         (State, get, modify)
+import           Effect.Gensym                (Gensym, gensym)
 
 -- Qafny
 import           Qafny.Env
-import           Qafny.Error                (QError (..))
+import           Qafny.Error                  (QError (..))
 import           Qafny.Interval
-import           Qafny.Partial              (Reducible (reduce))
+import           Qafny.Partial                (Reducible (reduce))
 import           Qafny.Syntax.AST
 import           Qafny.Syntax.Emit
     ( DafnyPrinter (build)
@@ -43,7 +44,7 @@ import           Qafny.Syntax.Emit
     )
 import           Qafny.Syntax.EmitBinding
 import           Qafny.TypeUtils
-import           Qafny.Typing.Phase         hiding (throwError')
+import           Qafny.Typing.Phase           hiding (throwError')
 import           Qafny.Utils
     ( checkListCorr
     , dumpSt
@@ -69,9 +70,9 @@ import           Qafny.Utils
     )
 
 -- Utils
-import           Control.Carrier.State.Lazy (evalState, runState)
+import           Control.Carrier.State.Lazy   (evalState, runState)
 import           Control.Effect.Trace
-import           Control.Lens               (at, (%~), (?~), (^.))
+import           Control.Lens                 (at, (%~), (?~), (^.))
 import           Control.Lens.Tuple
 import           Control.Monad
     ( forM
@@ -82,14 +83,14 @@ import           Control.Monad
     , when
     , zipWithM
     )
-import           Data.Bifunctor             (Bifunctor (second))
-import           Data.Bool                  (bool)
-import           Data.Functor               ((<&>))
+import           Data.Bifunctor               (Bifunctor (second))
+import           Data.Bool                    (bool)
+import           Data.Functor                 ((<&>))
 import           Data.Functor.Identity
-import qualified Data.List                  as List
-import           Data.List.NonEmpty         (NonEmpty (..))
-import qualified Data.List.NonEmpty         as NE
-import qualified Data.Map.Strict            as Map
+import qualified Data.List                    as List
+import           Data.List.NonEmpty           (NonEmpty (..))
+import qualified Data.List.NonEmpty           as NE
+import qualified Data.Map.Strict              as Map
 import           Data.Maybe
     ( catMaybes
     , fromJust
@@ -99,12 +100,17 @@ import           Data.Maybe
     , mapMaybe
     , maybeToList
     )
-import qualified Data.Set                   as Set
+import qualified Data.Set                     as Set
 import           Data.Sum
-import           Data.Sum                   (projLeft)
-import           Data.Text                  (unpack)
-import           GHC.Stack                  (HasCallStack)
-import           Text.Printf                (printf)
+import           Data.Sum                     (projLeft)
+import           Data.Text                    (unpack)
+import           GHC.Stack                    (HasCallStack)
+import           Qafny.Typing.Error
+    ( SCError (SplitENError, SplitOtherError)
+    , failureAsSCError
+    , hdlSCError
+    )
+import           Text.Printf                  (printf)
 
 
 throwError'
@@ -503,7 +509,7 @@ splitThenCastScheme
      , Has (State TState) sig m
      , Has Trace sig m
      , Has (Reader IEnv) sig m
-     , Has (Error String) sig m
+     , Has (Error SCError) sig m
      )
   => STuple
   -> QTy
@@ -512,7 +518,7 @@ splitThenCastScheme
        , Maybe SplitScheme  -- May split if cast or not
        , Maybe CastScheme   -- May cast or not
        )
-splitThenCastScheme s'@(STuple (loc, p, (qt1, ptys))) qt2 rSplitTo =
+splitThenCastScheme s'@(STuple (loc, p, (qt1, ptys))) qt2 rSplitTo = failureAsSCError $
   case (qt1, qt2) of
     (_, _) | isEN qt1 && qt1 == qt2 -> do
       -- same type therefore no cast needed,
@@ -522,7 +528,7 @@ splitThenCastScheme s'@(STuple (loc, p, (qt1, ptys))) qt2 rSplitTo =
                   } <- getRangeSplits s' rSplitTo
       case rsRem of
         [] -> return (s', Nothing, Nothing)
-        _  -> throwError $ errSplitEN rOrigin rsRem
+        _  -> throwError $ SplitENError s' rSplitTo (rSplitTo : rsRem)
     (_ , _) | not (isEN qt1) && isEN qt2 -> do
       -- casting a smaller type to a larger type
       (sSplit, maySchemeS) <- splitScheme s' rSplitTo
@@ -533,16 +539,11 @@ splitThenCastScheme s'@(STuple (loc, p, (qt1, ptys))) qt2 rSplitTo =
       (sSplit, maySchemeS) <- splitScheme s' rSplitTo
       return (sSplit, maySchemeS, Nothing)
     _ ->
-      throwError errUndef
+      throwError' errUndef
    where
      errUndef :: String = printf
        "split-then-cast-scheme is undefined for %s to %s type"
        (show qt1) (show qt2)
-     errSplitEN :: Range -> [Range] -> String
-     errSplitEN rO rsR = printf
-       "Splitting a 'EN' partition (%s) from (%s) into (%s) which is not advised."
-       (show s') (show rO) (show (rSplitTo : rsR))
-
 
 
 --------------------------------------------------------------------------------
@@ -1012,7 +1013,7 @@ resolveMethodApplicationArgs es
       sAndMaySC <- case part of
         Partition [r] -> do
           st <- resolvePartition part
-          splitThenCastScheme st q r
+          hdlSCError $ splitThenCastScheme st q r
         _ -> (, Nothing, Nothing) <$> typingPartitionQTy part q
       (sAndMaySC,) <$> (findEmitVarsFromPartition part q <&> fmap EVar)
 

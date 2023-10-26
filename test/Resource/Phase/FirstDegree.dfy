@@ -69,4 +69,33 @@ method AddQuarterN (N : nat, q_seq'nat'_2__emit : seq<nat>, loc__loc__requires_0
   loc__loc__requires_0_1_7__emit := loc__loc__requires_0_1_4__emit;
 }
 
+method AddQuarterIndex (N : nat, q_seq'nat'_2__emit : seq<nat>, loc__loc__requires_0_1_0__emit : seq<nat>, loc__loc__requires_0_1_1__emit : nat) returns (q_seq'nat'_8__emit : seq<nat>, loc__loc__requires_0_1_6__emit : seq<nat>, loc__loc__requires_0_1_7__emit : nat)
+  requires N >= 2
+  requires 4 == loc__loc__requires_0_1_1__emit
+  requires 4 == |loc__loc__requires_0_1_0__emit|
+  requires (forall i : nat | 0 <= i < 4 :: i == loc__loc__requires_0_1_0__emit[i])
+  requires 4 == |q_seq'nat'_2__emit|
+  requires (forall i : nat | 0 <= i < 4 :: q_seq'nat'_2__emit[i] == i)
+  ensures 8 == loc__loc__requires_0_1_7__emit
+  ensures 4 == |loc__loc__requires_0_1_6__emit|
+  ensures (forall i : nat | 0 <= i < 4 :: i + 1 == loc__loc__requires_0_1_6__emit[i])
+  ensures 4 == |q_seq'nat'_8__emit|
+  ensures (forall i : nat | 0 <= i < 4 :: q_seq'nat'_8__emit[i] == i)
+{
+  var q_seq'nat'_3__emit : seq<nat> := q_seq'nat'_2__emit;
+  var loc__loc__requires_0_1_4__emit : nat := loc__loc__requires_0_1_1__emit;
+  var loc__loc__requires_0_1_5__emit : seq<nat> := loc__loc__requires_0_1_0__emit;
+  // Forward Declaration
+  reveal Map();
+  reveal Pow2();
+  
+  // Method Definition
+  loc__loc__requires_0_1_5__emit := Map(i => i + 1, loc__loc__requires_0_1_5__emit);
+  loc__loc__requires_0_1_4__emit := loc__loc__requires_0_1_4__emit + loc__loc__requires_0_1_4__emit;
+  q_seq'nat'_3__emit := Map(x => x, q_seq'nat'_3__emit);
+  q_seq'nat'_8__emit := q_seq'nat'_3__emit;
+  loc__loc__requires_0_1_6__emit := loc__loc__requires_0_1_5__emit;
+  loc__loc__requires_0_1_7__emit := loc__loc__requires_0_1_4__emit;
+}
+
 }

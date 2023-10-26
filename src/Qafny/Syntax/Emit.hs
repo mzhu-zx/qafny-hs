@@ -9,13 +9,14 @@ module Qafny.Syntax.Emit where
 import           Qafny.Syntax.AST
 
 import           Control.Arrow          (Arrow (first))
-import qualified Data.Map.Strict  as Map
 import           Control.Monad.Reader
+import qualified Data.Map.Strict        as Map
 import           Data.Maybe             (maybeToList)
 import           Data.Sum
 import           Data.Text.Lazy         (Text, unpack)
 import qualified Data.Text.Lazy.Builder as TB
 import           Data.Tuple             (swap)
+import           Qafny.Env              (STuple (..))
 
 -------------------- Builder --------------------
 
@@ -43,12 +44,12 @@ indent :: Builder
 indent = do (n, _) <- ask
             build $ replicate n ' '
 
-withBracket :: Builder -> Builder
-withBracket b = build '[' <> b <> build ']'
-
 
 withParen :: Builder -> Builder
 withParen b = build '(' <> b <> build ')'
+
+withBracket :: Builder -> Builder
+withBracket b = build '[' <> b <> build ']'
 
 withBrace :: Builder -> Builder
 withBrace b = indent <> build "{\n" <> b <> indent <> build "}\n"
@@ -273,6 +274,13 @@ instance DafnyPrinter Range where
 
 instance DafnyPrinter Partition where
   build pp@(Partition p) = debugOnly pp $ "[" <!> byComma p <!> "]"
+
+instance DafnyPrinter Loc where
+  build = build . deref
+
+instance DafnyPrinter STuple where
+  build st@(STuple (l, p, (qty, dgrs))) = debugOnly st $
+    l <+> "↦" <+> p <+> "::" <+> qty <+> withBracket (byComma dgrs)
 
 instance (Show a, Show b, DafnyPrinter a, DafnyPrinter b) => DafnyPrinter (a, b) where
   build t@(a, b) = debugOnly t $ withParen . byComma $ [build a, build b]
