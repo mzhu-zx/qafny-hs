@@ -3,15 +3,13 @@
 #import opened Power2
 #import opened Unity
 
-method DeutschJozsa (n : nat)
-  // requires n > 0
+method Typing0 (n : nat)
+  requires n > 0
 {
   var q : qreg[n] := nor(n, 0);
   var p : qreg[1] := nor(1, 1);
   q[0 .. n] *= H;
   p[0 .. 1] *= H;
-  // assert typeof (q) is (n) $ had { forall i : nat | i < n :: q[i] == 1 };
-  // assert typeof (p) is (1) $ had { p[0] == -1 };
 }
 
 
