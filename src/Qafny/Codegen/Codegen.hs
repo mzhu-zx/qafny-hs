@@ -18,142 +18,87 @@ module Qafny.Codegen.Codegen (codegenAST) where
 
 
 -- Effects
-import qualified Control.Carrier.Error.Either as ErrE
 import qualified Control.Carrier.Error.Church as ErrC
-import           Control.Carrier.Reader       (runReader)
-import           Control.Carrier.State.Strict (runState)
+import qualified Control.Carrier.Error.Either as ErrE
+import           Control.Carrier.Reader
+    (runReader)
+import           Control.Carrier.State.Strict
+    (runState)
 import           Control.Effect.Catch
-import           Control.Effect.Error         (Error, throwError)
+import           Control.Effect.Error
+    (Error, throwError)
 import           Control.Effect.Lens
 import           Control.Effect.Reader
-import           Control.Effect.State         (State, get, put)
+import           Control.Effect.State
+    (State, get, put)
 import           Control.Effect.Trace
-import           Effect.Gensym                (Gensym, gensym)
+import           Effect.Gensym
+    (Gensym, gensym)
 
 -- Handlers
 import qualified Carrier.Gensym.Emit          as GEmit
-import           Qafny.Gensym                 (resumeGensym)
+import           Qafny.Gensym
+    (resumeGensym)
 
 -- Utils
-import           Control.Lens                 (at, non, (%~), (?~), (^.))
+import           Control.Lens
+    (at, non, (%~), (?~), (^.))
 import           Control.Lens.Tuple
 import           Control.Monad
-    ( MonadPlus (mzero)
-    , forM
-    , forM_
-    , join
-    , liftM2
-    , liftM3
-    , unless
-    , void
-    , when
-    , zipWithM
-    )
+    (MonadPlus (mzero), forM, forM_, when)
 
-import           Control.Arrow                ((&&&))
-import           Control.Exception            (throw)
+import           Control.Arrow
+    ((&&&))
 import           Data.Bifunctor
-import           Data.Bool                    (bool)
-import           Data.Functor                 ((<&>))
+import           Data.Bool
+    (bool)
+import           Data.Functor
+    ((<&>))
 import qualified Data.List                    as List
-import           Data.List.NonEmpty           (NonEmpty (..))
+import           Data.List.NonEmpty
+    (NonEmpty (..))
 import qualified Data.Map.Strict              as Map
 import           Data.Maybe
-    ( catMaybes
-    , listToMaybe
-    , mapMaybe
-    , maybeToList
-    )
+    (mapMaybe)
 import qualified Data.Sum                     as Sum
-import           Text.Printf                  (printf)
+import           Text.Printf
+    (printf)
 
 -- Qafny
+import           Qafny.Codegen.Phase
+    (codegenPhaseLambda, codegenPromotion)
 import           Qafny.Config
 import           Qafny.Env
-import           Qafny.Interval               (Interval (Interval))
-import           Qafny.Partial                (Reducible (reduce), sizeOfRangeP)
+import           Qafny.Interval
+    (Interval (Interval))
+import           Qafny.Partial
+    (Reducible (reduce), sizeOfRangeP)
 import           Qafny.Syntax.AST
 import           Qafny.Syntax.ASTFactory
 import           Qafny.Syntax.Emit
-    ( DafnyPrinter (build)
-    , byLineT
-    , showEmit
-    , showEmit0
-    , showEmitI
-    )
+    (DafnyPrinter, byLineT, showEmit0, showEmitI)
 import           Qafny.Syntax.EmitBinding
 import           Qafny.TypeUtils
-    ( bindingsFromPtys
-    , isEN
-    , typingPhaseEmitReprN
-    , typingQEmit
-    )
+    (bindingsFromPtys, isEN, typingPhaseEmitReprN, typingQEmit)
 import           Qafny.Typing
-    ( Promotion (..)
-    , PromotionScheme (..)
-    , analyzePhaseSpecDegree
-    , appkEnvWithBds
-    , checkSubtype
-    , checkSubtypeQ
-    , collectConstraints
-    , collectMethodTypes
-    , collectPureBindings
-    , extendTState
-    , matchEmitStates
-    , matchStateCorrLoop
-    , mergeCandidateHad
-    , mergeMatchedTState
-    , mergeSTuplesHadEN
-    , mergeScheme
-    , promotionScheme
-    , queryPhaseType
-    , removeTStateBySTuple
-    , resolveMethodApplicationArgs
-    , resolveMethodApplicationRets
-    , resolvePartition
-    , resolvePartition'
-    , resolvePartitions
-    , retypePartition
-    , retypePartition1
-    , specPartitionQTys
-    , splitScheme
-    , splitSchemePartition
-    , splitThenCastScheme
-    , tStateFromPartitionQTys
-    , typingExp
-    , typingGuard
-    , typingPartition
-    , typingPartitionQTy, allocPhaseType, allocAndUpdatePhaseType
-    )
+    (Promotion (..), PromotionScheme (..), allocAndUpdatePhaseType,
+    allocPhaseType, analyzePhaseSpecDegree, appkEnvWithBds, checkSubtype,
+    checkSubtypeQ, collectConstraints, collectMethodTypes, collectPureBindings,
+    extendTState, matchEmitStates, matchStateCorrLoop, mergeCandidateHad,
+    mergeMatchedTState, mergeSTuplesHadEN, mergeScheme, promotionScheme,
+    queryPhaseType, removeTStateBySTuple, resolveMethodApplicationArgs,
+    resolveMethodApplicationRets, resolvePartition, resolvePartition',
+    resolvePartitions, retypePartition, retypePartition1, specPartitionQTys,
+    splitScheme, splitSchemePartition, splitThenCastScheme,
+    tStateFromPartitionQTys, typingExp, typingGuard, typingPartition,
+    typingPartitionQTy)
 import           Qafny.Utils
-    ( bindingFromEmitBinding
-    , checkListCorr
-    , collectRQTyBindings
-    , dumpSSt
-    , dumpSt
-    , findEmitBindingsFromPartition
-    , findEmitRangeQTy
-    , fst2
-    , gensymEmitEB
-    , gensymEmitPartitionQTy
-    , gensymEmitRB
-    , gensymEmitRangeQTy
-    , gensymLoc
-    , gensymRangeQTy
-    , getMethodType
-    , internalError
-    , liftPartition
-    , modifyEmitRangeQTy
-    , onlyOne
-    , rbindingOfRange
-    , removeEmitPartitionQTys
-    , removeEmitRangeQTys
-    , rethrowMaybe
-    , uncurry3
-    )
-import Qafny.Codegen.Phase (codegenPromotionMaybe, codegenPhaseLambda, codegenPromotion)
-import GHC.ByteOrder (ByteOrder(LittleEndian))
-import qualified Control.Carrier.Error.Church as ErrC
+    (bindingFromEmitBinding, checkListCorr, collectRQTyBindings, dumpSSt,
+    dumpSt, findEmitBindingsFromPartition, findEmitRangeQTy, fst2, gensymEmitEB,
+    gensymEmitPartitionQTy, gensymEmitRB, gensymEmitRangeQTy, gensymLoc,
+    gensymRangeQTy, getMethodType, internalError, liftPartition,
+    modifyEmitRangeQTy, onlyOne, rbindingOfRange, removeEmitPartitionQTys,
+    removeEmitRangeQTys, rethrowMaybe, uncurry3)
 
 throwError'
   :: ( Has (Error String) sig m )

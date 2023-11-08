@@ -17,35 +17,33 @@ module Qafny.Codegen.Phase where
 
 import           Control.Effect.Error
 import           Control.Effect.State
-import           Control.Monad            (forM)
+import           Control.Monad
+    (forM)
 import           Effect.Gensym
 
-import           Data.Functor             ((<&>))
-import           Data.List                (nub)
-import           Data.Maybe               (maybeToList)
+import           Data.Functor
+    ((<&>))
+import           Data.List
+    (nub)
+import           Data.Maybe
+    (maybeToList)
 
 import           Qafny.Env
 import           Qafny.Syntax.AST
 import           Qafny.Syntax.ASTFactory
-    ( callMap
-    , cardV
-    , constLambda
-    , simpleLambda
-    )
-import           Qafny.Syntax.ASTUtils    (getPhaseRefN)
-import           Qafny.Syntax.Emit        (showEmit0)
+    (callMap, cardV, constLambda, simpleLambda)
+import           Qafny.Syntax.ASTUtils
+    (getPhaseRefN)
+import           Qafny.Syntax.Emit
+    (showEmit0)
 import           Qafny.Syntax.EmitBinding
 import           Qafny.TypeUtils
 import           Qafny.Typing
-    ( Promotion (..)
-    , PromotionScheme (..)
-    , queryPhaseType
-    )
+    (Promotion (..), PromotionScheme (..), queryPhaseType)
 import           Qafny.Utils
-    ( findEmitRangeQTy
-    , onlyOne
-    )
-import           Text.Printf              (printf)
+    (findEmitRangeQTy, onlyOne)
+import           Text.Printf
+    (printf)
 
 
 -- | Phase-Related Code Generation

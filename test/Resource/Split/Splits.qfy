@@ -1,0 +1,22 @@
+method SplitFromMid1()
+{
+  var q : qreg[10] := nor(10, 0);
+  assert { q[0 .. 10] : nor ↦ _ };
+  q[4..5] *= H;
+  assert { q[0 .. 4] : nor ↦ _ };
+  assert { q[4 .. 5] : had ↦ _ };
+  assert { q[5 .. 10] : nor ↦ _ };
+}
+
+method SplitFromMid2()
+{
+  var q : qreg[10] := nor(10, 0);
+  assert { q[0 .. 10] : nor ↦ _ };
+  q[4..5] *= H;
+  assert { q[0 .. 4], q[5 .. 10] : nor ↦ (_, _) };
+  assert { q[4 .. 5] : had ↦ _ };
+  q[0..4] *= H;
+  assert { q[0 .. 4] : had ↦ _ };
+  assert { q[4 .. 5] : had ↦ _ };
+  assert { q[5 .. 10] : nor ↦ _ };
+}
