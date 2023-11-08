@@ -92,6 +92,15 @@ import           Qafny.Typing
     splitScheme, splitSchemePartition, splitThenCastScheme,
     tStateFromPartitionQTys, typingExp, typingGuard, typingPartition,
     typingPartitionQTy)
+
+import           Qafny.Utils
+    (bindingFromEmitBinding, checkListCorr, collectRQTyBindings, dumpSSt,
+    dumpSt, findEmitBindingsFromPartition, findEmitRangeQTy, fst2, gensymEmitEB,
+    gensymEmitPartitionQTy, gensymEmitRB, gensymEmitRangeQTy, gensymLoc,
+    gensymRangeQTy, getMethodType, internalError, liftPartition,
+    modifyEmitRangeQTy, onlyOne, rbindingOfRange, removeEmitPartitionQTys,
+    removeEmitRangeQTys, rethrowMaybe, uncurry3)
+import           Qafny.Typing.Error
 import           Qafny.Utils
     (bindingFromEmitBinding, checkListCorr, collectRQTyBindings, dumpSSt,
     dumpSt, findEmitBindingsFromPartition, findEmitRangeQTy, fst2, gensymEmitEB,
@@ -514,7 +523,7 @@ codegenStmt'Apply stmt@(s@(Partition ranges) :*=: eLam@(ELambda pbinder _ pexpMa
     _   -> throwError errRangeGt1
 
   -- do the type cast and split first
-  (STuple (_, _, (qt, _)), maySplit, mayCast) <- splitThenCastScheme st' qtLambda r
+  (STuple (_, _, (qt, _)), maySplit, mayCast) <- hdlSC st' $ splitThenCastScheme st' qtLambda r
   stmts <- codegenSplitThenCastEmit maySplit mayCast
 
   -- resolve again for consistency
@@ -553,6 +562,13 @@ codegenStmt'Apply stmt@(s@(Partition ranges) :*=: eLam@(ELambda pbinder _ pexpMa
       return [ vEmit ::=: body ]
     _    -> throwError' "I have no idea what to do in this case ..."
   where
+    hdlSC stuple m  = do
+      a <- ErrE.runError @SCError m
+      case a of
+        -- Left (SplitENError{}) -> return (stuple, Nothing, Nothing)
+        Left err -> throwError $ show err
+        Right v  -> return v
+
     errNotInCorr r corr = printf "%s is not in the corr. %s" (show r) (show corr)
     errRangeGt1 :: String
     errRangeGt1 = printf "%s contains more than 1 range no!" (show ranges)
@@ -710,7 +726,7 @@ codegenStmt'For (SFor idx boundl boundr eG invs (Just seps) body) = do
       stmtsPreGuard <- invPQtsPre `forM` \(sInv, qtInv, _) -> case sInv of
         Partition [rInv] -> do
           stInv <- resolvePartition sInv
-          (sInvSplit, maySplit, mayCast) <- splitThenCastScheme stInv qtInv rInv
+          (sInvSplit, maySplit, mayCast) <- hdlSCError $ splitThenCastScheme stInv qtInv rInv
           codegenSplitThenCastEmit maySplit mayCast
         _                ->
           -- Q: What is a reasonable split if there are 2 ranges? Would this have

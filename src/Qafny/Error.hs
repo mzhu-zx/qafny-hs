@@ -1,10 +1,10 @@
 module Qafny.Error where
 
-import qualified Data.Map.Strict  as Map
+import qualified Data.Map.Strict   as Map
 
-import           Qafny.Syntax.AST (Loc, Partition, Range, MTy, Var)
-import           Text.Printf      (printf)
-import Qafny.Syntax.Emit (showEmitI)
+import           Qafny.Syntax.AST  (Loc, MTy, Partition, Range, Var)
+import           Qafny.Syntax.Emit (showEmitI)
+import           Text.Printf       (printf)
 
 data QError = UnknownVariableError Var (Map.Map Var MTy)
             | UnknownPartitionError Partition
@@ -20,3 +20,4 @@ instance Show QError where
     printf "Range [%s] is not in the scope!" (show r)
   show (UnknownLocError l) =
     printf "Loc [%s] is not in the scope!" (show l)
+
