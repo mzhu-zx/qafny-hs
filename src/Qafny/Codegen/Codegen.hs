@@ -1051,9 +1051,9 @@ hadGuardMergeExp vEmit tEmit cardMain cardStash eBase =
   let ~(TSeq tInSeq) = tEmit
   in [ qComment "Merge: Body partition + the Guard partition."
      , (vEmit ::=:) $
-       (EEmit . EMakeSeq tInSeq cardStash $ constExp eBase) +
+       (EEmit . EMakeSeq tInSeq cardStash $ constLambda eBase) +
        (EEmit . EMakeSeq tInSeq cardMain $
-         constExp $ reduce $ EOp2 OAdd eBase (ENum 1))
+         constLambda $ reduce $ EOp2 OAdd eBase (ENum 1))
      ]
 
 codegenMergePhase

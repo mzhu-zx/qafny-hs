@@ -3,7 +3,6 @@
   #-}
 
 module Qafny.Domain where
-import           Control.Lens.Internal.FieldTH (LensRules (_simpleLenses))
 import           Data.Bool                     (bool)
 import           Qafny.Interval
 
