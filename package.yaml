@@ -2,9 +2,9 @@ name:                qafny-hs
 version:             0.1.0.0
 github:              "githubuser/qafny-hs"
 license:             GPL
-author:              Mingwei Zhu
-maintainer:          mzhu1@umd.edu
-copyright:           Copyright 2023 Mingwei Zhu
+author:
+maintainer:
+copyright:
 
 extra-source-files:
 - README.org
