@@ -494,7 +494,7 @@ codegenStmt'Apply
      )
   => Stmt'
   -> m [Stmt']
-codegenStmt'Apply ((:*=:) s EHad) = do
+codegenStmt'Apply (s :*=: EHad) = do
   r <- case unpackPart s of
     [r] -> return r
     _   -> throwError "TODO: support non-singleton partition in `*=`"
@@ -585,6 +585,7 @@ codegenStmt'Apply stmt@(s@(Partition ranges) :*=: eLam@(ELambda pbinder _ pexpMa
     mkMapCall v = v ::=: callMap eLamPure (EVar v)
     eLamPure = lambdaUnphase eLam
 
+codegenStmt'Apply (s :*=: EQFT) = undefined
 
 codegenStmt'Apply _ = throwError' "What could possibly go wrong?"
 
