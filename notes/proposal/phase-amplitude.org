@@ -100,7 +100,7 @@ QFT tansforms a basis vector in the following way.[fn:2]
 \]
 
 This is a complicated case: the phase itself is of the 1st degree but the
-outcome state comprises a superposition of state.
+outcome state comprises a superposition of states.
 # 
 What makes this even harder is when we apply QFT over a superposition of kets,
 the norm of doing it on EN states.

@@ -3,7 +3,6 @@
   #-}
 
 module Qafny.Domain where
-import           Data.Bool                     (bool)
 import           Qafny.Interval
 
 -- * Nat Domain
