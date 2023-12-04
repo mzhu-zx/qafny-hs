@@ -386,7 +386,7 @@ splitScheme' s@(STuple (loc, p, xt@(qt, ptys))) rSplitTo@(Range to rstL rstR) = 
             List.filter ((/= rOrigin) . fst) xRangeLocs
       xSt %= (at to ?~ xrl)
       -- 2. Generate emit symbols for split ranges
-      let sMain' = (loc, pMain, (qt, dgrsMain)) -- the part that's splited _from_
+      let sMain' = (loc, pMain, (qt, dgrsMain)) -- the part that's split _from_
       case rsRem of
         [] -> case qt of
           t | t `elem` [ TEN, TEN01 ] ->
