@@ -66,7 +66,7 @@ token :-
   "\omega"         { emit $  TUnicodeOmega       }
   "Ω"              { emit $  TUnicodeSumOmega    }
   "\Omega"         { emit $  TUnicodeSumOmega    }
-  "\Sum"           { emit $  TUnicodeIn          }
+  "\Sum"           { emit $  TUnicodeSum         }
   "⊗"              { emit $  TUnicodeTensor      }
   "\otimes"        { emit $  TUnicodeIn          }
   "↦"              { emit $  TUnicodeMap         }
