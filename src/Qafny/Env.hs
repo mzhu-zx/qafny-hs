@@ -14,6 +14,7 @@ import qualified Data.Map.Strict  as Map
 import           Qafny.Partial
 import           Qafny.Syntax.AST
 import           Qafny.Syntax.EmitBinding
+import           Data.Sum
 
 import           Text.Printf      (printf)
 
@@ -43,7 +44,9 @@ data TEnv = TEnv
   , _qnum :: Exp' -- assume each Q type variable is associated with a qubit num which is C type exp
   }
 
-type EmitState = Map.Map EmitBinding Var
+-- type EmitState = Map.Map EmitBinding Var
+
+type EmitState = Map.Map (Loc :+: Range) EmitData
 
 data TState = TState
   { _sSt    :: Map.Map Loc (Partition, (QTy, [Int])) -- partition type state

@@ -6,47 +6,75 @@
 
 module Qafny.Utils.EmitBinding where
 
-import           Control.Lens             (at, (?~), (^.))
-import           Control.Monad            (forM)
-import           Data.Bifunctor           (second)
-import           Data.Functor             ((<&>))
+import           Control.Lens
+    (at, (?~), (^.))
+import           Control.Monad
+    (forM)
+import           Data.Bifunctor
+    (second)
+import           Data.Functor
+    ((<&>))
 import qualified Data.Map.Strict          as Map
-import           Data.Maybe               (mapMaybe)
+import           Data.Maybe
+    (mapMaybe)
 import qualified Data.Set                 as Set
 import           Data.Sum
-import           Text.Printf              (printf)
+import           Text.Printf
+    (printf)
 
-import           Effect.Gensym            (Gensym, gensym)
-import           Qafny.Env                (TState, emitSt)
-import           Qafny.Partial            (Reducible (reduce))
+import           Effect.Gensym
+    (Gensym, gensym)
+import           Qafny.Env
+    (TState, emitSt)
+import           Qafny.Partial
+    (Reducible (reduce))
 import           Qafny.Syntax.AST
 import           Qafny.Syntax.EmitBinding
-import           Qafny.TypeUtils          (typingPhaseEmitReprN, typingQEmit)
-import           Qafny.Utils.Utils        (rethrowMaybe)
+import           Qafny.TypeUtils
+    (typingPhaseEmitReprN, typingQEmit)
+import           Qafny.Utils.Utils
+    (rethrowMaybe)
 
-import           Control.Effect.Error     (Error, throwError)
+import           Control.Effect.Error
+    (Error, throwError)
 import           Control.Effect.Lens
 import           Control.Effect.Reader
 import           Control.Effect.State
+
 
 
 --------------------------------------------------------------------------------
 -- * Gensym Utils
 --
 -- $doc
--- The following functions operate on a 'Range' and a 'QTy', form a `Binding` to
--- be normalized to a variable name, perform modification and query to the emit
--- symbol state and the __Gensym EmitBinding__ effect.
+-- The following functions operate on a 'Range'/'Loc' and a 'QTy', form a
+-- `Binding` to be normalized to a variable name, perform modification and query
+-- to the emit symbol state w/ the __Gensym EmitBinding__ effect.
 -- $doc
 --------------------------------------------------------------------------------
 
-rbindingOfRange :: Range -> QTy :+: Int -> EmitBinding
-rbindingOfRange r b = RBinding (reduce r, b)
+-- | Generate a /complete/ 'EmitData' of a Range and manage it within the 'emitSt'
+gensymEmitDataStByRange
+  :: ( Has (Gensym Emitter) sig m
+     , Has (State TState) sig m
+     )
+  => Range -> QTy -> Int -> m EmitData
+gensymEmitDataStByRange r qt i = do
+  vB <- gensym $ EmBaseSeq r qt
+  vP <- gensym $ EmPhaseSeq (inj r) i
+  let ed =  EmitData { evPhase = Just vP
+                     , evBasis = Just vB
+                     , evAmp   = Nothing
+                     }
+  emitSt %= (inj r ?~ ed)
+  return ed
+
+
 
 -- | Generate a varaible from a 'Range' and its 'QTy' and add the corresponding
 -- 'Binding' into 'emitSt'
 gensymEmitRangeQTy
-  :: ( Has (Gensym EmitBinding) sig m
+  :: ( Has (Gensym Emitter) sig m
      , Has (State TState) sig m
      )
   => Range -> QTy-> m Var
@@ -239,18 +267,18 @@ removeEmitRangeQTys rqts = do
 --------------------------------------------------------------------------------
 -- * EmitBinding Related
 
-projEmitBindingRangeQTy :: EmitBinding -> Maybe (Range, QTy)
-projEmitBindingRangeQTy (RBinding (r, Inl qty)) = Just (r, qty)
-projEmitBindingRangeQTy _                       = Nothing
+-- projEmitBindingRangeQTy :: EmitBinding -> Maybe (Range, QTy)
+-- projEmitBindingRangeQTy (RBinding (r, Inl qty)) = Just (r, qty)
+-- projEmitBindingRangeQTy _                       = Nothing
 
 
-collectRQTyBindings ::[(EmitBinding, Var)] -> [((Range, QTy), Var)]
-collectRQTyBindings = mapMaybe (\(e, v) -> projEmitBindingRangeQTy e <&> (, v))
+-- collectRQTyBindings ::[(EmitBinding, Var)] -> [((Range, QTy), Var)]
+-- collectRQTyBindings = mapMaybe (\(e, v) -> projEmitBindingRangeQTy e <&> (, v))
 
-bindingFromEmitBinding :: (EmitBinding, Var) -> Binding'
-bindingFromEmitBinding = go
-  where
-    go (RBinding (_, Inl qty), v) = Binding v (typingQEmit qty)
-    go (RBinding (_, Inr dgr), v) = Binding v (typingPhaseEmitReprN dgr)
-    go (LBinding (_, dgr), v)     = Binding v (typingPhaseEmitReprN dgr)
-    go (BBinding (_, dgr), v)     = Binding v TNat
+-- bindingFromEmitBinding :: (EmitBinding, Var) -> Binding'
+-- bindingFromEmitBinding = go
+--   where
+--     go (RBinding (_, Inl qty), v) = Binding v (typingQEmit qty)
+--     go (RBinding (_, Inr dgr), v) = Binding v (typingPhaseEmitReprN dgr)
+--     go (LBinding (_, dgr), v)     = Binding v (typingPhaseEmitReprN dgr)
+--     go (BBinding (_, dgr), v)     = Binding v TNat

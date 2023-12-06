@@ -10,8 +10,8 @@
   #-}
 module Carrier.Gensym.Emit where
 
--- | A carrier for 'Gensym' effect, generating a unique variable on the
--- meta-level with provided prefix and return all generated variables
+-- | A carrier for 'Gensym' effect, generating a unique variable at the
+-- emission-level with a (generic) prefix and return all generated variables.
 
 import           Control.Algebra
 import           Control.Carrier.State.Strict

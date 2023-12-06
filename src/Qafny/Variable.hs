@@ -58,7 +58,10 @@ instance Variable (Binding ()) where
 
 instance Variable PhaseTy where
   variable PT0       = "phase_0_"
-  variable (PTN n _) = printf "phase_%d_" n
+  variable (PTN n _) = variablePhaseN n
+
+variablePhaseN :: Int -> String
+variablePhaseN n = printf "phase_%d_" n
 
 instance Variable QTy where
   variable = variable . typingQEmit
@@ -67,10 +70,10 @@ instance (Variable a, Variable b) => Variable (a :+: b) where
   variable (Inl l) = variable l
   variable (Inr r) = variable r
 
-instance Variable EmitBinding where
-  variable (RBinding r) = variable r
-  variable (BBinding b) = variable b
-  variable (LBinding v) = variable v
+-- instance Variable EmitBinding where
+--   variable (RBinding r) = variable r
+--   variable (BBinding b) = variable b
+--   variable (LBinding v) = variable v
 
 instance Variable Loc where
   variable = ("loc__" ++) . deref
@@ -80,3 +83,8 @@ instance (Variable a, Variable b) => Variable (a, b) where
     if True
     then variable a ++ "_" ++ variable b
     else variable a ++ "__" ++ variable b
+
+instance Variable Emitter where
+  variable (EmBaseSeq r qt) = variable (r, qt)
+  variable (EmPhaseSeq b i) = variable (b, variablePhaseN i)
+  variable EmAmplitude = "amplitude"
