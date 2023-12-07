@@ -93,21 +93,11 @@ import           Qafny.Typing
     tStateFromPartitionQTys, typingExp, typingGuard, typingPartition,
     typingPartitionQTy)
 
-import           Qafny.Utils
-    (bindingFromEmitBinding, checkListCorr, collectRQTyBindings, dumpSSt,
-    dumpSt, findEmitBindingsFromPartition, findEmitRangeQTy, fst2, gensymEmitEB,
-    gensymEmitPartitionQTy, gensymEmitRB, gensymEmitRangeQTy, gensymLoc,
-    gensymRangeQTy, getMethodType, internalError, liftPartition,
-    modifyEmitRangeQTy, onlyOne, rbindingOfRange, removeEmitPartitionQTys,
-    removeEmitRangeQTys, rethrowMaybe, uncurry3)
 import           Qafny.Typing.Error
-import           Qafny.Utils
-    (bindingFromEmitBinding, checkListCorr, collectRQTyBindings, dumpSSt,
-    dumpSt, findEmitBindingsFromPartition, findEmitRangeQTy, fst2, gensymEmitEB,
-    gensymEmitPartitionQTy, gensymEmitRB, gensymEmitRangeQTy, gensymLoc,
-    gensymRangeQTy, getMethodType, internalError, liftPartition,
-    modifyEmitRangeQTy, onlyOne, rbindingOfRange, removeEmitPartitionQTys,
-    removeEmitRangeQTys, rethrowMaybe, uncurry3)
+import           Qafny.Utils.EmitBinding
+import           Qafny.Utils.Utils
+    (checkListCorr, dumpSSt, dumpSt, fst2, gensymLoc, getMethodType,
+    internalError, onlyOne, rethrowMaybe, uncurry3)
 
 throwError'
   :: ( Has (Error String) sig m )
@@ -345,7 +335,7 @@ codegenBlock
      , Has (State TState)  sig m
      , Has (Error String) sig m
      , Has (Gensym String) sig m
-     , Has (Gensym EmitBinding) sig m
+     , Has (Gensym Emitter) sig m
      , Has (Reader Bool) sig m
      , Has (Reader IEnv) sig m
      , Has (Reader QTy) sig m
@@ -362,7 +352,7 @@ codegenStmts
      , Has (Error String) sig m
      , Has (Reader Bool) sig m
      , Has (Gensym String) sig m
-     , Has (Gensym EmitBinding) sig m
+     , Has (Gensym Emitter) sig m
      , Has (Reader IEnv) sig m
      , Has Trace sig m
      , Has (Reader QTy) sig m -- hints for λ type resolution
@@ -388,7 +378,7 @@ codegenStmt
      , Has (State TState)  sig m
      , Has (Error String) sig m
      , Has (Gensym String) sig m
-     , Has (Gensym EmitBinding) sig m
+     , Has (Gensym Emitter) sig m
      , Has Trace sig m
      )
   => Stmt'
@@ -413,7 +403,7 @@ codegenStmt'
      , Has (State TState)  sig m
      , Has (Error String) sig m
      , Has (Gensym String) sig m
-     , Has (Gensym EmitBinding) sig m
+     , Has (Gensym Emitter) sig m
      , Has Trace sig m
      )
   => Stmt'
@@ -489,7 +479,7 @@ codegenStmt'Apply
      , Has (State TState)  sig m
      , Has (Error String) sig m
      , Has (Gensym String) sig m
-     , Has (Gensym EmitBinding) sig m
+     , Has (Gensym Emitter) sig m
      , Has Trace sig m
      )
   => Stmt'
@@ -600,7 +590,7 @@ codegenStmt'If
      , Has (State TState)  sig m
      , Has (Error String) sig m
      , Has (Gensym String) sig m
-     , Has (Gensym EmitBinding) sig m
+     , Has (Gensym Emitter) sig m
      , Has Trace sig m
      )
   => Stmt'
@@ -631,7 +621,7 @@ codegenStmt'If'Had
      , Has (State TState)  sig m
      , Has (Error String) sig m
      , Has (Gensym String) sig m
-     , Has (Gensym EmitBinding) sig m
+     , Has (Gensym Emitter) sig m
      , Has (Reader IEnv) sig m
      , Has (Reader QTy) sig m
      , Has (Reader Bool) sig m
@@ -673,7 +663,7 @@ codegenStmt'For
      , Has (State TState)  sig m
      , Has (Error String) sig m
      , Has (Gensym String) sig m
-     , Has (Gensym EmitBinding) sig m
+     , Has (Gensym Emitter) sig m
      , Has Trace sig m
      )
   => Stmt'
@@ -809,7 +799,7 @@ codegenFor'Body
      , Has (State TState)  sig m
      , Has (Error String) sig m
      , Has (Gensym String) sig m
-     , Has (Gensym EmitBinding) sig m
+     , Has (Gensym Emitter) sig m
      , Has Trace sig m
      )
   => Var   -- ^ index variable
@@ -978,7 +968,7 @@ codegenStmt'For'Had
      , Has (State TState)  sig m
      , Has (Error String) sig m
      , Has (Gensym String) sig m
-     , Has (Gensym EmitBinding) sig m
+     , Has (Gensym Emitter) sig m
      , Has Trace sig m
      )
   => STuple -> STuple -> Var -> Block'
@@ -1016,7 +1006,7 @@ codegenStmt'For'Had stB stG vIdx b = do
 mergeHadGuard
   :: ( Has (State TState) sig m
      , Has (Error String) sig m
-     , Has (Gensym EmitBinding) sig m
+     , Has (Gensym Emitter) sig m
      , Has (Reader IEnv) sig m
      , Has Trace sig m
      )
@@ -1036,7 +1026,7 @@ mergeHadGuard = mergeHadGuardWith (ENum 0)
 mergeHadGuardWith
   :: ( Has (State TState) sig m
      , Has (Error String) sig m
-     , Has (Gensym EmitBinding) sig m
+     , Has (Gensym Emitter) sig m
      , Has (Reader IEnv) sig m
      , Has Trace sig m
      )
@@ -1058,7 +1048,7 @@ hadGuardMergeExp vEmit tEmit cardMain cardStash eBase =
      ]
 
 codegenMergePhase
-  :: ( Has (Gensym EmitBinding) sig m
+  :: ( Has (Gensym Emitter) sig m
      , Has (Error String) sig m
      )
   => PhaseTy -> PhaseTy -> m (PhaseTy, [Stmt'])
@@ -1100,7 +1090,7 @@ mergeEmitted corr excluded =
 -- | Generate statements that allocate qubits if it's Nor; otherwise, keep the
 -- source statement as is.
 codegenAlloc
-  :: ( Has (Gensym EmitBinding) sig m
+  :: ( Has (Gensym Emitter) sig m
      , Has (Gensym String) sig m
      , Has (State TState)  sig m
      , Has (Error String) sig m
@@ -1163,7 +1153,7 @@ codegenCastEmit
 castWithOp
   :: ( Has (Error String) sig m
      , Has (State TState) sig m
-     , Has (Gensym EmitBinding) sig m
+     , Has (Gensym Emitter) sig m
      )
   => String -> STuple -> QTy -> m [Stmt']
 castWithOp op s newTy =
@@ -1183,7 +1173,7 @@ castWithOp op s newTy =
 castPartitionEN
   :: ( Has (Error String) sig m
      , Has (State TState) sig m
-     , Has (Gensym EmitBinding) sig m
+     , Has (Gensym Emitter) sig m
      )
   => STuple -> m [Stmt']
 castPartitionEN st@(STuple (locS, s, (qtS, _))) = do
@@ -1206,7 +1196,7 @@ castPartitionEN st@(STuple (locS, s, (qtS, _))) = do
 dupState
   :: ( Has (Error String) sig m
      , Has (State TState) sig m
-     , Has (Gensym EmitBinding) sig m
+     , Has (Gensym Emitter) sig m
      , Has (Reader IEnv) sig m
      , Has Trace sig m
      )
@@ -1327,7 +1317,7 @@ doubleHadCounter vCounter =
 -- | Generate from the merge scheme statements to perform the merge and the
 -- final result variable.
 codegenMergeScheme
-  :: ( Has (Gensym EmitBinding) sig m
+  :: ( Has (Gensym Emitter) sig m
      , Has (Gensym String) sig m
      , Has (State TState) sig m
      , Has (Error String) sig m
@@ -1420,7 +1410,7 @@ codegenRequires
   :: ( Has (State TState)  sig m
      , Has (Error String) sig m
      , Has (Gensym String) sig m
-     , Has (Gensym EmitBinding) sig m
+     , Has (Gensym Emitter) sig m
      )
   => [Exp'] -> m ([Exp'], [PhaseTy])
 codegenRequires rqs = (bimap concat concat . unzip <$>) . forM rqs $ \rq ->
@@ -1437,7 +1427,7 @@ codegenRequires rqs = (bimap concat concat . unzip <$>) . forM rqs $ \rq ->
 
 codegenMethodReturns
   :: ( Has (State TState) sig m
-     , Has (Gensym EmitBinding) sig m
+     , Has (Gensym Emitter) sig m
      , Has (Error String) sig m
      , Has (Reader IEnv) sig m
      , Has Trace sig m
@@ -1660,7 +1650,7 @@ codegenPhaseSpec _ _ (PTN n _) e =
 genEmitSt
   :: ( Has (Error String) sig m
      , Has (State TState)  sig m
-     , Has (Gensym EmitBinding) sig m
+     , Has (Gensym Emitter) sig m
      )
   => m [Stmt']
 genEmitSt = do

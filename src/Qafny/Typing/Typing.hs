@@ -61,7 +61,7 @@ import           Control.Lens
     (at, (%~), (?~), (^.))
 import           Control.Lens.Tuple
 import           Control.Monad
-    (forM, forM_, mapAndUnzipM, unless, void, when, zipWithM, (>=>), liftM2)
+    (forM, forM_, liftM2, mapAndUnzipM, unless, when, zipWithM, (>=>))
 import           Data.Bifunctor
     (Bifunctor (second))
 import           Data.Bool
@@ -75,7 +75,7 @@ import           Data.List.NonEmpty
 import qualified Data.List.NonEmpty           as NE
 import qualified Data.Map.Strict              as Map
 import           Data.Maybe
-    (catMaybes, fromJust, fromMaybe, isJust, listToMaybe, mapMaybe, maybeToList)
+    (catMaybes, isJust, listToMaybe, mapMaybe)
 import qualified Data.Set                     as Set
 import           Data.Sum
 import           Data.Sum
@@ -382,7 +382,7 @@ splitScheme' s@(STuple (loc, p, xt@(qt, ptys))) rSplitTo@(Range to rstL rstR) = 
               deleteEDs [inj rOrigin]
               -- gensym for each split ranges
               rsEDs <- genEDStSansPhaseByRanges qt (rSplitTo : rsRem)
-              vSyms <- mapM ((visitED evBasis) . snd) rsEDs
+              vSyms <- mapM (visitED evBasis . snd) rsEDs
               return (vEmitR, vSyms, (ptySplitTo : ptysRem))
             _    -> throwError'' $ errUnsupprtedTy ++ "\n" ++ infoSS
           let sAux' = (locAux, pAux, (qt, [dgrOrigin]))
@@ -731,7 +731,7 @@ matchEmitStatesVars es1 es2 =
 matchStateCorrLoop
   :: Has (Error String) sig m
   => TState -> TState -> AEnv -> m [(Var, Var)]
-matchStateCorrLoop tsInit tsLoop env = 
+matchStateCorrLoop tsInit tsLoop env =
   (snd <$>) <$> matchEmitStatesVars esLoop esInit
   where
     esInit = tsInit ^. emitSt
@@ -1176,7 +1176,7 @@ extendTState p qt dgrs = do
   bdsEmit <- genEDStSansPhaseByRanges qt (unpackPart p)
   vsEmit <- visitEDs evBasis $ snd <$> bdsEmit
   xSt %= Map.unionWith (++) (Map.fromListWith (++) xMap)
-  return $ (vsEmit ,ptys) 
+  return $ (vsEmit ,ptys)
   where
     ranges = unpackPart p
 

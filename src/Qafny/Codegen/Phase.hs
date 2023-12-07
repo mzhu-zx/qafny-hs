@@ -28,6 +28,8 @@ import           Data.List
 import           Data.Maybe
     (maybeToList)
 
+import           Data.Sum
+    (Injection (inj))
 import           Qafny.Env
 import           Qafny.Syntax.AST
 import           Qafny.Syntax.ASTFactory
@@ -37,11 +39,14 @@ import           Qafny.Syntax.ASTUtils
 import           Qafny.Syntax.Emit
     (showEmit0)
 import           Qafny.Syntax.EmitBinding
+    (EmitData (evBasis), Emitter)
 import           Qafny.TypeUtils
 import           Qafny.Typing
     (Promotion (..), PromotionScheme (..), queryPhaseType)
-import           Qafny.Utils
-    (findEmitRangeQTy, onlyOne)
+import           Qafny.Utils.EmitBinding
+    (findVisitED, findVisitEDs)
+import           Qafny.Utils.Utils
+    (onlyOne)
 import           Text.Printf
     (printf)
 
@@ -64,7 +69,7 @@ first3 f (a, b, c) = (f a, b, c)
 --------------------------------------------------------------------------------
 
 codegenPromotionMaybe
-  :: ( Has (Gensym EmitBinding) sig m
+  :: ( Has (Gensym Emitter) sig m
      , Has (State TState) sig m
      , Has (Error String) sig m
      )
@@ -72,7 +77,7 @@ codegenPromotionMaybe
 codegenPromotionMaybe = (concat <$>) . mapM codegenPromotion . maybeToList
 
 codegenPromotion
-  :: ( Has (Gensym EmitBinding) sig m
+  :: ( Has (Gensym Emitter) sig m
      , Has (State TState) sig m
      , Has (Error String) sig m
      )
@@ -87,13 +92,13 @@ codegenPromotion
 
 -- | Promote a 0th-degree phase to 1st-degree phase
 codegenPromote'0'1
-  :: ( Has (Gensym EmitBinding) sig m
+  :: ( Has (Gensym Emitter) sig m
      , Has (State TState) sig m
      , Has (Error String) sig m
      )
   => QTy -> [Range] -> [PhaseRef] -> (Exp', Exp') -> m [Stmt']
 codegenPromote'0'1 qt rs prefs (i, n) = do
-  vRs <- forM rs (`findEmitRangeQTy` qt)
+  vRs <- findVisitEDs evBasis (inj <$> rs)
   let eCardVRs = cardV <$> vRs
       -- use 0 here because `EMakeSeq` add an extra layer of `seq`
       ty = typingPhaseEmitReprN 0
