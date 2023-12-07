@@ -6,6 +6,10 @@
 
 module Data.Sum where
 
+import           Data.Maybe
+    (mapMaybe, isJust)
+import Text.Printf (printf)
+
 data (f :+: g)
   = Inl f
   | Inr g
@@ -20,8 +24,8 @@ instance (Eq f, Eq g) => Eq (f :+: g) where
   _ == _               = False
 
 instance (Ord f, Ord g) => Ord (f :+: g) where
-  compare (Inl _) (Inr _) = LT
-  compare (Inr _) (Inl _) = GT
+  compare (Inl _) (Inr _)   = LT
+  compare (Inr _) (Inl _)   = GT
   compare (Inl f1) (Inl f2) = compare f1 f2
   compare (Inr f1) (Inr f2) = compare f1 f2
 
@@ -45,3 +49,13 @@ projRight :: (f :+: g) -> Maybe g
 projRight (Inr g) = Just g
 projRight _       = Nothing
 
+
+lefts :: [f :+: g] -> [f]
+lefts =  mapMaybe projLeft
+
+isInl :: (f :+: g) -> Bool
+isInl = isJust . projLeft
+
+getInl :: Show g => (f :+: g) -> f
+getInl (Inl f) = f
+getInl (Inr r) = error $ printf "%s is not an Inl" (show r)

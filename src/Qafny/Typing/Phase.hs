@@ -179,10 +179,10 @@ allocPhaseType (STuple (loc, Partition rs, (qt, dgrs))) =
   if isEN qt
     then
     do dgr <- onlyOne throwError' dgrs
-       ed  <- genEDStUpdatePhase (inj loc) dgr
+       ed  <- genEDStUpdatePhase dgr  (inj loc)
        return [evPhaseTy dgr ed]
     else do checkListCorr dgrs rs
-            sequence [ evPhaseTy dgr <$> genEDStUpdatePhase (inj r) dgr
+            sequence [ evPhaseTy dgr <$> genEDStUpdatePhase dgr (inj r)
                      | (r, dgr) <- zip rs dgrs
                      ]
 
