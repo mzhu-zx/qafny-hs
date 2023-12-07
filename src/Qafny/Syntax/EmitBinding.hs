@@ -22,6 +22,8 @@ data EmitData = EmitData
   { evPhase :: Maybe PhaseRef -- ^ the variables for the phase
   , evBasis :: Maybe String   -- ^ the varible for its basis
   , evAmp   :: Maybe String   -- ^ the variable for its amplitude
+  , evBasisTy :: Maybe Ty
+  , evPhaseSeqTy :: Maybe Ty
   }
   deriving (Eq, Ord, Show)
 
@@ -29,6 +31,8 @@ mtEmitData :: EmitData
 mtEmitData = EmitData { evPhase = Nothing
                       , evBasis = Nothing
                       , evAmp   = Nothing
+                      , evBasisTy = Nothing
+                      , evPhaseSeqTy = Nothing
                       }
 
 {-#

@@ -1,6 +1,7 @@
 {-# LANGUAGE
     CPP
   , DataKinds
+  , NamedFieldPuns
   , FlexibleContexts
   , FlexibleInstances
   , IncoherentInstances
@@ -45,7 +46,7 @@ import           Control.Lens
     (at, non, (%~), (?~), (^.))
 import           Control.Lens.Tuple
 import           Control.Monad
-    (MonadPlus (mzero), forM, forM_, when)
+    (MonadPlus (mzero), forM, forM_, when, liftM2)
 
 import           Control.Arrow
     ((&&&))
@@ -59,7 +60,7 @@ import           Data.List.NonEmpty
     (NonEmpty (..))
 import qualified Data.Map.Strict              as Map
 import           Data.Maybe
-    (mapMaybe)
+    (mapMaybe, catMaybes)
 import qualified Data.Sum                     as Sum
 import           Text.Printf
     (printf)
@@ -79,7 +80,7 @@ import           Qafny.Syntax.Emit
     (DafnyPrinter, byLineT, showEmit0, showEmitI)
 import           Qafny.Syntax.EmitBinding
 import           Qafny.TypeUtils
-    (bindingsFromPtys, isEN, typingPhaseEmitReprN, typingQEmit)
+    (bindingsFromPtys, isEN, typingPhaseEmitReprN, typingQEmit, emitTypeFromDegree)
 import           Qafny.Typing
     (Promotion (..), PromotionScheme (..), allocAndUpdatePhaseType,
     allocPhaseType, analyzePhaseSpecDegree, appkEnvWithBds, checkSubtype,
@@ -248,6 +249,7 @@ codegenToplevel'Method q@(QMethod v bds rts rqs ens (Just block)) = runWithCallS
 
   -- Gensym symbols are in the reverse order!
   let stmtsDeclare = fDecls rbdvsEmitB
+  -- let stmtsDeclare = undefined
   let blockStmts = concat
         [ stmtsMatchParams
         , return $ qComment "Forward Declaration"
@@ -282,28 +284,18 @@ codegenToplevel'Method q@(QMethod v bds rts rqs ens (Just block)) = runWithCallS
 
     -- | Compile the foward declaration of all variables produced in compiling
     -- the body
-    fDecls = fmap $ uncurry fDecl
+    fDecls = mapMaybe $ uncurry fDecl
 
-    fDecl :: EmitBinding -> Var -> Stmt'
-    fDecl (RBinding (_, ty)) v' =
-      SVar (Binding v' (getTy ty)) Nothing
-      where
-        getTy (Sum.Inl qty) = typingQEmit qty
-        getTy (Sum.Inr _)   = TNat
-    fDecl (LBinding (_, n)) v' =
-      SVar (Binding v' (typingPhaseEmitReprN n)) Nothing
-    fDecl (BBinding (_, _)) v' =
-      SVar (Binding v' TNat) Nothing
-    -- fDecl bd _ = error $
-    --   printf "Internal Error: %s is not a valid EmitBinding." (show bd)
 
-    -- | Forward declare all symbols emitted during Codegen except for those to
-    -- be put in the __returns__ clause.
-    -- fDecls rbdvsEmitB mapFinalEmits =
-    --    [ SVar (Binding vEmit tEmit) Nothing
-    --    | (RBinding (Range vMeta _ _, tEmit), vEmit) <- rbdvsEmitB
-    --    , vMeta `notElem` vIns ||
-    --      vEmit `notElem` Map.elems mapFinalEmits ]
+    fDecl :: Emitter -> Var -> Maybe Stmt'
+    fDecl (EmBaseSeq _ qt) v =
+      Just $ mkSVar v (typingQEmit qt)
+    fDecl (EmPhaseSeq _ i) v =
+      emitTypeFromDegree i <&> mkSVar v
+    fDecl _ _ = Nothing
+
+    mkSVar :: Var -> Ty -> Stmt'
+    mkSVar v ty = SVar (Binding v ty) Nothing
 
     -- -- | All __qreg__ parameters
     -- vIns = [ vIn | Binding vIn (TQReg _) <- bds ]

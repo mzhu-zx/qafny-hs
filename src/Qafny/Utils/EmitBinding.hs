@@ -40,6 +40,7 @@ import           Qafny.Env
     (RangeOrLoc, TState, emitSt)
 import           Qafny.Syntax.AST
 import           Qafny.Syntax.EmitBinding
+import Qafny.TypeUtils (typingPhaseEmitReprN, emitTypeFromDegree, typingQEmit)
 
 
 --------------------------------------------------------------------------------
@@ -58,18 +59,21 @@ type GensymWithState sig m =
 genPhaseRefByDegree
   :: ( Has (Gensym Emitter) sig m
      )
-  => Int -> RangeOrLoc -> m (Maybe PhaseRef)
-genPhaseRefByDegree 0 _ = return Nothing
+  => Int -> RangeOrLoc -> m (Maybe PhaseRef, Maybe Ty)
+genPhaseRefByDegree 0 _ = return (Nothing, Nothing)
 genPhaseRefByDegree n r =
-  Just <$> liftM2 mkPhaseRef (gensym (EmPhaseSeq r n)) (gensym (EmPhaseSeq r n))
+  (, emitTypeFromDegree n) . Just <$>
+  liftM2 mkPhaseRef (gensym (EmPhaseSeq r n)) (gensym (EmPhaseSeq r n))
 
 -- | Generate a /complete/ 'EmitData' of a Range and manage it within the 'emitSt'
 genEDStByRange :: GensymWithState sig m => QTy -> Int -> Range -> m EmitData
 genEDStByRange qt i r = do
   vB  <- gensym $ EmBaseSeq r qt
-  vmP <- genPhaseRefByDegree i (inj r)
+  (vmP, tyP) <- genPhaseRefByDegree i (inj r)
   let ed =  EmitData { evPhase = vmP
+                     , evPhaseSeqTy = tyP
                      , evBasis = Just vB
+                     , evBasisTy = Just $ typingQEmit qt
                      , evAmp   = Nothing
                      }
   emitSt %= (at (inj r) ?~ ed)
@@ -89,8 +93,8 @@ genEDStByLoc
   => Loc -> Int -> QTy -> [(Range, Int)] -> m (EmitData, [(Range, EmitData)])
 genEDStByLoc l iLoc qt ris = do
   rAndEDs <- sequence [ (r,) <$> genEDStByRange qt i r | (r, i) <- ris ]
-  vMP <- genPhaseRefByDegree iLoc (inj l)
-  let edL = mtEmitData { evPhase = vMP }
+  (vMP, tyP) <- genPhaseRefByDegree iLoc (inj l)
+  let edL = mtEmitData { evPhase = vMP, evPhaseSeqTy = tyP }
   emitSt %= (at (inj l) ?~ edL)
   return ( edL , rAndEDs )
 
@@ -121,8 +125,8 @@ genEDStUpdatePhase
      )
   => Int -> RangeOrLoc -> m EmitData
 genEDStUpdatePhase i rl  = do
-  evPhase <- genPhaseRefByDegree i rl
-  appendEDSt rl (mtEmitData {evPhase})
+  (evPhase, evPhaseSeqTy)  <- genPhaseRefByDegree i rl
+  appendEDSt rl (mtEmitData {evPhase, evPhaseSeqTy})
 
 -- ** Getters
 type StateMayFail sig m =
@@ -141,8 +145,8 @@ visitED :: Has (Error String) sig m => (EmitData -> Maybe a) -> EmitData -> m a
 visitED evF ed = do
   maybe (complain ed) return (evF ed)
   where
-    complain ed = throwError @String $
-      printf "Attempting to access non-Just field in %s" (show ed)
+    complain ed' = throwError @String $
+      printf "Attempting to access non-Just field in %s" (show ed')
 
 visitEDs
   :: Has (Error String) sig m

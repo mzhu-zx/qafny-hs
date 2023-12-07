@@ -5,13 +5,6 @@ module Qafny.Gensym(resumeGensym) where
 
 import qualified Carrier.Gensym.Emit      as GEmit
 import qualified Carrier.Gensym.Meta      as GMeta
-import           Qafny.Syntax.EmitBinding (EmitBinding)
-
--- runGensym
---   :: Monad m
---   => GMeta.GensymC String (GEmit.GensymC Binding m) a
---   -> m (Int, [(Binding, String)], (Int , a))
--- runGensym = GEmit.runGensymEmit . GMeta.runGensymMeta @String
 
 -- | Execute 2 nested 'Gensym' computation in sequence and outputs the generated
 -- emit symbols from both computation separately.
@@ -19,9 +12,9 @@ import           Qafny.Syntax.EmitBinding (EmitBinding)
 -- carried over to it.
 resumeGensym
   :: Monad m
-  => GEmit.GensymC EmitBinding (GMeta.GensymC String m) a
-  -> GEmit.GensymC EmitBinding (GMeta.GensymC String m) b
-  -> m (Int, (Int, ([(EmitBinding, String)], [(EmitBinding, String)]), (a, b)))
+  => GEmit.GensymC e (GMeta.GensymC String m) a
+  -> GEmit.GensymC e (GMeta.GensymC String m) b
+  -> m (Int, (Int, ([(e, String)], [(e, String)]), (a, b)))
 resumeGensym comp1 comp2 =
   GMeta.runGensymMeta @String $ do
     (i, s', a) <- GEmit.runGensymEmit comp1
