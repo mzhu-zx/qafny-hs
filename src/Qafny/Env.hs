@@ -9,19 +9,21 @@ module Qafny.Env where
 
 import           Control.Lens
 import           Data.Bifunctor
-import           Data.List        (intercalate)
-import qualified Data.Map.Strict  as Map
+import           Data.List
+    (intercalate)
+import qualified Data.Map.Strict          as Map
+import           Data.Sum
 import           Qafny.Partial
 import           Qafny.Syntax.AST
 import           Qafny.Syntax.EmitBinding
-import           Data.Sum
 
-import           Text.Printf      (printf)
+import           Text.Printf
+    (printf)
 
 --------------------------------------------------------------------------------
 -- High-Order Types
 --------------------------------------------------------------------------------
--- TODO: refactor STuple to a Record  
+-- TODO: refactor STuple to a Record
 newtype STuple = STuple { unSTup :: (Loc, Partition, (QTy, [Int])) }
 
 instance Show STuple where
@@ -44,9 +46,8 @@ data TEnv = TEnv
   , _qnum :: Exp' -- assume each Q type variable is associated with a qubit num which is C type exp
   }
 
--- type EmitState = Map.Map EmitBinding Var
-
-type EmitState = Map.Map (Loc :+: Range) EmitData
+type RangeOrLoc = Range :+: Loc
+type EmitState = Map.Map RangeOrLoc EmitData
 
 data TState = TState
   { _sSt    :: Map.Map Loc (Partition, (QTy, [Int])) -- partition type state

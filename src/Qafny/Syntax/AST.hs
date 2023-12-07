@@ -10,6 +10,7 @@
   , GADTs
   , ImpredicativeTypes
   , MultiParamTypeClasses
+  , NamedFieldPuns
   , RankNTypes
   , StandaloneDeriving
   , TemplateHaskell
@@ -66,6 +67,9 @@ data PhaseRef = PhaseRef
   , prRepr :: Var -- | pointer to its representation
   }
   deriving (Show, Eq, Ord)
+
+mkPhaseRef :: Var -> Var -> PhaseRef
+mkPhaseRef prBase prRepr = PhaseRef { prBase, prRepr }
 
 -- | PhaseTy associated with corresponding emitted vars
 data PhaseTy

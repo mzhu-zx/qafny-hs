@@ -8,20 +8,36 @@ module Qafny.Syntax.EmitBinding where
 
 import           Control.Applicative
     (Alternative (..))
-import qualified Data.Map.Strict     as Map
+import qualified Data.Map.Strict       as Map
 import           Data.Sum
 import           Qafny.Syntax.AST
+import           Qafny.Syntax.ASTUtils
+    (phaseRefToTy)
 -- * EmitBinding related functions
 
 -- | 'EmitData' stores emit variables (a.k.a. data variables) that's supposed to
 -- be mapped to either a 'Loc' or a 'Range'
-
+--
 data EmitData = EmitData
-  { evPhase :: Maybe String -- the variable for the phase
-  , evBasis :: Maybe String -- the varible for its basis
-  , evAmp   :: Maybe String -- the variable for its amplitude
+  { evPhase :: Maybe PhaseRef -- ^ the variables for the phase
+  , evBasis :: Maybe String   -- ^ the varible for its basis
+  , evAmp   :: Maybe String   -- ^ the variable for its amplitude
   }
   deriving (Eq, Ord, Show)
+
+mtEmitData :: EmitData
+mtEmitData = EmitData { evPhase = Nothing
+                      , evBasis = Nothing
+                      , evAmp   = Nothing
+                      }
+
+{-#
+  DEPRECATED
+  evPhaseTy
+  "Avoid using evPhaseTy but manipulate 'EmitData' directly!"
+  #-}
+evPhaseTy :: Int -> EmitData -> PhaseTy
+evPhaseTy dgr ed = phaseRefToTy dgr (evPhase ed)
 
 -- Merge two EmitData pairwise and prefer the 'Just'-fields or the latter one if
 -- both are fields 'Just'
