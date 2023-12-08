@@ -344,10 +344,12 @@ newtype Loc = Loc { deref :: Var }
 instance Show Loc where
   show = deref
 
-newtype Partition = Partition { unpackPart :: [Range] }
+newtype Partition = Partition { ranges :: [Range] }
   deriving (Eq, Ord-- , Data, Typeable
            )
 
+unpackPart :: Partition -> [Range]
+unpackPart = ranges
 
 instance Show Partition where
   show = showPP . unpackPart

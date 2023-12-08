@@ -9,11 +9,14 @@
 module Qafny.Utils.EmitBinding
   ( -- * Gensyms
     genEDStUpdatePhase , genEDStByRanges
-  , genEDStSansPhaseByRanges
+  , genEDStSansPhaseByRanges, genEDStByRangesSansPhase
     -- * Query
   , findED, visitED, visitEDs, findVisitED, findVisitEDs
+  , visitEDBasis
     -- * Deletion
   , deleteED, deleteEDs, deleteEDPartition
+    -- * Update
+  , appendEDSt
   )
 where
 
@@ -40,7 +43,8 @@ import           Qafny.Env
     (RangeOrLoc, TState, emitSt)
 import           Qafny.Syntax.AST
 import           Qafny.Syntax.EmitBinding
-import Qafny.TypeUtils (typingPhaseEmitReprN, emitTypeFromDegree, typingQEmit)
+import           Qafny.TypeUtils
+    (emitTypeFromDegree, typingPhaseEmitReprN, typingQEmit)
 
 
 --------------------------------------------------------------------------------
@@ -105,6 +109,12 @@ genEDStSansPhaseByLocAndRange
   => Loc -> QTy -> [Range] -> m (EmitData, [(Range, EmitData)])
 genEDStSansPhaseByLocAndRange l qt = genEDStByLoc l 0 qt . ((, 0) <$>)
 
+{-# INLINE genEDStByRangesSansPhase #-}
+genEDStByRangesSansPhase
+  :: GensymWithState sig m
+  => QTy -> [Range] -> m [(Range, EmitData)]
+genEDStByRangesSansPhase = genEDStSansPhaseByRanges
+
 genEDStSansPhaseByRanges
   :: GensymWithState sig m
   => QTy -> [Range] -> m [(Range, EmitData)]
@@ -162,6 +172,11 @@ findVisitEDs
   :: StateMayFail sig m
   => (EmitData -> Maybe c) -> [RangeOrLoc] -> m [c]
 findVisitEDs f = mapM (findVisitED f)
+
+-- *** Shorthands
+visitEDBasis :: Has (Error String) sig m => EmitData -> m Var
+visitEDBasis = visitED evBasis
+
 
 -- ** Destructor
 deleteED :: (Has (State TState) sig m) => RangeOrLoc -> m ()

@@ -1,11 +1,11 @@
 {-# LANGUAGE
     CPP
   , DataKinds
-  , NamedFieldPuns
   , FlexibleContexts
   , FlexibleInstances
   , IncoherentInstances
   , MultiWayIf
+  , NamedFieldPuns
   , RecordWildCards
   , ScopedTypeVariables
   , TupleSections
@@ -46,7 +46,7 @@ import           Control.Lens
     (at, non, (%~), (?~), (^.))
 import           Control.Lens.Tuple
 import           Control.Monad
-    (MonadPlus (mzero), forM, forM_, when, liftM2)
+    (MonadPlus (mzero), forM, forM_, liftM2, when)
 
 import           Control.Arrow
     ((&&&))
@@ -60,7 +60,7 @@ import           Data.List.NonEmpty
     (NonEmpty (..))
 import qualified Data.Map.Strict              as Map
 import           Data.Maybe
-    (mapMaybe, catMaybes)
+    (catMaybes, mapMaybe)
 import qualified Data.Sum                     as Sum
 import           Text.Printf
     (printf)
@@ -80,7 +80,8 @@ import           Qafny.Syntax.Emit
     (DafnyPrinter, byLineT, showEmit0, showEmitI)
 import           Qafny.Syntax.EmitBinding
 import           Qafny.TypeUtils
-    (bindingsFromPtys, isEN, typingPhaseEmitReprN, typingQEmit, emitTypeFromDegree)
+    (bindingsFromPtys, emitTypeFromDegree, isEN, typingPhaseEmitReprN,
+    typingQEmit)
 import           Qafny.Typing
     (Promotion (..), PromotionScheme (..), allocAndUpdatePhaseType,
     allocPhaseType, analyzePhaseSpecDegree, appkEnvWithBds, checkSubtype,
@@ -94,8 +95,12 @@ import           Qafny.Typing
     tStateFromPartitionQTys, typingExp, typingGuard, typingPartition,
     typingPartitionQTy)
 
+import           Data.Sum
+    (Injection (inj))
 import           Qafny.Typing.Error
 import           Qafny.Utils.EmitBinding
+import           Qafny.Utils.Emitter.Compat
+    (findEmitRanges)
 import           Qafny.Utils.Utils
     (checkListCorr, dumpSSt, dumpSt, fst2, gensymLoc, getMethodType,
     internalError, onlyOne, rethrowMaybe, uncurry3)
@@ -493,7 +498,7 @@ codegenStmt'Apply (s :*=: EHad) = do
     opCastHad TNor = return "CastNorHad"
     opCastHad t = throwError $ "type `" ++ show t ++ "` cannot be casted to Had type"
 
-codegenStmt'Apply stmt@(s@(Partition ranges) :*=: eLam@(ELambda pbinder _ pexpMaybe _)) = do
+codegenStmt'Apply stmt@(s@(Partition {ranges}) :*=: eLam@(ELambda pbinder _ pexpMaybe _)) = do
   (st'@(STuple (_, _, (qt', _))), corr) <- resolvePartition' s
   qtLambda <- ask
   checkSubtypeQ qt' qtLambda
@@ -530,7 +535,7 @@ codegenStmt'Apply stmt@(s@(Partition ranges) :*=: eLam@(ELambda pbinder _ pexpMa
   trace $ printf "LEFT: %s, RIGHT: %s" (show r) (show rSt)
   -- | It's important not to use the fully resolved `s` here because the OP
   -- should only be applied to the sub-partition specified in the annotation.
-  ~[vEmit] <- unpackPart s `forM` (`findEmitRangeQTy` qt)
+  ~[vEmit] <- findEmitRanges $ unpackPart s
   ((stmts ++) . (stmtsPhase ++) <$>) . putOpt $ case qtLambda of
     TEN -> return [ mkMapCall vEmit ]
     TEN01 -> do
@@ -859,27 +864,27 @@ codegenFor'Body idx boundl boundr eG body stSep@(STuple (_, Partition rsSep, (qt
         _                         -> throwError' errNoSep
 
       -- 1. save the "false" part to a new variable
-      vsEmitG <- liftPartition (`findEmitRangeQTy` qtG) sG
-      rqtvsEmitFalseG <- liftPartition (\r -> ((r, qtG),) <$> r `gensymRangeQTy` qtG) sG
-      let vsEmitGFalse = snd <$> rqtvsEmitFalseG
+      vsEmitG <- findEmitRanges $ unpackPart sG
+      redFalseG <- genEDStByRangesSansPhase qtG (ranges sG)
+      vsEmitGFalse <- mapM (visitEDBasis . snd) redFalseG
       let stmtsSaveFalse = uncurry (stmtAssignSlice (ENum 0) eSep) <$> zip vsEmitGFalse vsEmitG
       let stmtsFocusTrue = stmtAssignSelfRest eSep <$> vsEmitG
 
       -- save the current emit symbol table for
       stateIterBegin <- get @TState
 
-      let installEmits bindings =
-            forM_ bindings $ \((r, qt), v) -> modifyEmitRangeQTy r qt v
+      let installEmits rEds =
+            forM_ rEds $ \(r, ed) -> appendEDSt (inj r) ed
 
       -- SOLVED?
       -- TODO: I need one way to duplicate generated emit symbols in the split
       -- and cast semantics so that executing the computation above twice will
       -- solve the problem.
-      vsEmitSep <- forM rsSep (`findEmitRangeQTy` qtSep)
+      vsEmitSep <-  findEmitRanges rsSep
 
       -- compile for the 'false' branch with non-essential statements suppressed
       (tsFalse, (stmtsFalse, vsFalse)) <- runState stateIterBegin $ do
-        installEmits rqtvsEmitFalseG
+        installEmits redFalseG
         local (const False) $ codegenHalf psBody
 
       -- compile the for body for the 'true' branch
