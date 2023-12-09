@@ -7,7 +7,7 @@
 module Qafny.Utils.Utils where
 
 --
-import           Control.Effect.Error  (Error, throwError)
+import           Control.Effect.Error  (Error, throwError, catchError)
 import           Control.Effect.Lens
 import           Control.Effect.Reader
 import           Control.Effect.State
@@ -153,3 +153,9 @@ checkListCorr vsEmit eValues =
     throwError @String $ printf
       "the number of elements doesn't agree with each other: %s %s"
       (show vsEmit) (show eValues)
+
+--------------------------------------------------------------------------------
+-- | Catch error and add information to it
+errTrace :: (Has (Error String) sig m) => String -> m a ->  m a
+errTrace info m =
+  catchError m (\e -> throwError (e ++ "\n↑ " ++ info))

@@ -3,7 +3,6 @@
   , DataKinds
   , FlexibleContexts
   , FlexibleInstances
-  , IncoherentInstances
   , MultiWayIf
   , NamedFieldPuns
   , RecordWildCards
@@ -1271,7 +1270,8 @@ codegenSplitThenCastEmit
   => Maybe SplitScheme
   -> Maybe CastScheme
   -> m [Stmt']
-codegenSplitThenCastEmit sS sC =
+codegenSplitThenCastEmit sS sC = do
+  trace "* codegenSplitThenCastEmit"
   (++) <$> codegenSplitEmitMaybe sS <*> codegenCastEmitMaybe sC
 
 --------------------------------------------------------------------------------

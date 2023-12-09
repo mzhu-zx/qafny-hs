@@ -48,7 +48,7 @@ import           Qafny.TypeUtils
 import           Qafny.Typing.Phase           hiding
     (throwError')
 import           Qafny.Utils.Utils
-    (checkListCorr, dumpSt, exp2AExp, gensymLoc, rethrowMaybe, uncurry3)
+    (checkListCorr, dumpSt, exp2AExp, gensymLoc, rethrowMaybe, uncurry3, errTrace)
 
 import           Qafny.Utils.EmitBinding
 
@@ -251,7 +251,7 @@ splitScheme
   => STuple
   -> Range
   -> m (STuple, Maybe SplitScheme)
-splitScheme s r = do
+splitScheme s r = errTrace "`splitScheme`" $ do
   ans <- splitScheme' s r
   -- trace $ printf "[splitScheme]\n\tIn: %s %s\n\tOut: %s"
   --   (show s) (show r) (show ans)
@@ -331,13 +331,9 @@ splitScheme' s@(STuple (loc, p, xt@(qt, ptys))) rSplitTo@(Range to rstL rstR) = 
       pMain  = Partition rsMain
       pAux   = Partition rsAux
   -- generate
-  ~eds@(edSplit : edsRem) <-
-    forM (rSplitTo : rsRem) (genEDStUpdatePhase dgrOrigin . inj)
-  edsRest <- forM rsRest (findED . inj)
-  let (ptySplitTo: ptysRem) = evPhaseTy <$> eds
       -- ptysRest = uncurry evPhaseTy <$> zip dgrsRest edsRest
       -- ptysMain = ptysRem ++ ptysRest
-      dgrsMain = (dgrOrigin <$ rsRem) ++ dgrsRest
+  let  dgrsMain = (dgrOrigin <$ rsRem) ++ dgrsRest
   case rsMain of
     [] ->
       -- ^ No need to split at all, so we're safe regardless of the qtype
@@ -382,6 +378,13 @@ splitScheme' s@(STuple (loc, p, xt@(qt, ptys))) rSplitTo@(Range to rstL rstR) = 
               -- gensym for each split ranges
               rsEDs <- genEDStSansPhaseByRanges qt (rSplitTo : rsRem)
               vSyms <- mapM (visitED evBasis . snd) rsEDs
+              --
+              -- FIXME: cobble "genEDStUpdatePhase" with "genEDStSansPhaseByRanges"
+              ~eds@(edSplit : edsRem) <-
+                forM (rSplitTo : rsRem) (genEDStUpdatePhase dgrOrigin . inj)
+              edsRest <- forM rsRest (findED . inj)
+              let (ptySplitTo: ptysRem) = evPhaseTy <$> eds
+              --
               return (vEmitR, vSyms, (ptySplitTo : ptysRem))
             _    -> throwError'' $ errUnsupprtedTy ++ "\n" ++ infoSS
           let sAux' = (locAux, pAux, (qt, [dgrOrigin]))
@@ -495,7 +498,8 @@ splitThenCastScheme
        , Maybe SplitScheme  -- May split if cast or not
        , Maybe CastScheme   -- May cast or not
        )
-splitThenCastScheme s'@(STuple (loc, p, (qt1, ptys))) qt2 rSplitTo = failureAsSCError $
+splitThenCastScheme s'@(STuple (loc, p, (qt1, ptys))) qt2 rSplitTo =
+  failureAsSCError . errTrace "`splitThenCastScheme`" $
   case (qt1, qt2) of
     (_, _) | isEN qt1 && qt1 == qt2 -> do
       -- same type therefore no cast needed,
@@ -662,7 +666,7 @@ castScheme
      , Has (Gensym Emitter) sig m
      )
   => STuple -> QTy -> m (STuple, CastScheme)
-castScheme st qtNow = do
+castScheme st qtNow = errTrace "`castScheme`" $ do
   let STuple(locS, sResolved, (qtPrev, dgrs)) = st
   when (qtNow == qtPrev) $
     throwError @String  $ printf
@@ -981,7 +985,7 @@ resolveMethodApplicationArgs
 resolveMethodApplicationArgs es
   MethodType { mtSrcParams=srcParams
              , mtInstantiate=instantiator
-             } = do
+             } = errTrace "`resolveMethodApplicationArgs`" $ do
   unless (length es == length srcParams) $ arityMismatch srcParams
   (envArgs, pureArgs) <- normalizeArguments es srcParams
   let inst = instantiator envArgs
@@ -996,7 +1000,7 @@ resolveMethodApplicationArgs es
 
 
     -- type check partitions in the typing state
-    getEmitVarsAfterTyCheck part q = do
+    getEmitVarsAfterTyCheck part q = errTrace "`getEmitVarsAfterTyCheck`" $ do
       sAndMaySC <- case part of
         Partition [r] -> do
           st <- resolvePartition part
@@ -1019,6 +1023,7 @@ resolveMethodApplicationRets envArgs
   MethodType { mtSrcReturns=retParams
              , mtReceiver=receiver
              } = do
+  trace "* resolveMethodApplicationRets"
   qBindings :: [Var] <- concat <$> forM psRet ((fst <$>) . extendTState'Degree)
   -- TODO: also outputs pure variables here
   -- Sanity check for now:

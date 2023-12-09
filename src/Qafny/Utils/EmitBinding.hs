@@ -57,7 +57,7 @@ import           Qafny.Syntax.AST
 import           Qafny.Syntax.EmitBinding
 import           Qafny.TypeUtils
     (emitTypeFromDegree, typingPhaseEmitReprN, typingQEmit, isEN)
-import Qafny.Utils.Utils (onlyOne, checkListCorr)
+import Qafny.Utils.Utils (onlyOne, checkListCorr, errTrace)
 
 
 --------------------------------------------------------------------------------
@@ -210,7 +210,7 @@ genEDStUpdatePhase
      , Has (Error String) sig m
      )
   => Int -> RangeOrLoc -> m EmitData
-genEDStUpdatePhase i rl  = do
+genEDStUpdatePhase i rl  = errTrace "`genEDStUpdatePhase`" $ do
   (evPhaseTy, evPhaseSeqTy)  <- genPhaseTyByDegree i rl
   appendEDSt rl (mtEmitData {evPhaseTy, evPhaseSeqTy})
 
@@ -247,7 +247,9 @@ findVisitED evF = findED >=> visitED evF
 findVisitEDs
   :: StateMayFail sig m
   => (EmitData -> Maybe c) -> [RangeOrLoc] -> m [c]
-findVisitEDs f = mapM (findVisitED f)
+findVisitEDs f = errTrace "findVisitEDs" .
+  mapM (findVisitED f)
+  
 
 -- *** Shorthands
 visitEDBasis :: Has (Error String) sig m => EmitData -> m Var
