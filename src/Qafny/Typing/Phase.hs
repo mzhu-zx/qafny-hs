@@ -9,6 +9,8 @@
   , TypeApplications
   , TypeFamilies
   #-}
+{-# LANGUAGE NamedFieldPuns #-}
+
 
 module Qafny.Typing.Phase where
 
@@ -47,6 +49,7 @@ import           Qafny.Syntax.Emit
     (showEmitI)
 import           Text.Printf
     (printf)
+import Data.Maybe (catMaybes, mapMaybe)
 
 throwError'
   :: ( Has (Error String) sig m )
@@ -169,22 +172,23 @@ analyzePhaseSpecDegree PhaseSumOmega{} = 2
 
 -- | Generate a new phase type based on the STuple.
 --
-allocPhaseType
-  :: ( Has (Gensym Emitter) sig m
-     , Has (State TState) sig m
-     , Has (Error String) sig m
-     )
-  => STuple -> m [PhaseTy]
-allocPhaseType (STuple (loc, Partition rs, (qt, dgrs))) =
-  if isEN qt
-    then
-    do dgr <- onlyOne throwError' dgrs
-       ed  <- genEDStUpdatePhase dgr  (inj loc)
-       return [evPhaseTy dgr ed]
-    else do checkListCorr dgrs rs
-            sequence [ evPhaseTy dgr <$> genEDStUpdatePhase dgr (inj r)
-                     | (r, dgr) <- zip rs dgrs
-                     ]
+-- allocPhaseType
+--   :: ( Has (Gensym Emitter) sig m
+--      , Has (State TState) sig m
+--      , Has (Error String) sig m
+--      )
+--   => STuple -> m [PhaseTy]
+-- allocPhaseType (STuple (loc, Partition rs, (qt, dgrs))) =
+--   if isEN qt
+--     then
+--     do dgr <- onlyOne throwError' dgrs
+--        ed  <- genEDStUpdatePhase dgr  (inj loc)
+--        return [evPhaseTy dgr ed]
+--     else do checkListCorr dgrs rs
+--             sequence [ evPhaseTy dgr <$> genEDStUpdatePhase dgr (inj r)
+--                      | (r, dgr) <- zip rs dgrs
+--                      ]
+
 
 updateTState
   :: ( Has (State TState) sig m )
@@ -199,9 +203,10 @@ allocAndUpdatePhaseType
      , Has (Error String) sig m
      )
   => STuple -> m [PhaseTy]
-allocAndUpdatePhaseType s = do
+allocAndUpdatePhaseType s@(STuple(loc, Partition{ranges}, (qt, dgrs))) = do
   updateTState s
-  allocPhaseType s
+  mapMaybe evPhaseTy <$> genEDStUpdatePhaseFromSTuple loc ranges qt dgrs
+  
 
 -- | Query in the emit state the phase types of the given STuple
 queryPhaseType
@@ -212,8 +217,8 @@ queryPhaseType
 queryPhaseType (STuple (loc, Partition rs, (qt, dgrs))) =
   if isEN qt
     then do dgr <- onlyOne throwError' dgrs
-            singleton . evPhaseTy dgr <$> findED (inj loc)
+            catMaybes . singleton . evPhaseTy <$> findED (inj loc)
     else do checkListCorr rs dgrs
-            sequence [ evPhaseTy dgr <$> findED (inj r)
-                     | (r, dgr) <- zip rs dgrs
-                     ]
+            catMaybes <$> sequence [ evPhaseTy <$> findED (inj r)
+                                   | (r, dgr) <- zip rs dgrs
+                                   ]

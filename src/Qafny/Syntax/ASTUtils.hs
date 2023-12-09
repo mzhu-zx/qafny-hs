@@ -13,6 +13,11 @@ getPhaseRef :: PhaseTy -> PhaseRef
 getPhaseRef (PTN _ r) = r
 getPhaseRef _         = undefined
 
+getPhaseRefMaybe :: PhaseTy -> Maybe PhaseRef
+getPhaseRefMaybe (PTN _ r) = Just r
+getPhaseRefMaybe _         = Nothing
+
+
 getPhaseRefN :: [PhaseTy] -> [(Int, PhaseRef)]
 getPhaseRefN ptys = do
   pty <- ptys

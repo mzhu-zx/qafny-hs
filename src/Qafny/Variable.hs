@@ -87,4 +87,6 @@ instance (Variable a, Variable b) => Variable (a, b) where
 instance Variable Emitter where
   variable (EmBaseSeq r qt) = variable (r, qt)
   variable (EmPhaseSeq b i) = variable (b, variablePhaseN i)
+  variable (EmPhaseBase b) = variable (b, TNat)
+  variable (EmAnyBinding v t) = variable (v, t)
   variable EmAmplitude = "amplitude"

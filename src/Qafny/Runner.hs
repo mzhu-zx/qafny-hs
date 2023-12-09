@@ -42,7 +42,9 @@ collectErrors Production{ pDetail=detail, pState=st } = catMaybes $ do
 --       ErrC.runError error return
 
 
-runCodegen :: Configs -> AST -> ([String], ([((Var, TState), Either String Toplevel')], Either String AST))
+runCodegen
+  :: Configs -> AST
+  -> ([String], ([((Var, TState), Either String Toplevel')], Either String AST))
 runCodegen conf ast = do
   run . run' $ codegenAST ast
   where

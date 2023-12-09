@@ -9,7 +9,8 @@
 module Qafny.Utils.EmitBinding
   ( -- * Gensyms
     gensymBinding
-  , genEDStUpdatePhase, genEDStByRange, genEDStByRanges
+  , genEDStUpdatePhase, genEDStByRange, genEDStByRanges, genEDStFromSTuple
+  , genEDStUpdatePhaseFromSTuple
   , genEDStSansPhaseByRanges
   , genEDStByRangesSansPhase, genEDStByRangeSansPhase
   , genEDStByRangesSansPhase'
@@ -34,7 +35,7 @@ where
 import           Control.Lens
     (at, sans, (?~), (^.))
 import           Control.Monad
-    (liftM2, (>=>))
+    (liftM2, (>=>), zipWithM)
 import           Data.Functor
     ((<&>))
 import qualified Data.Map.Strict          as Map
@@ -55,7 +56,8 @@ import           Qafny.Env
 import           Qafny.Syntax.AST
 import           Qafny.Syntax.EmitBinding
 import           Qafny.TypeUtils
-    (emitTypeFromDegree, typingPhaseEmitReprN, typingQEmit)
+    (emitTypeFromDegree, typingPhaseEmitReprN, typingQEmit, isEN)
+import Qafny.Utils.Utils (onlyOne, checkListCorr)
 
 
 --------------------------------------------------------------------------------
@@ -74,14 +76,26 @@ type GensymWithState sig m =
 gensymBinding :: (Has (Gensym Emitter) sig m) => Var -> Ty -> m Var
 gensymBinding v t = gensym (EmAnyBinding v t) 
 
-genPhaseRefByDegree
+-- genPhaseRefByDegree
+--   :: ( Has (Gensym Emitter) sig m
+--      )
+--   => Int -> RangeOrLoc -> m (Maybe PhaseRef, Maybe Ty)
+-- genPhaseRefByDegree 0 _ = return (Nothing, Nothing)
+-- genPhaseRefByDegree n r =
+--   (, emitTypeFromDegree n) . Just <$>
+--   liftM2 mkPhaseRef (gensym (EmPhaseSeq r n)) (gensym (EmPhaseSeq r n))
+
+genPhaseTyByDegree
   :: ( Has (Gensym Emitter) sig m
      )
-  => Int -> RangeOrLoc -> m (Maybe PhaseRef, Maybe Ty)
-genPhaseRefByDegree 0 _ = return (Nothing, Nothing)
-genPhaseRefByDegree n r =
-  (, emitTypeFromDegree n) . Just <$>
-  liftM2 mkPhaseRef (gensym (EmPhaseSeq r n)) (gensym (EmPhaseSeq r n))
+  => Int -> RangeOrLoc -> m (Maybe PhaseTy, Maybe Ty)
+genPhaseTyByDegree 0 _ = return (Just PT0, Nothing)
+genPhaseTyByDegree n r
+  | n < 0 = return (Nothing, Nothing)
+  | otherwise =  
+    (, emitTypeFromDegree n) . Just . PTN n <$>
+    liftM2 mkPhaseRef (gensym (EmPhaseBase r)) (gensym (EmPhaseSeq r n))
+
 
 -- | Generate a /complete/ 'EmitData' of a Range and manage it within the 'emitSt'
 genEDStByRange :: GensymWithState sig m => QTy -> Int -> Range -> m EmitData
@@ -93,8 +107,8 @@ genEDStByRange qt i r = do
 genEDByRange :: (Has (Gensym Emitter) sig m) => QTy -> Int -> Range -> m EmitData
 genEDByRange qt i r = do
   vB  <- gensym $ EmBaseSeq r qt
-  (vmP, tyP) <- genPhaseRefByDegree i (inj r)
-  let ed =  EmitData { evPhase = vmP
+  (vmP, tyP) <- genPhaseTyByDegree i (inj r)
+  let ed =  EmitData { evPhaseTy = vmP
                      , evPhaseSeqTy = tyP
                      , evBasis = Just vB
                      , evBasisTy = Just $ typingQEmit qt
@@ -125,29 +139,55 @@ genEDStByLoc
   => Loc -> Int -> QTy -> [(Range, Int)] -> m (EmitData, [(Range, EmitData)])
 genEDStByLoc l iLoc qt ris = do
   rAndEDs <- sequence [ (r,) <$> genEDStByRange qt i r | (r, i) <- ris ]
-  (vMP, tyP) <- genPhaseRefByDegree iLoc (inj l)
-  let edL = mtEmitData { evPhase = vMP, evPhaseSeqTy = tyP }
+  (vMP, tyP) <- genPhaseTyByDegree iLoc (inj l)
+  let edL = mtEmitData { evPhaseTy = vMP, evPhaseSeqTy = tyP }
   emitSt %= (at (inj l) ?~ edL)
   return ( edL , rAndEDs )
+
+
+-- | Generate a /complete/ 'EmitData' of a Partition from its STuple
+-- In particular, generate degree and phases based on its qt
+
+genEDStFromSTuple
+  :: ( GensymWithState sig m
+     , Has (Error String) sig m
+     )
+  => Loc -> [Range] -> QTy -> [Int] -> m (EmitData, [(Range, EmitData)])
+genEDStFromSTuple l rs qt is = do
+  (il, ir) <- if isEN qt
+    then (, repeat (-1)) <$> onlyOne throwError is
+    else (-1, is)  <$ checkListCorr is rs
+  genEDStByLoc l il qt $ zip rs ir
+
+genEDStUpdatePhaseFromSTuple
+  :: ( GensymWithState sig m
+     , Has (Error String) sig m
+     )
+  => Loc -> [Range] -> QTy -> [Int] -> m [EmitData]
+genEDStUpdatePhaseFromSTuple l rs qt is = do
+  is' <- if isEN qt
+    then (: repeat (-1)) <$> onlyOne throwError is
+    else (-1 : is)  <$ checkListCorr is rs
+  zipWithM genEDStUpdatePhase is (inj l : (inj <$> rs))
 
 
 -- | Generate an 'EmitData' w/o Phase, managed by 'emitSt'
 genEDStSansPhaseByLocAndRange
   :: GensymWithState sig m
   => Loc -> QTy -> [Range] -> m (EmitData, [(Range, EmitData)])
-genEDStSansPhaseByLocAndRange l qt = genEDStByLoc l 0 qt . ((, 0) <$>)
+genEDStSansPhaseByLocAndRange l qt = genEDStByLoc l (-1) qt . ((, -1) <$>)
 
 {-# INLINE genEDStByRangesSansPhase #-}
 genEDStByRangesSansPhase
   :: GensymWithState sig m
   => QTy -> [Range] -> m [(Range, EmitData)]
-genEDStByRangesSansPhase qt = genEDStByRanges qt . ((, 0) <$>) 
+genEDStByRangesSansPhase qt = genEDStByRanges qt . ((, -1) <$>) 
 
 -- | Same as `genEDStByRangesSansPhase` but without `Range` indices
 genEDStByRangesSansPhase'
   :: GensymWithState sig m
   => QTy -> [Range] -> m [EmitData]
-genEDStByRangesSansPhase' qt = ((snd <$>) <$>) . genEDStByRanges qt . ((, 0) <$>) 
+genEDStByRangesSansPhase' qt = ((snd <$>) <$>) . genEDStByRanges qt . ((, -1) <$>) 
 
 
 
@@ -171,8 +211,8 @@ genEDStUpdatePhase
      )
   => Int -> RangeOrLoc -> m EmitData
 genEDStUpdatePhase i rl  = do
-  (evPhase, evPhaseSeqTy)  <- genPhaseRefByDegree i rl
-  appendEDSt rl (mtEmitData {evPhase, evPhaseSeqTy})
+  (evPhaseTy, evPhaseSeqTy)  <- genPhaseTyByDegree i rl
+  appendEDSt rl (mtEmitData {evPhaseTy, evPhaseSeqTy})
 
 -- ** Getters
 type StateMayFail sig m =

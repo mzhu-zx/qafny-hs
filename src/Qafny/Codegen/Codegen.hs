@@ -84,28 +84,29 @@ import           Qafny.TypeUtils
     typingQEmit)
 import           Qafny.Typing
     (Promotion (..), PromotionScheme (..), allocAndUpdatePhaseType,
-    allocPhaseType, analyzePhaseSpecDegree, appkEnvWithBds, checkSubtype,
-    checkSubtypeQ, collectConstraints, collectMethodTypes, collectPureBindings,
-    extendTState, matchEmitStates, matchStateCorrLoop, mergeCandidateHad,
+    analyzePhaseSpecDegree, appkEnvWithBds, checkSubtype, checkSubtypeQ,
+    collectConstraints, collectMethodTypes, collectPureBindings, extendTState,
+    matchEmitStates, matchEmitStatesVars, matchStateCorrLoop, mergeCandidateHad,
     mergeMatchedTState, mergeSTuplesHadEN, mergeScheme, promotionScheme,
     queryPhaseType, removeTStateBySTuple, resolveMethodApplicationArgs,
     resolveMethodApplicationRets, resolvePartition, resolvePartition',
     resolvePartitions, retypePartition, retypePartition1, specPartitionQTys,
     splitScheme, splitSchemePartition, splitThenCastScheme,
     tStateFromPartitionQTys, typingExp, typingGuard, typingPartition,
-    typingPartitionQTy, matchEmitStatesVars)
+    typingPartitionQTy)
 
 import           Data.Sum
     (Injection (inj))
+import           Qafny.Codegen.Bindings
+    (findEmitBindingsFromPartition)
+import           Qafny.Codegen.Method
+    (codegenMethodParams, genEmitSt)
 import           Qafny.Typing.Error
 import           Qafny.Utils.EmitBinding
 import           Qafny.Utils.Emitter.Compat
     (findEmitRanges)
 import           Qafny.Utils.Utils
-    (checkListCorr, dumpSSt, dumpSt, fst2, gensymLoc, getMethodType,
-    internalError, onlyOne, rethrowMaybe, uncurry3)
-import Qafny.Codegen.Bindings (findEmitBindingsFromPartition)
-import Qafny.Codegen.Method (codegenMethodParams, genEmitSt)
+    (checkListCorr, dumpSt, fst2, gensymLoc, getMethodType, onlyOne, uncurry3)
 
 throwError'
   :: ( Has (Error String) sig m )
@@ -230,8 +231,8 @@ codegenToplevel'Method
 -- TODO: to keep emitted symbols for the same __qreg__ variable in a unique
 -- order, sorting those variables should also be the part of the calling
 -- convention
-codegenToplevel'Method q@(QMethod v bds rts rqs ens Nothing) = return q
-codegenToplevel'Method q@(QMethod v bds rts rqs ens (Just block)) = runWithCallStack q $ do
+codegenToplevel'Method q@(QMethod vMethod bds rts rqs ens Nothing) = return q
+codegenToplevel'Method q@(QMethod vMethod bds rts rqs ens (Just block)) = runWithCallStack q $ do
   -- gather constraints from "requires" clauses
   boundConstraints <- local (appkEnvWithBds bds) $
     collectConstraints rqs
@@ -241,7 +242,7 @@ codegenToplevel'Method q@(QMethod v bds rts rqs ens (Just block)) = runWithCallS
   trace $ printf "Constraint Sets:\n%s\n" (show boundConstraints)
 
   -- construct requires, parameters and the method body
-  mty <- getMethodType v
+  mty <- getMethodType vMethod
   (countMeta, (countEmit, (rbdvsEmitR', rbdvsEmitB), (appetizer, mainCourse))) <-
     local (appkEnvWithBds bds) $
     codegenRequiresAndParams mty `resumeGensym` codegenMethodBody iEnv block
@@ -254,6 +255,7 @@ codegenToplevel'Method q@(QMethod v bds rts rqs ens (Just block)) = runWithCallS
 
   ensCG <- codegenEnsures ens
 
+  trace (printf "** %s" (show rbdvsEmitB))
   -- Gensym symbols are in the reverse order!
   let stmtsDeclare = fDecls rbdvsEmitB
   -- let stmtsDeclare = undefined
@@ -261,7 +263,8 @@ codegenToplevel'Method q@(QMethod v bds rts rqs ens (Just block)) = runWithCallS
         [ stmtsMatchParams
         , return $ qComment "Forward Declaration"
         , stmtsDeclare
-        , [ SDafny "reveal Map();"
+        , [ qComment "Revealing"
+          , SDafny "reveal Map();"
           , SDafny "reveal Pow2();"
           -- , SDafny "reveal LittleEndianNat.ToNatRight();"
           ] -- TODO: any optimization can be done here?
@@ -269,12 +272,13 @@ codegenToplevel'Method q@(QMethod v bds rts rqs ens (Just block)) = runWithCallS
         , inBlock blockCG
         , stmtsMatchEnsures
         ]
-  return $ QMethod v params returns rqsCG ensCG (Just . Block $ blockStmts)
+  return $ QMethod vMethod params returns rqsCG ensCG (Just . Block $ blockStmts)
   where
 
     vIntv2IEnv v' (Interval l r) = [(v', l :| [r])]
 
     codegenRequiresAndParams mty = do
+      trace "* codegenRequiresAndParams"
       (es, ptys) <- codegenRequires rqs
       methodBindings <- codegenMethodParams mty ptys
       stmtsCopy <- genEmitSt
@@ -296,9 +300,11 @@ codegenToplevel'Method q@(QMethod v bds rts rqs ens (Just block)) = runWithCallS
 
     fDecl :: Emitter -> Var -> Maybe Stmt'
     fDecl (EmBaseSeq _ qt) v' =
-      Just $ mkSVar v (typingQEmit qt)
+      Just $ mkSVar v' (typingQEmit qt)
     fDecl (EmPhaseSeq _ i) v' =
-      emitTypeFromDegree i <&> mkSVar v
+      emitTypeFromDegree i <&> mkSVar v'
+    fDecl (EmPhaseBase _) v' =
+      Just $ mkSVar v' TNat
     fDecl (EmAnyBinding v' t) _ =
       Just $ mkSVar v' t
     fDecl _ _ = Nothing
@@ -1365,19 +1371,22 @@ codegenRequires
      , Has (Error String) sig m
      , Has (Gensym String) sig m
      , Has (Gensym Emitter) sig m
+     , Has Trace sig m
      )
   => [Exp'] -> m ([Exp'], [PhaseTy])
-codegenRequires rqs = (bimap concat concat . unzip <$>) . forM rqs $ \rq ->
+codegenRequires rqs = do
+  trace "* codegenRequires"
+  (bimap concat concat . unzip <$>) . forM rqs $ \rq ->
   -- TODO: I need to check if partitions from different `requires` clauses are
   -- indeed disjoint!
-  case rq of
-    ESpec s qt espec -> do
-      let pspec = snd <$> espec
-      let dgrs = pspec <&> analyzePhaseSpecDegree
-      (vsEmit, ptys) <- extendTState s qt dgrs
-      es <- runReader True $ codegenSpecExp (zip vsEmit (unpackPart s)) qt espec ptys
-      return (es, ptys)
-    _ -> return ([rq], [])
+    case rq of
+      ESpec s qt espec -> do
+        let pspec = snd <$> espec
+        let dgrs = pspec <&> analyzePhaseSpecDegree
+        (vsEmit, ptys) <- extendTState s qt dgrs
+        es <- runReader True $ codegenSpecExp (zip vsEmit (unpackPart s)) qt espec ptys
+        return (es, ptys)
+      _ -> return ([rq], [])
 
 codegenMethodReturns
   :: ( Has (State TState) sig m
@@ -1404,7 +1413,7 @@ codegenMethodReturns MethodType{ mtSrcReturns=srcReturns
     -- genAndPairReturnRanges
     --   :: Partition -> QTy -> m [(Stmt', Binding')]
     genAndPairReturnRanges p qt dgrs = do
-      prevBindings <- findEmitBindingsFromPartition p qt 
+      prevBindings <- findEmitBindingsFromPartition p qt
       let prevVars = [ v | Binding v _ <- prevBindings ]
       -- FIXME: remove loc as well!
       deleteEDs (inj<$> ranges p)
@@ -1463,7 +1472,7 @@ codegenSpecExp
      , Has (Reader Bool) sig m
      )
   => [(Var, Range)] -> QTy -> [(SpecExp', PhaseExp)] -> [PhaseTy] -> m [Exp']
-codegenSpecExp vrs p specs ptys = putOpt $ 
+codegenSpecExp vrs p specs ptys = putOpt $
   if isEN p
   then do
     when (length specs /= 1) $ throwError' $ printf "More then one specs!"

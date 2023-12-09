@@ -4,18 +4,17 @@
   , LambdaCase
   , MultiParamTypeClasses
   , MultiWayIf
+  , NamedFieldPuns
   , ScopedTypeVariables
   , TupleSections
   , TypeApplications
   , TypeFamilies
   #-}
 
+
 module Qafny.Typing.Typing where
 
 -- | Typing though Fused Effects
-
-import qualified Debug.Trace                  as Trace
-
 
 -- Effects
 import qualified Control.Carrier.Error.Either as ErrE
@@ -335,7 +334,7 @@ splitScheme' s@(STuple (loc, p, xt@(qt, ptys))) rSplitTo@(Range to rstL rstR) = 
   ~eds@(edSplit : edsRem) <-
     forM (rSplitTo : rsRem) (genEDStUpdatePhase dgrOrigin . inj)
   edsRest <- forM rsRest (findED . inj)
-  let (ptySplitTo: ptysRem) = evPhaseTy dgrOrigin <$> eds
+  let (ptySplitTo: ptysRem) = evPhaseTy <$> eds
       -- ptysRest = uncurry evPhaseTy <$> zip dgrsRest edsRest
       -- ptysMain = ptysRem ++ ptysRest
       dgrsMain = (dgrOrigin <$ rsRem) ++ dgrsRest
@@ -1013,6 +1012,7 @@ resolveMethodApplicationRets
       , Has (State TState) sig m
       , Has (Gensym Var) sig m
       , Has (Gensym Emitter) sig m
+      , Has Trace sig m
       )
   => Map.Map Var Range -> MethodType ->  m [Var]
 resolveMethodApplicationRets envArgs
@@ -1153,6 +1153,7 @@ tStateFromPartitionQTys
   :: ( Has (Gensym Emitter) sig m
      , Has (Gensym Var) sig m
      , Has (Error String) sig m
+     , Has Trace sig m
      )
   => [(Partition, QTy, [Int])] -> m TState
 tStateFromPartitionQTys pqts = execState initTState $ do
@@ -1166,26 +1167,32 @@ extendTState
      , Has (Gensym Var) sig m
      , Has (State TState) sig m
      , Has (Error String) sig m
+     , Has Trace sig m
      )
   => Partition -> QTy -> [Int] -> m ([Var], [PhaseTy])
-extendTState p qt dgrs = do
+extendTState p@Partition{ranges} qt dgrs = do
+  trace "* extendTState"
   sLoc <- gensymLoc "requires"
   sSt %= (at sLoc ?~ (p, (qt, dgrs)))
   let xMap = [ (v, [(r, sLoc)]) | r@(Range v _ _) <- ranges ]
-  ptys <- allocPhaseType (STuple (sLoc, p, (qt, dgrs)))
-  bdsEmit <- genEDStSansPhaseByRanges qt (unpackPart p)
-  vsEmit <- visitEDs evBasis $ snd <$> bdsEmit
+  (edL, rEd) <- genEDStFromSTuple sLoc ranges qt dgrs
+  let eds = snd <$> rEd
+  -- bdsEmit <- genEDStByRangesSansPhase qt (unpackPart p)
+  -- ptys <- allocPhaseType (STuple (sLoc, p, (qt, dgrs)))
+  vsEmit <- visitEDs evBasis eds
+  -- FIXME: redesign dgrs in STuple so that len(dgrs)==1+len(ranges)
+  let ptys = mapMaybe evPhaseTy (edL : eds)
+  trace "* Die?"
   xSt %= Map.unionWith (++) (Map.fromListWith (++) xMap)
-  return $ (vsEmit ,ptys)
-  where
-    ranges = unpackPart p
+  return $ (vsEmit, ptys)
 
 extendTState'Degree
   :: ( Has (Gensym Emitter) sig m
      , Has (Gensym Var) sig m
      , Has (State TState) sig m
      , Has (Error String) sig m
-     )
+     , Has Trace sig m
+   )
   => (Partition, QTy, [Int]) -> m ([Var], [PhaseTy])
 extendTState'Degree (p, qt, ds) =
   extendTState p qt ds
