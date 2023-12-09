@@ -93,7 +93,7 @@ import           Qafny.Typing
     resolvePartitions, retypePartition, retypePartition1, specPartitionQTys,
     splitScheme, splitSchemePartition, splitThenCastScheme,
     tStateFromPartitionQTys, typingExp, typingGuard, typingPartition,
-    typingPartitionQTy)
+    typingPartitionQTy, matchEmitStatesVars)
 
 import           Data.Sum
     (Injection (inj))
@@ -104,6 +104,8 @@ import           Qafny.Utils.Emitter.Compat
 import           Qafny.Utils.Utils
     (checkListCorr, dumpSSt, dumpSt, fst2, gensymLoc, getMethodType,
     internalError, onlyOne, rethrowMaybe, uncurry3)
+import Qafny.Codegen.Bindings (findEmitBindingsFromPartition)
+import Qafny.Codegen.Method (codegenMethodParams, genEmitSt)
 
 throwError'
   :: ( Has (Error String) sig m )
@@ -247,7 +249,7 @@ codegenToplevel'Method q@(QMethod v bds rts rqs ens (Just block)) = runWithCallS
   let (rqsCG, params, stmtsMatchParams) = appetizer
   let blockCG = mainCourse
   dumpSt "Main Course"
-  (stmtsMatchEnsures, returns) <- GEmit.evalGensymEmitWith @EmitBinding countEmit $
+  (stmtsMatchEnsures, returns) <- GEmit.evalGensymEmitWith @Emitter countEmit $
     runReader iEnv . codegenMethodReturns $ mty
 
   ensCG <- codegenEnsures ens
@@ -293,39 +295,16 @@ codegenToplevel'Method q@(QMethod v bds rts rqs ens (Just block)) = runWithCallS
 
 
     fDecl :: Emitter -> Var -> Maybe Stmt'
-    fDecl (EmBaseSeq _ qt) v =
+    fDecl (EmBaseSeq _ qt) v' =
       Just $ mkSVar v (typingQEmit qt)
-    fDecl (EmPhaseSeq _ i) v =
+    fDecl (EmPhaseSeq _ i) v' =
       emitTypeFromDegree i <&> mkSVar v
+    fDecl (EmAnyBinding v' t) _ =
+      Just $ mkSVar v' t
     fDecl _ _ = Nothing
 
     mkSVar :: Var -> Ty -> Stmt'
     mkSVar v ty = SVar (Binding v ty) Nothing
-
-    -- -- | All __qreg__ parameters
-    -- vIns = [ vIn | Binding vIn (TQReg _) <- bds ]
-
-    -- -- | For each qreg variable passed into the method, filter its corresponding
-    -- -- symbols emitted during 'codegenRequires' and replace the meta variable in
-    -- -- the method parameter list with the emited variables.
-    -- genBdsReqs rbdvsEmitR = do
-    --     bd@(Binding vIn ty) <- bds
-    --     case ty of
-    --       TQReg _ ->
-    --         [ Binding vEmit tEmit
-    --         | (RBinding (Range vMeta _ _, tEmit), vEmit) <- rbdvsEmitR
-    --         , vMeta == vIn ]
-    --       _    -> return bd
-
-    -- | For each qreg variable passed into the method, look it up in the final
-    -- 'emitSt', filter their emit symbols out and add to the __returns__
-    -- clause.
-    -- genBdsRets finalEmits =
-    --     [ Binding vEmit tEmit
-    --     | vMeta <- vIns
-    --     , (RBinding (Range vMetaE _ _, tEmit), vEmit) <- finalEmits
-    --     , vMetaE == vMeta]
-
 
 codegenBlock
   :: ( Has (Reader TEnv) sig m
@@ -947,7 +926,7 @@ codegenFor'Body idx boundl boundr eG body stSep@(STuple (_, Partition rsSep, (qt
       --
       -- Use collected partitions and merge it with the absorbed typing state.
       emitStEnd <- (^. emitSt) <$> get @TState
-      let corrBeginEnd = matchEmitStates emitStBegin emitStEnd
+      corrBeginEnd <- matchEmitStatesVars emitStBegin emitStEnd
       -- I don't remember the purpose of this line, purely sanity check?
       pure $ uncurry mkAssignment . snd <$> corrBeginEnd
 
@@ -1094,10 +1073,10 @@ codegenAlloc
      )
   => Var -> Exp' -> Ty -> m Stmt'
 codegenAlloc v e@(EOp2 ONor e1 e2) t@(TQReg _) = do
-  let eEmit = EEmit $ EMakeSeq TNat e1 $ constExp e2
+  let eEmit = EEmit $ EMakeSeq TNat e1 $ constLambda e2
   let rV = Range v (ENum 0) e1
       sV = partition1 rV
-  vEmit <- gensymEmitRangeQTy rV TNor
+  vEmit <- genEDStByRangeSansPhase TNor rV >>= visitEDBasis
   loc <- gensymLoc v
   xSt %= (at v . non [] %~ ((rV, loc) :))
   sSt %= (at loc ?~ (sV, (TNor, [0])))
@@ -1200,12 +1179,12 @@ dupState
   => Partition -> m ([Stmt'], [(Var, Var)])
 dupState s' = do
   STuple (locS, s, (qtS, ptys)) <- resolvePartition s'
-  let rs = unpackPart s
+  let rs = ranges s
   -- generate a set of fresh emit variables as the stashed partition
   -- do not manipulate the `emitSt` here
-  vsEmitFresh <- rs `forM` (`gensymRangeQTy` qtS)
+  vsEmitFresh <- genEDByRangeSansPhase qtS `mapM` rs >>= visitEDsBasis
   -- the only place where state is used!
-  vsEmitPrev  <- rs `forM` (`findEmitRangeQTy` qtS)
+  vsEmitPrev  <- findEmitBasesByRanges rs
   let comm = qComment "Duplicate"
   let stmts = [ (::=:) vEmitFresh (EVar vEmitPrev)
               | (vEmitFresh, vEmitPrev) <- zip vsEmitFresh vsEmitPrev ]
@@ -1326,13 +1305,13 @@ codegenMergeScheme = mapM $ \scheme -> do
     MJoin JoinStrategy { jsQtMain=qtMain, jsQtMerged=qtMerged
                        , jsRResult=rResult, jsRMerged=rMerged, jsRMain=rMain
                        } -> do
-      vEmitMerged <- findEmitRangeQTy rMerged qtMerged
-      vEmitMain   <- findEmitRangeQTy rMain qtMain
-      removeEmitRangeQTys [(rMerged, qtMerged), (rMain, qtMain)]
+      vEmitMerged <- findEmitBasisByRange rMerged
+      vEmitMain   <- findEmitBasisByRange rMain
+      deleteEDs $ inj <$> [rMerged, rMain]
       case (qtMain, qtMerged) of
         (TEN01, TNor) -> do
           -- append the merged value (ket) into each kets in the main value
-          vEmitResult <- gensymEmitRangeQTy rResult qtMain
+          vEmitResult <- genEDStByRangeSansPhase qtMain rResult >>= visitEDBasis
           vBind <- gensym "lambda_x"
           let stmt = vEmitResult ::=: callMap ef (EVar vEmitMain)
               ef   = simpleLambda vBind (EVar vBind + EVar vEmitMerged)
@@ -1375,29 +1354,7 @@ codegenRangeRepr
   => Range -> m Var
 codegenRangeRepr r = do
   STuple(_, _, (qt, _)) <- resolvePartition (Partition [r])
-  findEmitRangeQTy r qt
-
--- | Generate method parameters from the method signature
-codegenMethodParams
-  :: ( Has (State TState)  sig m
-     , Has (Error String) sig m
-     , Has Trace sig m
-     )
-  => MethodType -> [PhaseTy] -> m [Binding']
-codegenMethodParams
-  MethodType{ mtSrcParams=srcParams , mtInstantiate=instantiator}
-  ptysResolved
-  = do
-  let pureVars = collectPureBindings srcParams
-      qVars = [ (v, Range v 0 card) | MTyQuantum v card <- srcParams ]
-      inst = instantiator $ Map.fromList qVars
-      pVars = bindingsFromPtys ptysResolved
-  trace $ "QVARS: " ++ show qVars
-  trace $ "INSTANCE: " ++ show inst
-  trace $ "PVars" ++ show pVars
-  vqEmits <- (concat <$>) . forM inst $ uncurry findEmitBindingsFromPartition . fst2
-  dumpSt "MethodParams"
-  pure $ pureVars ++ vqEmits ++ pVars
+  findEmitBasisByRange r
 
 
 -- | Generate predicates for require clauses
@@ -1447,10 +1404,11 @@ codegenMethodReturns MethodType{ mtSrcReturns=srcReturns
     -- genAndPairReturnRanges
     --   :: Partition -> QTy -> m [(Stmt', Binding')]
     genAndPairReturnRanges p qt dgrs = do
-      prevBindings <- findEmitBindingsFromPartition p qt
+      prevBindings <- findEmitBindingsFromPartition p qt 
       let prevVars = [ v | Binding v _ <- prevBindings ]
-      removeEmitPartitionQTys p qt -- Q: Do I really need to remove by hand?
-      newVars <- gensymEmitPartitionQTy p qt
+      -- FIXME: remove loc as well!
+      deleteEDs (inj<$> ranges p)
+      newVars <- genEDStByRangesSansPhase' qt (ranges p) >>= visitEDsBasis
       let emitTy = typingQEmit qt
       pure $ zipWith (pairAndBind emitTy) newVars prevVars
     pairPhaseTys ptysNew ptysPre =
@@ -1493,7 +1451,7 @@ codegenAssertion'
   => Exp' -> m [Exp']
 codegenAssertion' (ESpec s qt espec) = do
   st@(STuple (_, _, (_, dgrs))) <- typingPartitionQTy s qt
-  vsEmit <- unpackPart s `forM` (`findEmitRangeQTy` qt)
+  vsEmit <- findEmitBasesByRanges (ranges s)
   qtys <- queryPhaseType st
   codegenSpecExp (zip vsEmit (unpackPart s)) qt espec qtys
 codegenAssertion' e = return [e]
@@ -1505,15 +1463,16 @@ codegenSpecExp
      , Has (Reader Bool) sig m
      )
   => [(Var, Range)] -> QTy -> [(SpecExp', PhaseExp)] -> [PhaseTy] -> m [Exp']
-codegenSpecExp vrs p specs ptys = putOpt $ do
-  if | isEN p -> do
-         when (length specs /= 1) $ throwError' $ printf "More then one specs!"
-         pspec <- onlyOne throwError' (snd <$> specs)
-         specPerPartition p (fst (head specs)) pspec
-     | otherwise -> do
-         -- For `nor` and `had`, one specification is given one per range
-         checkListCorr vrs specs
-         concat <$> mapM (specPerRange p) (zip3 vrs specs ptys)
+codegenSpecExp vrs p specs ptys = putOpt $ 
+  if isEN p
+  then do
+    when (length specs /= 1) $ throwError' $ printf "More then one specs!"
+    pspec <- onlyOne throwError' (snd <$> specs)
+    specPerPartition p (fst (head specs)) pspec
+  else do
+      -- For `nor` and `had`, one specification is given one per range
+    checkListCorr vrs specs
+    concat <$> mapM (specPerRange p) (zip3 vrs specs ptys)
   where
     specPerRange ty ((v, Range _ el er), (SESpecNor idx eBody, pspec), pty) |
       ty `elem` [TNor, THad] =
@@ -1636,27 +1595,4 @@ codegenPhaseSpec quantifier eSize (PTN 2 ref) (PhaseSumOmega (Range v l r) eK eN
   in return [assertN, quantifier assertK]
 codegenPhaseSpec _ _ (PTN n _) e =
   throwError' $ printf "Invalid %s for %d-degree phase." (show e) n
-
-
--- | Take the emit state and generate totally new emit symbols and emit
--- statements to match the translation
---
--- This is needed because you cannot mutate the parameter of a method.
--- An alternative is to copy the augument into a local variable where mutation
--- are allowed.
-genEmitSt
-  :: ( Has (Error String) sig m
-     , Has (State TState)  sig m
-     , Has (Gensym Emitter) sig m
-     )
-  => m [Stmt']
-genEmitSt = do
-  eSt <- use emitSt
-  emitSt %= const Map.empty
-  forM ((fst &&& bindingFromEmitBinding) <$> Map.toList eSt) go
-  where
-    -- go :: (RBinding, Var) -> m Stmt'
-    go (ebd, Binding v t) = do
-      nv <- gensymEmitEB ebd
-      pure $ SVar (Binding nv t) (Just (EVar v))
 

@@ -8,15 +8,26 @@
   #-}
 module Qafny.Utils.EmitBinding
   ( -- * Gensyms
-    genEDStUpdatePhase , genEDStByRanges
-  , genEDStSansPhaseByRanges, genEDStByRangesSansPhase
+    gensymBinding
+  , genEDStUpdatePhase, genEDStByRange, genEDStByRanges
+  , genEDStSansPhaseByRanges
+  , genEDStByRangesSansPhase, genEDStByRangeSansPhase
+  , genEDStByRangesSansPhase'
+    -- * Gensyms w/o State
+  , genEDByRange
+  , genEDByRangeSansPhase
     -- * Query
-  , findED, visitED, visitEDs, findVisitED, findVisitEDs
-  , visitEDBasis
+  , findED
+  , visitED, visitEDs, visitEDBasis, visitEDsBasis
+  , findVisitED, findVisitEDs
+  , findVisitEDsBasis
+  , findEmitBasesByRanges, findEmitBasisByRange
     -- * Deletion
   , deleteED, deleteEDs, deleteEDPartition
     -- * Update
   , appendEDSt
+    -- * Types
+  , StateMayFail, GensymWithState
   )
 where
 
@@ -60,6 +71,9 @@ import           Qafny.TypeUtils
 type GensymWithState sig m =
   (Has (Gensym Emitter) sig m , Has (State TState) sig m)
 
+gensymBinding :: (Has (Gensym Emitter) sig m) => Var -> Ty -> m Var
+gensymBinding v t = gensym (EmAnyBinding v t) 
+
 genPhaseRefByDegree
   :: ( Has (Gensym Emitter) sig m
      )
@@ -72,6 +86,12 @@ genPhaseRefByDegree n r =
 -- | Generate a /complete/ 'EmitData' of a Range and manage it within the 'emitSt'
 genEDStByRange :: GensymWithState sig m => QTy -> Int -> Range -> m EmitData
 genEDStByRange qt i r = do
+  ed <- genEDByRange qt i r
+  emitSt %= (at (inj r) ?~ ed)
+  return ed
+
+genEDByRange :: (Has (Gensym Emitter) sig m) => QTy -> Int -> Range -> m EmitData
+genEDByRange qt i r = do
   vB  <- gensym $ EmBaseSeq r qt
   (vmP, tyP) <- genPhaseRefByDegree i (inj r)
   let ed =  EmitData { evPhase = vmP
@@ -80,8 +100,16 @@ genEDStByRange qt i r = do
                      , evBasisTy = Just $ typingQEmit qt
                      , evAmp   = Nothing
                      }
-  emitSt %= (at (inj r) ?~ ed)
   return ed
+
+
+genEDStByRangeSansPhase ::  GensymWithState sig m => QTy -> Range -> m EmitData
+genEDStByRangeSansPhase qt = genEDStByRange qt 0
+
+genEDByRangeSansPhase
+  :: (Has (Gensym Emitter) sig m)
+  => QTy -> Range -> m EmitData
+genEDByRangeSansPhase qt = genEDByRange qt 0
 
 
 genEDStByRanges
@@ -113,14 +141,22 @@ genEDStSansPhaseByLocAndRange l qt = genEDStByLoc l 0 qt . ((, 0) <$>)
 genEDStByRangesSansPhase
   :: GensymWithState sig m
   => QTy -> [Range] -> m [(Range, EmitData)]
-genEDStByRangesSansPhase = genEDStSansPhaseByRanges
+genEDStByRangesSansPhase qt = genEDStByRanges qt . ((, 0) <$>) 
+
+-- | Same as `genEDStByRangesSansPhase` but without `Range` indices
+genEDStByRangesSansPhase'
+  :: GensymWithState sig m
+  => QTy -> [Range] -> m [EmitData]
+genEDStByRangesSansPhase' qt = ((snd <$>) <$>) . genEDStByRanges qt . ((, 0) <$>) 
+
+
 
 genEDStSansPhaseByRanges
   :: GensymWithState sig m
   => QTy -> [Range] -> m [(Range, EmitData)]
-genEDStSansPhaseByRanges qt = genEDStByRanges qt . ((, 0) <$>)
+genEDStSansPhaseByRanges = genEDStByRangesSansPhase
 
--- | Update by appending to entries in emitSt
+-- | Append the given `EmitData` to the given entry.
 appendEDSt
   :: StateMayFail sig m
   => RangeOrLoc -> EmitData -> m EmitData
@@ -128,7 +164,7 @@ appendEDSt rl ed = do
   emitSt %= Map.adjust (<> ed) rl
   findED rl
 
--- | Update an existing EmitData by generating phase for it.
+-- | Update an existing `EmitData` by generating a phase from the given degree.
 genEDStUpdatePhase
   :: ( GensymWithState sig m
      , Has (Error String) sig m
@@ -176,6 +212,24 @@ findVisitEDs f = mapM (findVisitED f)
 -- *** Shorthands
 visitEDBasis :: Has (Error String) sig m => EmitData -> m Var
 visitEDBasis = visitED evBasis
+
+visitEDsBasis :: Has (Error String) sig m => [EmitData] -> m [Var]
+visitEDsBasis = mapM visitEDBasis
+
+findVisitEDsBasis
+  :: StateMayFail sig m
+  => [RangeOrLoc] -> m [Var]
+findVisitEDsBasis = findVisitEDs evBasis 
+
+findEmitBasisByRange
+  :: StateMayFail sig m
+  => Range -> m Var
+findEmitBasisByRange = findVisitED evBasis . inj
+
+findEmitBasesByRanges
+  :: StateMayFail sig m
+  => [Range] -> m [Var]
+findEmitBasesByRanges = findVisitEDs evBasis . (inj <$>)
 
 
 -- ** Destructor
