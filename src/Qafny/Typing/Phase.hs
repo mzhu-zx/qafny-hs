@@ -9,6 +9,8 @@
   , TypeApplications
   , TypeFamilies
   #-}
+{-# LANGUAGE NamedFieldPuns #-}
+
 
 module Qafny.Typing.Phase where
 
@@ -16,10 +18,13 @@ module Qafny.Typing.Phase where
 
 -- Effects
 import           Control.Effect.Catch
-import           Control.Effect.Error     (Error, throwError)
+import           Control.Effect.Error
+    (Error, throwError)
 import           Control.Effect.Lens
-import           Control.Effect.State     (State)
-import           Effect.Gensym            (Gensym)
+import           Control.Effect.State
+    (State)
+import           Effect.Gensym
+    (Gensym)
 
 -- Qafny
 import           Qafny.Env
@@ -30,12 +35,21 @@ import           Qafny.Utils
 
 -- Utils
 import           Control.Effect.Trace
-import           Control.Lens             (at, (%~), (?~), (^.))
-import           Control.Monad            (forM, when)
-import           Data.List                (nub)
-import           Qafny.Syntax.ASTUtils    (getPhaseRef)
-import           Qafny.Syntax.Emit        (showEmitI)
-import           Text.Printf              (printf)
+import           Control.Lens
+    (at, (%~), (?~), (^.))
+import           Control.Monad
+    (forM, when)
+import           Data.List
+    (nub, singleton)
+import           Data.Sum
+    (Injection (inj))
+import           Qafny.Syntax.ASTUtils
+    (getPhaseRef, phaseRefToTy)
+import           Qafny.Syntax.Emit
+    (showEmitI)
+import           Text.Printf
+    (printf)
+import Data.Maybe (catMaybes, mapMaybe)
 
 throwError'
   :: ( Has (Error String) sig m )
@@ -61,7 +75,7 @@ data Promotion
 --   where the promotion kicks in
 --
 promotionScheme
-  :: ( Has (Gensym EmitBinding) sig m
+  :: ( Has (Gensym Emitter) sig m
      , Has (State TState) sig m
      , Has (Error String) sig m
      , Has Trace sig m
@@ -92,7 +106,7 @@ promotionScheme st@(STuple (loc, Partition rs, (qt, dgrsSt))) pb pe = do
   where
     -- Promote 0 to 1
     promote'0'1
-      :: ( Has (Gensym EmitBinding) sig m'
+      :: ( Has (Gensym Emitter) sig m'
          , Has (State TState) sig m'
          , Has (Error String) sig m'
          , Has Trace sig m'
@@ -147,7 +161,7 @@ analyzePhaseSpecDegree PhaseSumOmega{} = 2
 
 -- | Generate variables and phase types based on a phase specification.
 -- generatephasetype
---   :: ( Has (Gensym EmitBinding) sig m
+--   :: ( Has (Gensym Emitter) sig m
 --      )
 --   => Int -> m PhaseTy
 -- generatePhaseType 0 = return PT0
@@ -158,20 +172,23 @@ analyzePhaseSpecDegree PhaseSumOmega{} = 2
 
 -- | Generate a new phase type based on the STuple.
 --
-allocPhaseType
-  :: ( Has (Gensym EmitBinding) sig m
-     , Has (State TState) sig m
-     , Has (Error String) sig m
-     )
-  => STuple -> m [PhaseTy]
-allocPhaseType (STuple (loc, Partition rs, (qt, dgrs))) =
-  if | isEN qt -> do
-         dgr <- onlyOne throwError' dgrs
-         pty <- gensymEmitLocDegree loc dgr
-         return [pty]
-     | otherwise -> do
-         checkListCorr dgrs rs
-         forM (zip rs dgrs) (uncurry gensymEmitRangeDegree)
+-- allocPhaseType
+--   :: ( Has (Gensym Emitter) sig m
+--      , Has (State TState) sig m
+--      , Has (Error String) sig m
+--      )
+--   => STuple -> m [PhaseTy]
+-- allocPhaseType (STuple (loc, Partition rs, (qt, dgrs))) =
+--   if isEN qt
+--     then
+--     do dgr <- onlyOne throwError' dgrs
+--        ed  <- genEDStUpdatePhase dgr  (inj loc)
+--        return [evPhaseTy dgr ed]
+--     else do checkListCorr dgrs rs
+--             sequence [ evPhaseTy dgr <$> genEDStUpdatePhase dgr (inj r)
+--                      | (r, dgr) <- zip rs dgrs
+--                      ]
+
 
 updateTState
   :: ( Has (State TState) sig m )
@@ -181,34 +198,15 @@ updateTState s@(STuple (loc, p, (qt, dgrs))) =
 
 
 allocAndUpdatePhaseType
-  :: ( Has (Gensym EmitBinding) sig m
+  :: ( Has (Gensym Emitter) sig m
      , Has (State TState) sig m
      , Has (Error String) sig m
      )
   => STuple -> m [PhaseTy]
-allocAndUpdatePhaseType s = do
+allocAndUpdatePhaseType s@(STuple(loc, Partition{ranges}, (qt, dgrs))) = do
   updateTState s
-  allocPhaseType s
-
--- generatePhaseTypeThen
---   :: ( Has (Gensym EmitBinding) sig m
---      , Has (State TState) sig m
---      , Has (Error String) sig m
---      )
---   => (PhaseTy -> m g) -- do when it's EN
---   -> ([PhaseTy] -> m g) -- do when it isn't
---   -> STuple
---   -> m ([PhaseTy], g)
--- generatePhaseTypeThen fLoc fOthers (STuple (loc, Partition rs, (qt, dgrs))) =
---   if | isEN qt -> do
---          dgr <- onlyOne throwError' dgrs
---          pty <- gensymEmitLocDegree loc dgr
---          ([pty],) <$> fLoc pty
---      | otherwise -> do
---          checkListCorr dgrs rs
---          ptys <- forM (zip rs dgrs) (uncurry gensymEmitRangeDegree)
---          (ptys,) <$> fOthers ptys
-
+  mapMaybe evPhaseTy <$> genEDStUpdatePhaseFromSTuple loc ranges qt dgrs
+  
 
 -- | Query in the emit state the phase types of the given STuple
 queryPhaseType
@@ -217,9 +215,10 @@ queryPhaseType
      )
   => STuple -> m [PhaseTy]
 queryPhaseType (STuple (loc, Partition rs, (qt, dgrs))) =
-  if | isEN qt -> do
-         dgr <- onlyOne throwError' dgrs
-         (: []) <$> findEmitLocDegree loc dgr
-     | otherwise -> do
-         checkListCorr rs dgrs
-         forM (zip rs dgrs) $ uncurry findEmitRangeDegree
+  if isEN qt
+    then do dgr <- onlyOne throwError' dgrs
+            catMaybes . singleton . evPhaseTy <$> findED (inj loc)
+    else do checkListCorr rs dgrs
+            catMaybes <$> sequence [ evPhaseTy <$> findED (inj r)
+                                   | (r, dgr) <- zip rs dgrs
+                                   ]

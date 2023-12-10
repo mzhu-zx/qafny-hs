@@ -1,8 +1,6 @@
 {-# LANGUAGE
     DataKinds
   , DeriveAnyClass
-  , RankNTypes
-  , ImpredicativeTypes
   , DeriveFoldable
   , DeriveFunctor
   , DeriveGeneric
@@ -10,7 +8,10 @@
   , FlexibleContexts
   , FlexibleInstances
   , GADTs
+  , ImpredicativeTypes
   , MultiParamTypeClasses
+  , NamedFieldPuns
+  , RankNTypes
   , StandaloneDeriving
   , TemplateHaskell
   , TupleSections
@@ -27,17 +28,19 @@ import           Qafny.TTG
 import           Data.Bifunctor
 -- import           Data.Data
 import           Data.Functor.Foldable
-    ( Base
-    , Corecursive (embed)
-    , Recursive (cata, project)
-    )
-import           Data.Kind                (Type)
-import           Data.List.NonEmpty       (NonEmpty (..))
-import qualified Data.Map.Strict          as Map
-import           Data.Maybe               (fromMaybe)
+    (Base, Corecursive (embed), Recursive (cata, project))
+import           Data.Kind
+    (Type)
+import           Data.List.NonEmpty
+    (NonEmpty (..))
+import qualified Data.Map.Strict       as Map
+import           Data.Maybe
+    (fromMaybe)
 import           Data.Sum
-import           GHC.Generics             hiding ((:+:))
-import           Text.Printf              (printf)
+import           GHC.Generics          hiding
+    ((:+:))
+import           Text.Printf
+    (printf)
 --------------------------------------------------------------------------------
 
 data AExp
@@ -64,6 +67,9 @@ data PhaseRef = PhaseRef
   , prRepr :: Var -- | pointer to its representation
   }
   deriving (Show, Eq, Ord)
+
+mkPhaseRef :: Var -> Var -> PhaseRef
+mkPhaseRef prBase prRepr = PhaseRef { prBase, prRepr }
 
 -- | PhaseTy associated with corresponding emitted vars
 data PhaseTy
@@ -106,6 +112,9 @@ instance Show MethodType where
 data EmitTy
   = TAny String
   deriving (Show, Eq, Ord)
+
+tyReal :: Ty
+tyReal = TEmit $ TAny "real"
 
 data QTy
   = TNor
@@ -220,7 +229,7 @@ data PhaseExpF f :: Type where
 --   PhaseSumOmega' :: Range -> f -> f -> PhaseExpF' f 2
 --   PhaseWildCard' :: PhaseExpF' f 0
 
-type PhaseExp = PhaseExpF Exp' 
+type PhaseExp = PhaseExpF Exp'
 type PhaseBinder = PhaseExpF Var
 
 -- deriving instance (Typeable (Exp ()))
@@ -338,10 +347,12 @@ newtype Loc = Loc { deref :: Var }
 instance Show Loc where
   show = deref
 
-newtype Partition = Partition { unpackPart :: [Range] }
+newtype Partition = Partition { ranges :: [Range] }
   deriving (Eq, Ord-- , Data, Typeable
            )
 
+unpackPart :: Partition -> [Range]
+unpackPart = ranges
 
 instance Show Partition where
   show = showPP . unpackPart
@@ -506,6 +517,13 @@ instance (Substitutable a) => Substitutable [a] where
 instance (Substitutable a, Substitutable b) => Substitutable (a, b) where
   subst a = bimap (subst a) (subst a)
   fVars = uncurry (++) . bimap fVars fVars
+
+instance Substitutable a => Substitutable (a :+: b) where
+  subst a (Inl r) = inj $ subst a r
+  subst _ b       = b
+  fVars (Inl r) = fVars r
+  fVars _       = []
+
 
 substMapKeys :: (Ord k, Substitutable k) => AEnv -> Map.Map k v -> Map.Map k v
 substMapKeys a = Map.mapKeys (subst a)

@@ -4,113 +4,89 @@
   , LambdaCase
   , MultiParamTypeClasses
   , MultiWayIf
+  , NamedFieldPuns
   , ScopedTypeVariables
   , TupleSections
   , TypeApplications
   , TypeFamilies
   #-}
 
+
 module Qafny.Typing.Typing where
 
 -- | Typing though Fused Effects
 
-import qualified Debug.Trace                  as Trace
-
-
 -- Effects
 import qualified Control.Carrier.Error.Either as ErrE
-import           Control.Carrier.Reader       (runReader)
-import           Control.Carrier.State.Lazy   (execState)
+import           Control.Carrier.Reader
+    (runReader)
+import           Control.Carrier.State.Lazy
+    (execState)
 import           Control.Effect.Catch
-import           Control.Effect.Error         (Error, throwError)
+import           Control.Effect.Error
+    (Error, throwError)
 import           Control.Effect.Lens
 import           Control.Effect.NonDet
 import           Control.Effect.Reader
-import           Control.Effect.State         (State, get, modify)
-import           Effect.Gensym                (Gensym, gensym)
+import           Control.Effect.State
+    (State, get, modify)
+import           Effect.Gensym
+    (Gensym, gensym)
 
 -- Qafny
 import           Qafny.Env
-import           Qafny.Error                  (QError (..))
+import           Qafny.Error
+    (QError (..))
 import           Qafny.Interval
-import           Qafny.Partial                (Reducible (reduce))
+import           Qafny.Partial
+    (Reducible (reduce))
 import           Qafny.Syntax.AST
 import           Qafny.Syntax.Emit
-    ( DafnyPrinter (build)
-    , byComma
-    , byLineT
-    , showEmit0
-    , showEmitI
-    )
+    (DafnyPrinter (build), byComma, byLineT, showEmit0, showEmitI)
 import           Qafny.Syntax.EmitBinding
 import           Qafny.TypeUtils
-import           Qafny.Typing.Phase           hiding (throwError')
-import           Qafny.Utils
-    ( checkListCorr
-    , dumpSt
-    , exp2AExp
-    , findEmitLocDegree
-    , findEmitRangeDegree
-    , findEmitRangeQTy
-    , findEmitVarsFromPartition
-    , gensymEmitLocDegree
-    , gensymEmitRB
-    , gensymEmitRangeDegree
-    , gensymEmitRangePTyRepr
-    , gensymEmitRangeQTy
-    , gensymLoc
-    , gensymRangeQTy
-    , internalError
-    , onlyOne
-    , projEmitBindingRangeQTy
-    , removeEmitPartitionQTys
-    , removeEmitRangeQTys
-    , rethrowMaybe
-    , uncurry3
-    )
+import           Qafny.Typing.Phase           hiding
+    (throwError')
+import           Qafny.Utils.Utils
+    (checkListCorr, dumpSt, exp2AExp, gensymLoc, rethrowMaybe, uncurry3, errTrace)
+
+import           Qafny.Utils.EmitBinding
 
 -- Utils
-import           Control.Carrier.State.Lazy   (evalState, runState)
+import           Control.Carrier.State.Lazy
+    (evalState, runState)
 import           Control.Effect.Trace
-import           Control.Lens                 (at, (%~), (?~), (^.))
+import           Control.Lens
+    (at, (%~), (?~), (^.))
 import           Control.Lens.Tuple
 import           Control.Monad
-    ( forM
-    , forM_
-    , mapAndUnzipM
-    , unless
-    , void
-    , when
-    , zipWithM
-    )
-import           Data.Bifunctor               (Bifunctor (second))
-import           Data.Bool                    (bool)
-import           Data.Functor                 ((<&>))
+    (forM, forM_, liftM2, mapAndUnzipM, unless, when, zipWithM, (>=>))
+import           Data.Bifunctor
+    (Bifunctor (second))
+import           Data.Bool
+    (bool)
+import           Data.Functor
+    ((<&>))
 import           Data.Functor.Identity
 import qualified Data.List                    as List
-import           Data.List.NonEmpty           (NonEmpty (..))
+import           Data.List.NonEmpty
+    (NonEmpty (..))
 import qualified Data.List.NonEmpty           as NE
 import qualified Data.Map.Strict              as Map
 import           Data.Maybe
-    ( catMaybes
-    , fromJust
-    , fromMaybe
-    , isJust
-    , listToMaybe
-    , mapMaybe
-    , maybeToList
-    )
+    (catMaybes, isJust, listToMaybe, mapMaybe)
 import qualified Data.Set                     as Set
 import           Data.Sum
-import           Data.Sum                     (projLeft)
-import           Data.Text                    (unpack)
-import           GHC.Stack                    (HasCallStack)
+import           Data.Sum
+    (projLeft)
+import           Data.Text
+    (unpack)
+import           GHC.Stack
+    (HasCallStack)
 import           Qafny.Typing.Error
-    ( SCError (SplitENError, SplitOtherError)
-    , failureAsSCError
-    , hdlSCError
-    )
-import           Text.Printf                  (printf)
+    (SCError (SplitENError, SplitOtherError), failureAsSCError, hdlSCError)
+import           Text.Printf
+    (printf)
 
 
 throwError'
@@ -219,7 +195,7 @@ removeTStateBySTuple
 removeTStateBySTuple st@(STuple (loc, p, (qt, _))) = do
   sSt %= flip Map.withoutKeys (Set.singleton loc)
   xSt %= Map.map (filter ((/= loc) . snd))
-  removeEmitPartitionQTys p qt
+  deleteEDPartition loc (unpackPart p)
 
 -- | Query all ranges related to the given range.
 resolveRange
@@ -268,14 +244,14 @@ splitScheme
   :: ( Has (Error String) sig m
      , Has (Gensym String) sig m
      , Has (State TState) sig m
-     , Has (Gensym EmitBinding) sig m
+     , Has (Gensym Emitter) sig m
      , Has (Reader IEnv) sig m
      , Has Trace sig m
      )
   => STuple
   -> Range
   -> m (STuple, Maybe SplitScheme)
-splitScheme s r = do
+splitScheme s r = errTrace "`splitScheme`" $ do
   ans <- splitScheme' s r
   -- trace $ printf "[splitScheme]\n\tIn: %s %s\n\tOut: %s"
   --   (show s) (show r) (show ans)
@@ -288,7 +264,7 @@ splitSchemePartition
   :: ( Has (Error String) sig m
      , Has (Gensym String) sig m
      , Has (State TState) sig m
-     , Has (Gensym EmitBinding) sig m
+     , Has (Gensym Emitter) sig m
      , Has (Reader IEnv) sig m
      , Has Trace sig m
      )
@@ -329,7 +305,7 @@ splitScheme'
   :: ( Has (Error String) sig m
      , Has (Gensym String) sig m
      , Has (State TState) sig m
-     , Has (Gensym EmitBinding) sig m
+     , Has (Gensym Emitter) sig m
      , Has (Reader IEnv) sig m
      , Has Trace sig m
      )
@@ -355,13 +331,9 @@ splitScheme' s@(STuple (loc, p, xt@(qt, ptys))) rSplitTo@(Range to rstL rstR) = 
       pMain  = Partition rsMain
       pAux   = Partition rsAux
   -- generate
-  ~(vReprPTyMaybesSplit : vReprPTyMaybesRem) <-
-    forM (rSplitTo : rsRem) (`gensymEmitRangePTyRepr` dgrOrigin)
-  ptysRest <- forM (zip rsRest dgrsRest) (uncurry findEmitRangeDegree)
-  let ptysRem = vReprPTyMaybesRem
-      ptySplitTo = vReprPTyMaybesSplit
-      ptysMain = ptysRem ++ ptysRest
-      dgrsMain = (dgrOrigin <$ rsRem) ++ dgrsRest
+      -- ptysRest = uncurry evPhaseTy <$> zip dgrsRest edsRest
+      -- ptysMain = ptysRem ++ ptysRest
+  let  dgrsMain = (dgrOrigin <$ rsRem) ++ dgrsRest
   case rsMain of
     [] ->
       -- ^ No need to split at all, so we're safe regardless of the qtype
@@ -386,7 +358,7 @@ splitScheme' s@(STuple (loc, p, xt@(qt, ptys))) rSplitTo@(Range to rstL rstR) = 
             List.filter ((/= rOrigin) . fst) xRangeLocs
       xSt %= (at to ?~ xrl)
       -- 2. Generate emit symbols for split ranges
-      let sMain' = (loc, pMain, (qt, dgrsMain)) -- the part that's splited _from_
+      let sMain' = (loc, pMain, (qt, dgrsMain)) -- the part that's split _from_
       case rsRem of
         [] -> case qt of
           t | t `elem` [ TEN, TEN01 ] ->
@@ -397,15 +369,23 @@ splitScheme' s@(STuple (loc, p, xt@(qt, ptys))) rSplitTo@(Range to rstL rstR) = 
             let sAux' = (locAux, pAux, xt)
             in return (STuple sAux', Nothing)
         _  -> do
-          (vEmitR, rSyms, rPhReprs) <- case qt of
+          (vEmitR, vSyms, rPhReprs) <- case qt of
             t | t `elem` [ TNor, THad ] -> do
               -- locate the original range
-              vEmitR <- findEmitRangeQTy rOrigin qt
+              vEmitR <- findVisitED evBasis (inj rOrigin)
               -- delete it from the record
-              removeEmitRangeQTys [(rOrigin, qt)]
+              deleteEDs [inj rOrigin]
               -- gensym for each split ranges
-              rSyms <- (rSplitTo : rsRem) `forM` (`gensymEmitRangeQTy` qt)
-              return (vEmitR, rSyms, (ptySplitTo : ptysRem))
+              rsEDs <- genEDStSansPhaseByRanges qt (rSplitTo : rsRem)
+              vSyms <- mapM (visitED evBasis . snd) rsEDs
+              --
+              -- FIXME: cobble "genEDStUpdatePhase" with "genEDStSansPhaseByRanges"
+              ~eds@(edSplit : edsRem) <-
+                forM (rSplitTo : rsRem) (genEDStUpdatePhase dgrOrigin . inj)
+              edsRest <- forM rsRest (findED . inj)
+              let (ptySplitTo: ptysRem) = evPhaseTy <$> eds
+              --
+              return (vEmitR, vSyms, (ptySplitTo : ptysRem))
             _    -> throwError'' $ errUnsupprtedTy ++ "\n" ++ infoSS
           let sAux' = (locAux, pAux, (qt, [dgrOrigin]))
           let ans = SplitScheme
@@ -415,7 +395,7 @@ splitScheme' s@(STuple (loc, p, xt@(qt, ptys))) rSplitTo@(Range to rstL rstR) = 
                 , schQty = qt
                 , schSMain = STuple sMain'
                 , schVEmitOrigin = vEmitR
-                , schVsEmitAll = rSyms
+                , schVsEmitAll = vSyms
                 }
           -- trace $ printf "[splitScheme (post)] %s" (show ans)
           return (STuple sAux', Just ans)
@@ -430,7 +410,7 @@ splitScheme' s@(STuple (loc, p, xt@(qt, ptys))) rSplitTo@(Range to rstL rstR) = 
 -- necessary.
 --
 -- duplicatePhaseTy
---   :: ( Has (Gensym EmitBinding) sig m
+--   :: ( Has (Gensym Emitter) sig m
 --      )
 --   => Loc -> QTy -> PhaseTy
 --   -> m PhaseTy
@@ -505,7 +485,7 @@ getRangeSplits s@(STuple (loc, p, (qty, dgrs))) rSplitTo@(Range to rstL rstR) = 
 -- casting if needed.  return 'Nothing' if no cast is required.
 splitThenCastScheme
   :: ( Has (Gensym String) sig m
-     , Has (Gensym EmitBinding) sig m
+     , Has (Gensym Emitter) sig m
      , Has (State TState) sig m
      , Has Trace sig m
      , Has (Reader IEnv) sig m
@@ -518,7 +498,8 @@ splitThenCastScheme
        , Maybe SplitScheme  -- May split if cast or not
        , Maybe CastScheme   -- May cast or not
        )
-splitThenCastScheme s'@(STuple (loc, p, (qt1, ptys))) qt2 rSplitTo = failureAsSCError $
+splitThenCastScheme s'@(STuple (loc, p, (qt1, ptys))) qt2 rSplitTo =
+  failureAsSCError . errTrace "`splitThenCastScheme`" $
   case (qt1, qt2) of
     (_, _) | isEN qt1 && qt1 == qt2 -> do
       -- same type therefore no cast needed,
@@ -658,7 +639,7 @@ checkSubtypeQ t1 t2 =
 retypePartition1
   :: ( Has (Error String) sig m
      , Has (State TState) sig m
-     , Has (Gensym EmitBinding) sig m
+     , Has (Gensym Emitter) sig m
      )
   => STuple -> QTy -> m (Var, Ty, Var, Ty)
 retypePartition1 st qtNow = do
@@ -682,10 +663,10 @@ retypePartition1 st qtNow = do
 castScheme
   :: ( Has (Error String) sig m
      , Has (State TState) sig m
-     , Has (Gensym EmitBinding) sig m
+     , Has (Gensym Emitter) sig m
      )
   => STuple -> QTy -> m (STuple, CastScheme)
-castScheme st qtNow = do
+castScheme st qtNow = errTrace "`castScheme`" $ do
   let STuple(locS, sResolved, (qtPrev, dgrs)) = st
   when (qtNow == qtPrev) $
     throwError @String  $ printf
@@ -693,13 +674,14 @@ castScheme st qtNow = do
      (show sResolved) (show qtNow)
   -- Get info based on its previous type!
   let tOldEmit = typingQEmit qtPrev
-  let rqsOld = (, qtPrev) <$> unpackPart sResolved
-  vsOldEmit <- rqsOld `forM` uncurry findEmitRangeQTy
-  removeEmitRangeQTys rqsOld
+  let rsOld = unpackPart sResolved
+  vsOldEmit <- findVisitEDs evBasis (inj <$> rsOld)
+  deleteEDs (inj <$> rsOld)
   let tNewEmit = typingQEmit qtNow
   -- FIXME: Cast phases
   sSt %= (at locS ?~ (sResolved, (qtNow, dgrs)))
-  vsNewEmit <- unpackPart sResolved `forM` (`gensymEmitRangeQTy` qtNow)
+  rsEDsNew <- genEDStSansPhaseByRanges qtNow $ unpackPart sResolved
+  vsNewEmit <- mapM (visitED evBasis . snd) rsEDsNew
   return ( STuple (locS, sResolved, (qtNow, dgrs))
          , CastScheme { schVsOldEmit=vsOldEmit
                       , schTOldEmit=tOldEmit
@@ -715,7 +697,7 @@ castScheme st qtNow = do
 retypePartition
   :: ( Has (Error String) sig m
      , Has (State TState) sig m
-     , Has (Gensym EmitBinding) sig m
+     , Has (Gensym Emitter) sig m
      )
   => STuple -> QTy -> m CastScheme
 retypePartition = (snd <$>) .: castScheme
@@ -725,27 +707,35 @@ retypePartition = (snd <$>) .: castScheme
 --------------------------------------------------------------------------------
 
 matchEmitStates
-  :: EmitState -> EmitState -> [(Range, (Var, Var))]
+  :: EmitState -> EmitState -> [(Range, (EmitData, EmitData))]
 matchEmitStates es1 es2 =
   filter removeEq . Map.toList $ Map.intersectionWith (,) em1 em2
   where
     removeEq (_, (v1, v2)) = v1 /= v2
-    ripLoc = (`Map.withoutKeys` Set.singleton Nothing) .
-      Map.mapKeys ((fst <$>) . projEmitBindingRangeQTy)
-    reduceKeys = Map.mapKeys (reduce . fromJust)
     reduceMap = reduceKeys . ripLoc
+    reduceKeys = Map.mapKeys reduce
+    ripLoc = Map.mapKeys getInl . Map.filterWithKey (\k _ -> isInl k)
     (em1, em2) = (reduceMap es1, reduceMap es2)
+
+matchEmitStatesVars
+  :: Has (Error String) sig m
+  => EmitState -> EmitState -> m [(Range, (Var, Var))]
+matchEmitStatesVars es1 es2 =
+  sequence [ (r,) <$> liftM2 (,) (byBasis ed1) (byBasis ed2)
+           | (r, (ed1, ed2)) <- reds ]
+  where
+    byBasis = visitED evBasis
+    reds = matchEmitStates es1 es2
 
 
 -- Given two states compute the correspondence of emitted varaible between two
 -- states where 'tsInit' refers to the state before iteration starts and
 -- 'tsLoop' is for the state during iteration.
 matchStateCorrLoop
-  :: ( Has (Error String) sig m
-     )
+  :: Has (Error String) sig m
   => TState -> TState -> AEnv -> m [(Var, Var)]
-matchStateCorrLoop tsInit tsLoop env = do
-  pure $ snd <$> matchEmitStates esLoop esInit
+matchStateCorrLoop tsInit tsLoop env =
+  (snd <$>) <$> matchEmitStatesVars esLoop esInit
   where
     esInit = tsInit ^. emitSt
     esLoop = subst env $ tsLoop ^. emitSt
@@ -761,21 +751,22 @@ mergeMatchedTState
 mergeMatchedTState
   ts1@TState {_emitSt=eSt1}
   ts2@TState {_emitSt=eSt2}
-  = (catMaybes <$>) . forM matchedRangeAndVars $ \(r, (v1, v2)) -> do
-  (qt1, _) <- getQPTy ts1 r
-  (qt2, _) <- getQPTy ts2 r
-  when (qt1 /= qt2) $ throwError' "How can they be different?"
-  pure $ case qt1 of
-    _ | qt1 `elem` [ TEN, TEN01 ] -> Just . MEqual $
-        EqualStrategy
-        { esRange = r
-        , esQTy = qt1
-        , esVMain = v1
-        , esVAux = v2
-        }
-    _ -> Nothing
+  = do
+    matchedRangeAndVars <- matchEmitStatesVars eSt1 eSt2
+    (catMaybes <$>) . forM matchedRangeAndVars $ \(r, (v1, v2)) -> do
+      (qt1, _) <- getQPTy ts1 r
+      (qt2, _) <- getQPTy ts2 r
+      when (qt1 /= qt2) $ throwError' "How can they be different?"
+      pure $ case qt1 of
+        _ | qt1 `elem` [ TEN, TEN01 ] -> Just . MEqual $
+            EqualStrategy
+            { esRange = r
+            , esQTy = qt1
+            , esVMain = v1
+            , esVAux = v2
+            }
+        _ -> Nothing
   where
-    matchedRangeAndVars = matchEmitStates eSt1 eSt2
     getQPTy ts r = evalState ts $ inferRangeTy r
 
 
@@ -981,7 +972,7 @@ normalizeArguments es params = runState Map.empty $
 -- STuples in the caller's context.
 resolveMethodApplicationArgs
   ::  ( Has (Gensym String) sig m
-      , Has (Gensym EmitBinding) sig m
+      , Has (Gensym Emitter) sig m
       , Has (Error String) sig m
       , Has (Reader TEnv) sig m
       , Has (Reader IEnv) sig m
@@ -994,7 +985,7 @@ resolveMethodApplicationArgs
 resolveMethodApplicationArgs es
   MethodType { mtSrcParams=srcParams
              , mtInstantiate=instantiator
-             } = do
+             } = errTrace "`resolveMethodApplicationArgs`" $ do
   unless (length es == length srcParams) $ arityMismatch srcParams
   (envArgs, pureArgs) <- normalizeArguments es srcParams
   let inst = instantiator envArgs
@@ -1009,13 +1000,13 @@ resolveMethodApplicationArgs es
 
 
     -- type check partitions in the typing state
-    getEmitVarsAfterTyCheck part q = do
+    getEmitVarsAfterTyCheck part q = errTrace "`getEmitVarsAfterTyCheck`" $ do
       sAndMaySC <- case part of
         Partition [r] -> do
           st <- resolvePartition part
           hdlSCError $ splitThenCastScheme st q r
         _ -> (, Nothing, Nothing) <$> typingPartitionQTy part q
-      (sAndMaySC,) <$> (findEmitVarsFromPartition part q <&> fmap EVar)
+      (sAndMaySC,) <$> (findVisitEDs evBasis (inj <$> unpackPart part) <&> fmap EVar)
 
 
 
@@ -1024,13 +1015,15 @@ resolveMethodApplicationRets
   ::  ( Has (Error String) sig m
       , Has (State TState) sig m
       , Has (Gensym Var) sig m
-      , Has (Gensym EmitBinding) sig m
+      , Has (Gensym Emitter) sig m
+      , Has Trace sig m
       )
   => Map.Map Var Range -> MethodType ->  m [Var]
 resolveMethodApplicationRets envArgs
   MethodType { mtSrcReturns=retParams
              , mtReceiver=receiver
              } = do
+  trace "* resolveMethodApplicationRets"
   qBindings :: [Var] <- concat <$> forM psRet ((fst <$>) . extendTState'Degree)
   -- TODO: also outputs pure variables here
   -- Sanity check for now:
@@ -1162,9 +1155,10 @@ bdTypes b = [t | Binding _ t <- b]
 
 -- | Construct from a scratch a new TState containing the given partitons.
 tStateFromPartitionQTys
-  :: ( Has (Gensym EmitBinding) sig m
+  :: ( Has (Gensym Emitter) sig m
      , Has (Gensym Var) sig m
      , Has (Error String) sig m
+     , Has Trace sig m
      )
   => [(Partition, QTy, [Int])] -> m TState
 tStateFromPartitionQTys pqts = execState initTState $ do
@@ -1174,29 +1168,36 @@ tStateFromPartitionQTys pqts = execState initTState $ do
 -- symbols for every range in the partition and return all emitted symbols in
 -- the same order as those ranges.
 extendTState
-  :: ( Has (Gensym EmitBinding) sig m
+  :: ( Has (Gensym Emitter) sig m
      , Has (Gensym Var) sig m
      , Has (State TState) sig m
      , Has (Error String) sig m
+     , Has Trace sig m
      )
   => Partition -> QTy -> [Int] -> m ([Var], [PhaseTy])
-extendTState p qt dgrs = do
+extendTState p@Partition{ranges} qt dgrs = do
+  trace "* extendTState"
   sLoc <- gensymLoc "requires"
   sSt %= (at sLoc ?~ (p, (qt, dgrs)))
   let xMap = [ (v, [(r, sLoc)]) | r@(Range v _ _) <- ranges ]
-  ptys <- allocPhaseType (STuple (sLoc, p, (qt, dgrs)))
-  vsREmit <- unpackPart p `forM` (\r -> (,r) <$> r `gensymEmitRangeQTy` qt)
+  (edL, rEd) <- genEDStFromSTuple sLoc ranges qt dgrs
+  let eds = snd <$> rEd
+  -- bdsEmit <- genEDStByRangesSansPhase qt (unpackPart p)
+  -- ptys <- allocPhaseType (STuple (sLoc, p, (qt, dgrs)))
+  vsEmit <- visitEDs evBasis eds
+  -- FIXME: redesign dgrs in STuple so that len(dgrs)==1+len(ranges)
+  let ptys = mapMaybe evPhaseTy (edL : eds)
+  trace "* Die?"
   xSt %= Map.unionWith (++) (Map.fromListWith (++) xMap)
-  return $ (,ptys) $ fst <$> vsREmit
-  where
-    ranges = unpackPart p
+  return $ (vsEmit, ptys)
 
 extendTState'Degree
-  :: ( Has (Gensym EmitBinding) sig m
+  :: ( Has (Gensym Emitter) sig m
      , Has (Gensym Var) sig m
      , Has (State TState) sig m
      , Has (Error String) sig m
-     )
+     , Has Trace sig m
+   )
   => (Partition, QTy, [Int]) -> m ([Var], [PhaseTy])
 extendTState'Degree (p, qt, ds) =
   extendTState p qt ds

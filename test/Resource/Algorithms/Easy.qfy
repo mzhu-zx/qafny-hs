@@ -1,0 +1,20 @@
+method MultiModFull(q : qreg[10], p : qreg[10], base : nat)
+  requires base >= 3
+  requires { q [0 .. 10] : had ↦ ⊗ i . 1 }
+  requires { p [0 .. 10] : en ↦ \Sum i \in [0 .. 1]. (1) }
+{
+  // This requires a split for it to work! 
+  EntangleOne1(q, p, base);
+}
+
+method EntangleOne1(q : qreg[1], p : qreg[10], base : nat)
+  requires { q [0 .. 1] : had ↦ ⊗ i . 1 }
+  requires { p [0 .. 10] : en ↦ ∑ i ∈ [0 .. 1]. (1) }
+  ensures { q [0 .. 1], p [0 .. 10] : en ↦ ∑ k ∈ [0 .. 2]. (k, ((Pow(base, k)) % 10)) }
+{
+  if (q[0 .. 1])
+    separates p[0 .. 10]
+  {
+     p[0 .. 10] *= λ (x => ((Pow(base, 1)) * x) % 10);
+  }
+}

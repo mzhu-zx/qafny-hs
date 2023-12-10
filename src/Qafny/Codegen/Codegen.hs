@@ -3,8 +3,8 @@
   , DataKinds
   , FlexibleContexts
   , FlexibleInstances
-  , IncoherentInstances
   , MultiWayIf
+  , NamedFieldPuns
   , RecordWildCards
   , ScopedTypeVariables
   , TupleSections
@@ -45,7 +45,7 @@ import           Control.Lens
     (at, non, (%~), (?~), (^.))
 import           Control.Lens.Tuple
 import           Control.Monad
-    (MonadPlus (mzero), forM, forM_, when)
+    (MonadPlus (mzero), forM, forM_, liftM2, when)
 
 import           Control.Arrow
     ((&&&))
@@ -59,7 +59,7 @@ import           Data.List.NonEmpty
     (NonEmpty (..))
 import qualified Data.Map.Strict              as Map
 import           Data.Maybe
-    (mapMaybe)
+    (catMaybes, mapMaybe)
 import qualified Data.Sum                     as Sum
 import           Text.Printf
     (printf)
@@ -79,12 +79,13 @@ import           Qafny.Syntax.Emit
     (DafnyPrinter, byLineT, showEmit0, showEmitI)
 import           Qafny.Syntax.EmitBinding
 import           Qafny.TypeUtils
-    (bindingsFromPtys, isEN, typingPhaseEmitReprN, typingQEmit)
+    (bindingsFromPtys, emitTypeFromDegree, isEN, typingPhaseEmitReprN,
+    typingQEmit)
 import           Qafny.Typing
     (Promotion (..), PromotionScheme (..), allocAndUpdatePhaseType,
-    allocPhaseType, analyzePhaseSpecDegree, appkEnvWithBds, checkSubtype,
-    checkSubtypeQ, collectConstraints, collectMethodTypes, collectPureBindings,
-    extendTState, matchEmitStates, matchStateCorrLoop, mergeCandidateHad,
+    analyzePhaseSpecDegree, appkEnvWithBds, checkSubtype, checkSubtypeQ,
+    collectConstraints, collectMethodTypes, collectPureBindings, extendTState,
+    matchEmitStates, matchEmitStatesVars, matchStateCorrLoop, mergeCandidateHad,
     mergeMatchedTState, mergeSTuplesHadEN, mergeScheme, promotionScheme,
     queryPhaseType, removeTStateBySTuple, resolveMethodApplicationArgs,
     resolveMethodApplicationRets, resolvePartition, resolvePartition',
@@ -93,21 +94,18 @@ import           Qafny.Typing
     tStateFromPartitionQTys, typingExp, typingGuard, typingPartition,
     typingPartitionQTy)
 
-import           Qafny.Utils
-    (bindingFromEmitBinding, checkListCorr, collectRQTyBindings, dumpSSt,
-    dumpSt, findEmitBindingsFromPartition, findEmitRangeQTy, fst2, gensymEmitEB,
-    gensymEmitPartitionQTy, gensymEmitRB, gensymEmitRangeQTy, gensymLoc,
-    gensymRangeQTy, getMethodType, internalError, liftPartition,
-    modifyEmitRangeQTy, onlyOne, rbindingOfRange, removeEmitPartitionQTys,
-    removeEmitRangeQTys, rethrowMaybe, uncurry3)
+import           Data.Sum
+    (Injection (inj))
+import           Qafny.Codegen.Bindings
+    (findEmitBindingsFromPartition)
+import           Qafny.Codegen.Method
+    (codegenMethodParams, genEmitSt)
 import           Qafny.Typing.Error
-import           Qafny.Utils
-    (bindingFromEmitBinding, checkListCorr, collectRQTyBindings, dumpSSt,
-    dumpSt, findEmitBindingsFromPartition, findEmitRangeQTy, fst2, gensymEmitEB,
-    gensymEmitPartitionQTy, gensymEmitRB, gensymEmitRangeQTy, gensymLoc,
-    gensymRangeQTy, getMethodType, internalError, liftPartition,
-    modifyEmitRangeQTy, onlyOne, rbindingOfRange, removeEmitPartitionQTys,
-    removeEmitRangeQTys, rethrowMaybe, uncurry3)
+import           Qafny.Utils.EmitBinding
+import           Qafny.Utils.Emitter.Compat
+    (findEmitRanges)
+import           Qafny.Utils.Utils
+    (checkListCorr, dumpSt, fst2, gensymLoc, getMethodType, onlyOne, uncurry3)
 
 throwError'
   :: ( Has (Error String) sig m )
@@ -232,8 +230,8 @@ codegenToplevel'Method
 -- TODO: to keep emitted symbols for the same __qreg__ variable in a unique
 -- order, sorting those variables should also be the part of the calling
 -- convention
-codegenToplevel'Method q@(QMethod v bds rts rqs ens Nothing) = return q
-codegenToplevel'Method q@(QMethod v bds rts rqs ens (Just block)) = runWithCallStack q $ do
+codegenToplevel'Method q@(QMethod vMethod bds rts rqs ens Nothing) = return q
+codegenToplevel'Method q@(QMethod vMethod bds rts rqs ens (Just block)) = runWithCallStack q $ do
   -- gather constraints from "requires" clauses
   boundConstraints <- local (appkEnvWithBds bds) $
     collectConstraints rqs
@@ -243,7 +241,7 @@ codegenToplevel'Method q@(QMethod v bds rts rqs ens (Just block)) = runWithCallS
   trace $ printf "Constraint Sets:\n%s\n" (show boundConstraints)
 
   -- construct requires, parameters and the method body
-  mty <- getMethodType v
+  mty <- getMethodType vMethod
   (countMeta, (countEmit, (rbdvsEmitR', rbdvsEmitB), (appetizer, mainCourse))) <-
     local (appkEnvWithBds bds) $
     codegenRequiresAndParams mty `resumeGensym` codegenMethodBody iEnv block
@@ -251,18 +249,21 @@ codegenToplevel'Method q@(QMethod v bds rts rqs ens (Just block)) = runWithCallS
   let (rqsCG, params, stmtsMatchParams) = appetizer
   let blockCG = mainCourse
   dumpSt "Main Course"
-  (stmtsMatchEnsures, returns) <- GEmit.evalGensymEmitWith @EmitBinding countEmit $
+  (stmtsMatchEnsures, returns) <- GEmit.evalGensymEmitWith @Emitter countEmit $
     runReader iEnv . codegenMethodReturns $ mty
 
   ensCG <- codegenEnsures ens
 
+  trace (printf "** %s" (show rbdvsEmitB))
   -- Gensym symbols are in the reverse order!
   let stmtsDeclare = fDecls rbdvsEmitB
+  -- let stmtsDeclare = undefined
   let blockStmts = concat
         [ stmtsMatchParams
         , return $ qComment "Forward Declaration"
         , stmtsDeclare
-        , [ SDafny "reveal Map();"
+        , [ qComment "Revealing"
+          , SDafny "reveal Map();"
           , SDafny "reveal Pow2();"
           -- , SDafny "reveal LittleEndianNat.ToNatRight();"
           ] -- TODO: any optimization can be done here?
@@ -270,12 +271,13 @@ codegenToplevel'Method q@(QMethod v bds rts rqs ens (Just block)) = runWithCallS
         , inBlock blockCG
         , stmtsMatchEnsures
         ]
-  return $ QMethod v params returns rqsCG ensCG (Just . Block $ blockStmts)
+  return $ QMethod vMethod params returns rqsCG ensCG (Just . Block $ blockStmts)
   where
 
     vIntv2IEnv v' (Interval l r) = [(v', l :| [r])]
 
     codegenRequiresAndParams mty = do
+      trace "* codegenRequiresAndParams"
       (es, ptys) <- codegenRequires rqs
       methodBindings <- codegenMethodParams mty ptys
       stmtsCopy <- genEmitSt
@@ -292,60 +294,29 @@ codegenToplevel'Method q@(QMethod v bds rts rqs ens (Just block)) = runWithCallS
 
     -- | Compile the foward declaration of all variables produced in compiling
     -- the body
-    fDecls = fmap $ uncurry fDecl
+    fDecls = mapMaybe $ uncurry fDecl
 
-    fDecl :: EmitBinding -> Var -> Stmt'
-    fDecl (RBinding (_, ty)) v' =
-      SVar (Binding v' (getTy ty)) Nothing
-      where
-        getTy (Sum.Inl qty) = typingQEmit qty
-        getTy (Sum.Inr _)   = TNat
-    fDecl (LBinding (_, n)) v' =
-      SVar (Binding v' (typingPhaseEmitReprN n)) Nothing
-    fDecl (BBinding (_, _)) v' =
-      SVar (Binding v' TNat) Nothing
-    -- fDecl bd _ = error $
-    --   printf "Internal Error: %s is not a valid EmitBinding." (show bd)
 
-    -- | Forward declare all symbols emitted during Codegen except for those to
-    -- be put in the __returns__ clause.
-    -- fDecls rbdvsEmitB mapFinalEmits =
-    --    [ SVar (Binding vEmit tEmit) Nothing
-    --    | (RBinding (Range vMeta _ _, tEmit), vEmit) <- rbdvsEmitB
-    --    , vMeta `notElem` vIns ||
-    --      vEmit `notElem` Map.elems mapFinalEmits ]
+    fDecl :: Emitter -> Var -> Maybe Stmt'
+    fDecl (EmBaseSeq _ qt) v' =
+      Just $ mkSVar v' (typingQEmit qt)
+    fDecl (EmPhaseSeq _ i) v' =
+      emitTypeFromDegree i <&> mkSVar v'
+    fDecl (EmPhaseBase _) v' =
+      Just $ mkSVar v' TNat
+    fDecl (EmAnyBinding v' t) _ =
+      Just $ mkSVar v' t
+    fDecl _ _ = Nothing
 
-    -- -- | All __qreg__ parameters
-    -- vIns = [ vIn | Binding vIn (TQReg _) <- bds ]
-
-    -- -- | For each qreg variable passed into the method, filter its corresponding
-    -- -- symbols emitted during 'codegenRequires' and replace the meta variable in
-    -- -- the method parameter list with the emited variables.
-    -- genBdsReqs rbdvsEmitR = do
-    --     bd@(Binding vIn ty) <- bds
-    --     case ty of
-    --       TQReg _ ->
-    --         [ Binding vEmit tEmit
-    --         | (RBinding (Range vMeta _ _, tEmit), vEmit) <- rbdvsEmitR
-    --         , vMeta == vIn ]
-    --       _    -> return bd
-
-    -- | For each qreg variable passed into the method, look it up in the final
-    -- 'emitSt', filter their emit symbols out and add to the __returns__
-    -- clause.
-    -- genBdsRets finalEmits =
-    --     [ Binding vEmit tEmit
-    --     | vMeta <- vIns
-    --     , (RBinding (Range vMetaE _ _, tEmit), vEmit) <- finalEmits
-    --     , vMetaE == vMeta]
-
+    mkSVar :: Var -> Ty -> Stmt'
+    mkSVar v ty = SVar (Binding v ty) Nothing
 
 codegenBlock
   :: ( Has (Reader TEnv) sig m
      , Has (State TState)  sig m
      , Has (Error String) sig m
      , Has (Gensym String) sig m
-     , Has (Gensym EmitBinding) sig m
+     , Has (Gensym Emitter) sig m
      , Has (Reader Bool) sig m
      , Has (Reader IEnv) sig m
      , Has (Reader QTy) sig m
@@ -362,7 +333,7 @@ codegenStmts
      , Has (Error String) sig m
      , Has (Reader Bool) sig m
      , Has (Gensym String) sig m
-     , Has (Gensym EmitBinding) sig m
+     , Has (Gensym Emitter) sig m
      , Has (Reader IEnv) sig m
      , Has Trace sig m
      , Has (Reader QTy) sig m -- hints for λ type resolution
@@ -388,7 +359,7 @@ codegenStmt
      , Has (State TState)  sig m
      , Has (Error String) sig m
      , Has (Gensym String) sig m
-     , Has (Gensym EmitBinding) sig m
+     , Has (Gensym Emitter) sig m
      , Has Trace sig m
      )
   => Stmt'
@@ -413,7 +384,7 @@ codegenStmt'
      , Has (State TState)  sig m
      , Has (Error String) sig m
      , Has (Gensym String) sig m
-     , Has (Gensym EmitBinding) sig m
+     , Has (Gensym Emitter) sig m
      , Has Trace sig m
      )
   => Stmt'
@@ -489,7 +460,7 @@ codegenStmt'Apply
      , Has (State TState)  sig m
      , Has (Error String) sig m
      , Has (Gensym String) sig m
-     , Has (Gensym EmitBinding) sig m
+     , Has (Gensym Emitter) sig m
      , Has Trace sig m
      )
   => Stmt'
@@ -511,7 +482,7 @@ codegenStmt'Apply (s :*=: EHad) = do
     opCastHad TNor = return "CastNorHad"
     opCastHad t = throwError $ "type `" ++ show t ++ "` cannot be casted to Had type"
 
-codegenStmt'Apply stmt@(s@(Partition ranges) :*=: eLam@(ELambda pbinder _ pexpMaybe _)) = do
+codegenStmt'Apply stmt@(s@(Partition {ranges}) :*=: eLam@(ELambda pbinder _ pexpMaybe _)) = do
   (st'@(STuple (_, _, (qt', _))), corr) <- resolvePartition' s
   qtLambda <- ask
   checkSubtypeQ qt' qtLambda
@@ -548,7 +519,7 @@ codegenStmt'Apply stmt@(s@(Partition ranges) :*=: eLam@(ELambda pbinder _ pexpMa
   trace $ printf "LEFT: %s, RIGHT: %s" (show r) (show rSt)
   -- | It's important not to use the fully resolved `s` here because the OP
   -- should only be applied to the sub-partition specified in the annotation.
-  ~[vEmit] <- unpackPart s `forM` (`findEmitRangeQTy` qt)
+  ~[vEmit] <- findEmitRanges $ unpackPart s
   ((stmts ++) . (stmtsPhase ++) <$>) . putOpt $ case qtLambda of
     TEN -> return [ mkMapCall vEmit ]
     TEN01 -> do
@@ -600,7 +571,7 @@ codegenStmt'If
      , Has (State TState)  sig m
      , Has (Error String) sig m
      , Has (Gensym String) sig m
-     , Has (Gensym EmitBinding) sig m
+     , Has (Gensym Emitter) sig m
      , Has Trace sig m
      )
   => Stmt'
@@ -631,7 +602,7 @@ codegenStmt'If'Had
      , Has (State TState)  sig m
      , Has (Error String) sig m
      , Has (Gensym String) sig m
-     , Has (Gensym EmitBinding) sig m
+     , Has (Gensym Emitter) sig m
      , Has (Reader IEnv) sig m
      , Has (Reader QTy) sig m
      , Has (Reader Bool) sig m
@@ -673,7 +644,7 @@ codegenStmt'For
      , Has (State TState)  sig m
      , Has (Error String) sig m
      , Has (Gensym String) sig m
-     , Has (Gensym EmitBinding) sig m
+     , Has (Gensym Emitter) sig m
      , Has Trace sig m
      )
   => Stmt'
@@ -809,7 +780,7 @@ codegenFor'Body
      , Has (State TState)  sig m
      , Has (Error String) sig m
      , Has (Gensym String) sig m
-     , Has (Gensym EmitBinding) sig m
+     , Has (Gensym Emitter) sig m
      , Has Trace sig m
      )
   => Var   -- ^ index variable
@@ -877,27 +848,27 @@ codegenFor'Body idx boundl boundr eG body stSep@(STuple (_, Partition rsSep, (qt
         _                         -> throwError' errNoSep
 
       -- 1. save the "false" part to a new variable
-      vsEmitG <- liftPartition (`findEmitRangeQTy` qtG) sG
-      rqtvsEmitFalseG <- liftPartition (\r -> ((r, qtG),) <$> r `gensymRangeQTy` qtG) sG
-      let vsEmitGFalse = snd <$> rqtvsEmitFalseG
+      vsEmitG <- findEmitRanges $ unpackPart sG
+      redFalseG <- genEDStByRangesSansPhase qtG (ranges sG)
+      vsEmitGFalse <- mapM (visitEDBasis . snd) redFalseG
       let stmtsSaveFalse = uncurry (stmtAssignSlice (ENum 0) eSep) <$> zip vsEmitGFalse vsEmitG
       let stmtsFocusTrue = stmtAssignSelfRest eSep <$> vsEmitG
 
       -- save the current emit symbol table for
       stateIterBegin <- get @TState
 
-      let installEmits bindings =
-            forM_ bindings $ \((r, qt), v) -> modifyEmitRangeQTy r qt v
+      let installEmits rEds =
+            forM_ rEds $ \(r, ed) -> appendEDSt (inj r) ed
 
       -- SOLVED?
       -- TODO: I need one way to duplicate generated emit symbols in the split
       -- and cast semantics so that executing the computation above twice will
       -- solve the problem.
-      vsEmitSep <- forM rsSep (`findEmitRangeQTy` qtSep)
+      vsEmitSep <-  findEmitRanges rsSep
 
       -- compile for the 'false' branch with non-essential statements suppressed
       (tsFalse, (stmtsFalse, vsFalse)) <- runState stateIterBegin $ do
-        installEmits rqtvsEmitFalseG
+        installEmits redFalseG
         local (const False) $ codegenHalf psBody
 
       -- compile the for body for the 'true' branch
@@ -960,7 +931,7 @@ codegenFor'Body idx boundl boundr eG body stSep@(STuple (_, Partition rsSep, (qt
       --
       -- Use collected partitions and merge it with the absorbed typing state.
       emitStEnd <- (^. emitSt) <$> get @TState
-      let corrBeginEnd = matchEmitStates emitStBegin emitStEnd
+      corrBeginEnd <- matchEmitStatesVars emitStBegin emitStEnd
       -- I don't remember the purpose of this line, purely sanity check?
       pure $ uncurry mkAssignment . snd <$> corrBeginEnd
 
@@ -978,7 +949,7 @@ codegenStmt'For'Had
      , Has (State TState)  sig m
      , Has (Error String) sig m
      , Has (Gensym String) sig m
-     , Has (Gensym EmitBinding) sig m
+     , Has (Gensym Emitter) sig m
      , Has Trace sig m
      )
   => STuple -> STuple -> Var -> Block'
@@ -1016,7 +987,7 @@ codegenStmt'For'Had stB stG vIdx b = do
 mergeHadGuard
   :: ( Has (State TState) sig m
      , Has (Error String) sig m
-     , Has (Gensym EmitBinding) sig m
+     , Has (Gensym Emitter) sig m
      , Has (Reader IEnv) sig m
      , Has Trace sig m
      )
@@ -1036,7 +1007,7 @@ mergeHadGuard = mergeHadGuardWith (ENum 0)
 mergeHadGuardWith
   :: ( Has (State TState) sig m
      , Has (Error String) sig m
-     , Has (Gensym EmitBinding) sig m
+     , Has (Gensym Emitter) sig m
      , Has (Reader IEnv) sig m
      , Has Trace sig m
      )
@@ -1058,7 +1029,7 @@ hadGuardMergeExp vEmit tEmit cardMain cardStash eBase =
      ]
 
 codegenMergePhase
-  :: ( Has (Gensym EmitBinding) sig m
+  :: ( Has (Gensym Emitter) sig m
      , Has (Error String) sig m
      )
   => PhaseTy -> PhaseTy -> m (PhaseTy, [Stmt'])
@@ -1100,17 +1071,17 @@ mergeEmitted corr excluded =
 -- | Generate statements that allocate qubits if it's Nor; otherwise, keep the
 -- source statement as is.
 codegenAlloc
-  :: ( Has (Gensym EmitBinding) sig m
+  :: ( Has (Gensym Emitter) sig m
      , Has (Gensym String) sig m
      , Has (State TState)  sig m
      , Has (Error String) sig m
      )
   => Var -> Exp' -> Ty -> m Stmt'
 codegenAlloc v e@(EOp2 ONor e1 e2) t@(TQReg _) = do
-  let eEmit = EEmit $ EMakeSeq TNat e1 $ constExp e2
+  let eEmit = EEmit $ EMakeSeq TNat e1 $ constLambda e2
   let rV = Range v (ENum 0) e1
       sV = partition1 rV
-  vEmit <- gensymEmitRangeQTy rV TNor
+  vEmit <- genEDStByRangeSansPhase TNor rV >>= visitEDBasis
   loc <- gensymLoc v
   xSt %= (at v . non [] %~ ((rV, loc) :))
   sSt %= (at loc ?~ (sV, (TNor, [0])))
@@ -1163,7 +1134,7 @@ codegenCastEmit
 castWithOp
   :: ( Has (Error String) sig m
      , Has (State TState) sig m
-     , Has (Gensym EmitBinding) sig m
+     , Has (Gensym Emitter) sig m
      )
   => String -> STuple -> QTy -> m [Stmt']
 castWithOp op s newTy =
@@ -1183,7 +1154,7 @@ castWithOp op s newTy =
 castPartitionEN
   :: ( Has (Error String) sig m
      , Has (State TState) sig m
-     , Has (Gensym EmitBinding) sig m
+     , Has (Gensym Emitter) sig m
      )
   => STuple -> m [Stmt']
 castPartitionEN st@(STuple (locS, s, (qtS, _))) = do
@@ -1206,19 +1177,19 @@ castPartitionEN st@(STuple (locS, s, (qtS, _))) = do
 dupState
   :: ( Has (Error String) sig m
      , Has (State TState) sig m
-     , Has (Gensym EmitBinding) sig m
+     , Has (Gensym Emitter) sig m
      , Has (Reader IEnv) sig m
      , Has Trace sig m
      )
   => Partition -> m ([Stmt'], [(Var, Var)])
 dupState s' = do
   STuple (locS, s, (qtS, ptys)) <- resolvePartition s'
-  let rs = unpackPart s
+  let rs = ranges s
   -- generate a set of fresh emit variables as the stashed partition
   -- do not manipulate the `emitSt` here
-  vsEmitFresh <- rs `forM` (`gensymRangeQTy` qtS)
+  vsEmitFresh <- genEDByRangeSansPhase qtS `mapM` rs >>= visitEDsBasis
   -- the only place where state is used!
-  vsEmitPrev  <- rs `forM` (`findEmitRangeQTy` qtS)
+  vsEmitPrev  <- findEmitBasesByRanges rs
   let comm = qComment "Duplicate"
   let stmts = [ (::=:) vEmitFresh (EVar vEmitPrev)
               | (vEmitFresh, vEmitPrev) <- zip vsEmitFresh vsEmitPrev ]
@@ -1299,7 +1270,8 @@ codegenSplitThenCastEmit
   => Maybe SplitScheme
   -> Maybe CastScheme
   -> m [Stmt']
-codegenSplitThenCastEmit sS sC =
+codegenSplitThenCastEmit sS sC = do
+  trace "* codegenSplitThenCastEmit"
   (++) <$> codegenSplitEmitMaybe sS <*> codegenCastEmitMaybe sC
 
 --------------------------------------------------------------------------------
@@ -1327,7 +1299,7 @@ doubleHadCounter vCounter =
 -- | Generate from the merge scheme statements to perform the merge and the
 -- final result variable.
 codegenMergeScheme
-  :: ( Has (Gensym EmitBinding) sig m
+  :: ( Has (Gensym Emitter) sig m
      , Has (Gensym String) sig m
      , Has (State TState) sig m
      , Has (Error String) sig m
@@ -1339,13 +1311,13 @@ codegenMergeScheme = mapM $ \scheme -> do
     MJoin JoinStrategy { jsQtMain=qtMain, jsQtMerged=qtMerged
                        , jsRResult=rResult, jsRMerged=rMerged, jsRMain=rMain
                        } -> do
-      vEmitMerged <- findEmitRangeQTy rMerged qtMerged
-      vEmitMain   <- findEmitRangeQTy rMain qtMain
-      removeEmitRangeQTys [(rMerged, qtMerged), (rMain, qtMain)]
+      vEmitMerged <- findEmitBasisByRange rMerged
+      vEmitMain   <- findEmitBasisByRange rMain
+      deleteEDs $ inj <$> [rMerged, rMain]
       case (qtMain, qtMerged) of
         (TEN01, TNor) -> do
           -- append the merged value (ket) into each kets in the main value
-          vEmitResult <- gensymEmitRangeQTy rResult qtMain
+          vEmitResult <- genEDStByRangeSansPhase qtMain rResult >>= visitEDBasis
           vBind <- gensym "lambda_x"
           let stmt = vEmitResult ::=: callMap ef (EVar vEmitMain)
               ef   = simpleLambda vBind (EVar vBind + EVar vEmitMerged)
@@ -1388,29 +1360,7 @@ codegenRangeRepr
   => Range -> m Var
 codegenRangeRepr r = do
   STuple(_, _, (qt, _)) <- resolvePartition (Partition [r])
-  findEmitRangeQTy r qt
-
--- | Generate method parameters from the method signature
-codegenMethodParams
-  :: ( Has (State TState)  sig m
-     , Has (Error String) sig m
-     , Has Trace sig m
-     )
-  => MethodType -> [PhaseTy] -> m [Binding']
-codegenMethodParams
-  MethodType{ mtSrcParams=srcParams , mtInstantiate=instantiator}
-  ptysResolved
-  = do
-  let pureVars = collectPureBindings srcParams
-      qVars = [ (v, Range v 0 card) | MTyQuantum v card <- srcParams ]
-      inst = instantiator $ Map.fromList qVars
-      pVars = bindingsFromPtys ptysResolved
-  trace $ "QVARS: " ++ show qVars
-  trace $ "INSTANCE: " ++ show inst
-  trace $ "PVars" ++ show pVars
-  vqEmits <- (concat <$>) . forM inst $ uncurry findEmitBindingsFromPartition . fst2
-  dumpSt "MethodParams"
-  pure $ pureVars ++ vqEmits ++ pVars
+  findEmitBasisByRange r
 
 
 -- | Generate predicates for require clauses
@@ -1420,24 +1370,27 @@ codegenRequires
   :: ( Has (State TState)  sig m
      , Has (Error String) sig m
      , Has (Gensym String) sig m
-     , Has (Gensym EmitBinding) sig m
+     , Has (Gensym Emitter) sig m
+     , Has Trace sig m
      )
   => [Exp'] -> m ([Exp'], [PhaseTy])
-codegenRequires rqs = (bimap concat concat . unzip <$>) . forM rqs $ \rq ->
+codegenRequires rqs = do
+  trace "* codegenRequires"
+  (bimap concat concat . unzip <$>) . forM rqs $ \rq ->
   -- TODO: I need to check if partitions from different `requires` clauses are
   -- indeed disjoint!
-  case rq of
-    ESpec s qt espec -> do
-      let pspec = snd <$> espec
-      let dgrs = pspec <&> analyzePhaseSpecDegree
-      (vsEmit, ptys) <- extendTState s qt dgrs
-      es <- runReader True $ codegenSpecExp (zip vsEmit (unpackPart s)) qt espec ptys
-      return (es, ptys)
-    _ -> return ([rq], [])
+    case rq of
+      ESpec s qt espec -> do
+        let pspec = snd <$> espec
+        let dgrs = pspec <&> analyzePhaseSpecDegree
+        (vsEmit, ptys) <- extendTState s qt dgrs
+        es <- runReader True $ codegenSpecExp (zip vsEmit (unpackPart s)) qt espec ptys
+        return (es, ptys)
+      _ -> return ([rq], [])
 
 codegenMethodReturns
   :: ( Has (State TState) sig m
-     , Has (Gensym EmitBinding) sig m
+     , Has (Gensym Emitter) sig m
      , Has (Error String) sig m
      , Has (Reader IEnv) sig m
      , Has Trace sig m
@@ -1462,8 +1415,9 @@ codegenMethodReturns MethodType{ mtSrcReturns=srcReturns
     genAndPairReturnRanges p qt dgrs = do
       prevBindings <- findEmitBindingsFromPartition p qt
       let prevVars = [ v | Binding v _ <- prevBindings ]
-      removeEmitPartitionQTys p qt -- Q: Do I really need to remove by hand?
-      newVars <- gensymEmitPartitionQTy p qt
+      -- FIXME: remove loc as well!
+      deleteEDs (inj<$> ranges p)
+      newVars <- genEDStByRangesSansPhase' qt (ranges p) >>= visitEDsBasis
       let emitTy = typingQEmit qt
       pure $ zipWith (pairAndBind emitTy) newVars prevVars
     pairPhaseTys ptysNew ptysPre =
@@ -1506,7 +1460,7 @@ codegenAssertion'
   => Exp' -> m [Exp']
 codegenAssertion' (ESpec s qt espec) = do
   st@(STuple (_, _, (_, dgrs))) <- typingPartitionQTy s qt
-  vsEmit <- unpackPart s `forM` (`findEmitRangeQTy` qt)
+  vsEmit <- findEmitBasesByRanges (ranges s)
   qtys <- queryPhaseType st
   codegenSpecExp (zip vsEmit (unpackPart s)) qt espec qtys
 codegenAssertion' e = return [e]
@@ -1518,15 +1472,16 @@ codegenSpecExp
      , Has (Reader Bool) sig m
      )
   => [(Var, Range)] -> QTy -> [(SpecExp', PhaseExp)] -> [PhaseTy] -> m [Exp']
-codegenSpecExp vrs p specs ptys = putOpt $ do
-  if | isEN p -> do
-         when (length specs /= 1) $ throwError' $ printf "More then one specs!"
-         pspec <- onlyOne throwError' (snd <$> specs)
-         specPerPartition p (fst (head specs)) pspec
-     | otherwise -> do
-         -- For `nor` and `had`, one specification is given one per range
-         checkListCorr vrs specs
-         concat <$> mapM (specPerRange p) (zip3 vrs specs ptys)
+codegenSpecExp vrs p specs ptys = putOpt $
+  if isEN p
+  then do
+    when (length specs /= 1) $ throwError' $ printf "More then one specs!"
+    pspec <- onlyOne throwError' (snd <$> specs)
+    specPerPartition p (fst (head specs)) pspec
+  else do
+      -- For `nor` and `had`, one specification is given one per range
+    checkListCorr vrs specs
+    concat <$> mapM (specPerRange p) (zip3 vrs specs ptys)
   where
     specPerRange ty ((v, Range _ el er), (SESpecNor idx eBody, pspec), pty) |
       ty `elem` [TNor, THad] =
@@ -1649,27 +1604,4 @@ codegenPhaseSpec quantifier eSize (PTN 2 ref) (PhaseSumOmega (Range v l r) eK eN
   in return [assertN, quantifier assertK]
 codegenPhaseSpec _ _ (PTN n _) e =
   throwError' $ printf "Invalid %s for %d-degree phase." (show e) n
-
-
--- | Take the emit state and generate totally new emit symbols and emit
--- statements to match the translation
---
--- This is needed because you cannot mutate the parameter of a method.
--- An alternative is to copy the augument into a local variable where mutation
--- are allowed.
-genEmitSt
-  :: ( Has (Error String) sig m
-     , Has (State TState)  sig m
-     , Has (Gensym EmitBinding) sig m
-     )
-  => m [Stmt']
-genEmitSt = do
-  eSt <- use emitSt
-  emitSt %= const Map.empty
-  forM ((fst &&& bindingFromEmitBinding) <$> Map.toList eSt) go
-  where
-    -- go :: (RBinding, Var) -> m Stmt'
-    go (ebd, Binding v t) = do
-      nv <- gensymEmitEB ebd
-      pure $ SVar (Binding nv t) (Just (EVar v))
 

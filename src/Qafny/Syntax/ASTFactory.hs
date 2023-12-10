@@ -9,6 +9,7 @@ import           Qafny.Syntax.AST
 wild :: Var
 wild =  "_"
 
+-- | An Oracle term that always returns a constant.
 constLambda :: Exp' -> Exp'
 constLambda = simpleLambda wild
 
@@ -19,6 +20,7 @@ constExp = constLambda
 qComment :: String -> Stmt'
 qComment = SDafny . ("// " ++)
 
+-- | An Oracle term w/o phase specification.
 simpleLambda :: Var -> Exp' -> Exp'
 simpleLambda v = ELambda PhaseWildCard v Nothing
 
@@ -78,6 +80,9 @@ cardV = EEmit . ECard . EVar
 
 mkAssignment ::  Var -> Var -> Stmt'
 mkAssignment v1 v2 = v1 ::=: EVar v2
+
+mkDAssignment :: Ty -> Var -> Var -> Stmt'
+mkDAssignment t v1 v2 = SVar (Binding v1 t) (Just (EVar v2))
 
 
 -- Erase phase arguments in a lambda term

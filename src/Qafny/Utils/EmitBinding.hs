@@ -1,256 +1,286 @@
 {-# LANGUAGE
-    TupleSections
+    ConstraintKinds
+  , FlexibleContexts
+  , NamedFieldPuns
+  , TupleSections
   , TypeApplications
   , TypeOperators
   #-}
+module Qafny.Utils.EmitBinding
+  ( -- * Gensyms
+    gensymBinding
+  , genEDStUpdatePhase, genEDStByRange, genEDStByRanges, genEDStFromSTuple
+  , genEDStUpdatePhaseFromSTuple
+  , genEDStSansPhaseByRanges
+  , genEDStByRangesSansPhase, genEDStByRangeSansPhase
+  , genEDStByRangesSansPhase'
+    -- * Gensyms w/o State
+  , genEDByRange
+  , genEDByRangeSansPhase
+    -- * Query
+  , findED
+  , visitED, visitEDs, visitEDBasis, visitEDsBasis
+  , findVisitED, findVisitEDs
+  , findVisitEDsBasis
+  , findEmitBasesByRanges, findEmitBasisByRange
+    -- * Deletion
+  , deleteED, deleteEDs, deleteEDPartition
+    -- * Update
+  , appendEDSt
+    -- * Types
+  , StateMayFail, GensymWithState
+  )
+where
 
-module Qafny.Utils.EmitBinding where
-
-import           Control.Lens             (at, (?~), (^.))
-import           Control.Monad            (forM)
-import           Data.Bifunctor           (second)
-import           Data.Functor             ((<&>))
+import           Control.Lens
+    (at, sans, (?~), (^.))
+import           Control.Monad
+    (liftM2, (>=>), zipWithM)
+import           Data.Functor
+    ((<&>))
 import qualified Data.Map.Strict          as Map
-import           Data.Maybe               (mapMaybe)
 import qualified Data.Set                 as Set
 import           Data.Sum
-import           Text.Printf              (printf)
+import           Text.Printf
+    (printf)
 
-import           Effect.Gensym            (Gensym, gensym)
-import           Qafny.Env                (TState, emitSt)
-import           Qafny.Partial            (Reducible (reduce))
-import           Qafny.Syntax.AST
-import           Qafny.Syntax.EmitBinding
-import           Qafny.TypeUtils          (typingPhaseEmitReprN, typingQEmit)
-import           Qafny.Utils.Utils        (rethrowMaybe)
-
-import           Control.Effect.Error     (Error, throwError)
+import           Control.Effect.Error
+    (Error, throwError)
 import           Control.Effect.Lens
 import           Control.Effect.Reader
 import           Control.Effect.State
+import           Effect.Gensym
+    (Gensym, gensym)
+import           Qafny.Env
+    (RangeOrLoc, TState, emitSt)
+import           Qafny.Syntax.AST
+import           Qafny.Syntax.EmitBinding
+import           Qafny.TypeUtils
+    (emitTypeFromDegree, typingPhaseEmitReprN, typingQEmit, isEN)
+import Qafny.Utils.Utils (onlyOne, checkListCorr, errTrace)
 
 
 --------------------------------------------------------------------------------
 -- * Gensym Utils
 --
 -- $doc
--- The following functions operate on a 'Range' and a 'QTy', form a `Binding` to
--- be normalized to a variable name, perform modification and query to the emit
--- symbol state and the __Gensym EmitBinding__ effect.
+-- The following functions operate on a 'Range'/'Loc' and a 'QTy', form a
+-- `Binding` to be normalized to a variable name, perform modification and query
+-- to the emit symbol state w/ the __Gensym Emitter__ effect.
 -- $doc
 --------------------------------------------------------------------------------
 
-rbindingOfRange :: Range -> QTy :+: Int -> EmitBinding
-rbindingOfRange r b = RBinding (reduce r, b)
+type GensymWithState sig m =
+  (Has (Gensym Emitter) sig m , Has (State TState) sig m)
 
--- | Generate a varaible from a 'Range' and its 'QTy' and add the corresponding
--- 'Binding' into 'emitSt'
-gensymEmitRangeQTy
-  :: ( Has (Gensym EmitBinding) sig m
-     , Has (State TState) sig m
+gensymBinding :: (Has (Gensym Emitter) sig m) => Var -> Ty -> m Var
+gensymBinding v t = gensym (EmAnyBinding v t) 
+
+-- genPhaseRefByDegree
+--   :: ( Has (Gensym Emitter) sig m
+--      )
+--   => Int -> RangeOrLoc -> m (Maybe PhaseRef, Maybe Ty)
+-- genPhaseRefByDegree 0 _ = return (Nothing, Nothing)
+-- genPhaseRefByDegree n r =
+--   (, emitTypeFromDegree n) . Just <$>
+--   liftM2 mkPhaseRef (gensym (EmPhaseSeq r n)) (gensym (EmPhaseSeq r n))
+
+genPhaseTyByDegree
+  :: ( Has (Gensym Emitter) sig m
      )
-  => Range -> QTy-> m Var
-gensymEmitRangeQTy r qty = gensymEmitRB (rbindingOfRange r (inj qty))
+  => Int -> RangeOrLoc -> m (Maybe PhaseTy, Maybe Ty)
+genPhaseTyByDegree 0 _ = return (Just PT0, Nothing)
+genPhaseTyByDegree n r
+  | n < 0 = return (Nothing, Nothing)
+  | otherwise =  
+    (, emitTypeFromDegree n) . Just . PTN n <$>
+    liftM2 mkPhaseRef (gensym (EmPhaseBase r)) (gensym (EmPhaseSeq r n))
 
--- | Generate a new variable for phase representation and returns a new PhaseTy
--- that refers to the new variable.
-gensymEmitRangePTyRepr
-  :: ( Has (Gensym EmitBinding) sig m
-     , Has (State TState) sig m
+
+-- | Generate a /complete/ 'EmitData' of a Range and manage it within the 'emitSt'
+genEDStByRange :: GensymWithState sig m => QTy -> Int -> Range -> m EmitData
+genEDStByRange qt i r = do
+  ed <- genEDByRange qt i r
+  emitSt %= (at (inj r) ?~ ed)
+  return ed
+
+genEDByRange :: (Has (Gensym Emitter) sig m) => QTy -> Int -> Range -> m EmitData
+genEDByRange qt i r = do
+  vB  <- gensym $ EmBaseSeq r qt
+  (vmP, tyP) <- genPhaseTyByDegree i (inj r)
+  let ed =  EmitData { evPhaseTy = vmP
+                     , evPhaseSeqTy = tyP
+                     , evBasis = Just vB
+                     , evBasisTy = Just $ typingQEmit qt
+                     , evAmp   = Nothing
+                     }
+  return ed
+
+
+genEDStByRangeSansPhase ::  GensymWithState sig m => QTy -> Range -> m EmitData
+genEDStByRangeSansPhase qt = genEDStByRange qt 0
+
+genEDByRangeSansPhase
+  :: (Has (Gensym Emitter) sig m)
+  => QTy -> Range -> m EmitData
+genEDByRangeSansPhase qt = genEDByRange qt 0
+
+
+genEDStByRanges
+  :: GensymWithState sig m
+  => QTy -> [(Range, Int)] -> m [(Range, EmitData)]
+genEDStByRanges qt ris =
+  sequence [ (r,) <$> genEDStByRange qt i r | (r, i) <- ris ]
+
+-- | Generate a /complete/ 'EmitData' of a Partition, managed 'emitSt'
+--
+genEDStByLoc
+  :: GensymWithState sig m
+  => Loc -> Int -> QTy -> [(Range, Int)] -> m (EmitData, [(Range, EmitData)])
+genEDStByLoc l iLoc qt ris = do
+  rAndEDs <- sequence [ (r,) <$> genEDStByRange qt i r | (r, i) <- ris ]
+  (vMP, tyP) <- genPhaseTyByDegree iLoc (inj l)
+  let edL = mtEmitData { evPhaseTy = vMP, evPhaseSeqTy = tyP }
+  emitSt %= (at (inj l) ?~ edL)
+  return ( edL , rAndEDs )
+
+
+-- | Generate a /complete/ 'EmitData' of a Partition from its STuple
+-- In particular, generate degree and phases based on its qt
+
+genEDStFromSTuple
+  :: ( GensymWithState sig m
      , Has (Error String) sig m
      )
-  => Range -> Int -> m PhaseTy
-gensymEmitRangePTyRepr _ 0 = pure PT0
-gensymEmitRangePTyRepr r i = do
-  vBase <- findEmitEB (BBinding (inj r, i))
-  phaseTyN i vBase <$> gensymEmitEB (RBinding (r, inj i))
+  => Loc -> [Range] -> QTy -> [Int] -> m (EmitData, [(Range, EmitData)])
+genEDStFromSTuple l rs qt is = do
+  (il, ir) <- if isEN qt
+    then (, repeat (-1)) <$> onlyOne throwError is
+    else (-1, is)  <$ checkListCorr is rs
+  genEDStByLoc l il qt $ zip rs ir
 
--- | Generate a new Phase Type from the range and its degree and manage it in
--- the global store.
-gensymEmitRangeDegree
-  :: ( Has (Gensym EmitBinding) sig m
-     , Has (State TState) sig m
-     )
-  => Range -> Int-> m PhaseTy
-gensymEmitRangeDegree _ 0 =
-  return PT0
-gensymEmitRangeDegree r i = do
-  vRepr <- gensymEmitEB (RBinding (r, inj i))
-  vBase <- gensymEmitEB (BBinding (inj r, i))
-  return . PTN i $ PhaseRef { prBase=vBase, prRepr=vRepr }
-
-gensymEmitLocDegree
-  :: ( Has (Gensym EmitBinding) sig m
-     , Has (State TState) sig m
-     )
-  => Loc -> Int-> m PhaseTy
-gensymEmitLocDegree _ 0 =
-  return PT0
-gensymEmitLocDegree r i = do
-  vRepr <- gensymEmitEB (LBinding (r, i))
-  vBase <- gensymEmitEB (BBinding (inj r, i))
-  return . PTN i $ PhaseRef { prBase=vBase, prRepr=vRepr }
-
-
-gensymEmitEB
-  :: ( Has (Gensym EmitBinding) sig m , Has (State TState) sig m)
-  => EmitBinding -> m Var
-gensymEmitEB rb = do
-  name <- gensym rb
-  emitSt %= (at rb ?~ name)
-  return name
-
-{-# DEPRECATED gensymEmitRB "Use gensymEmitEB instead!" #-}
-gensymEmitRB
-  :: ( Has (Gensym EmitBinding) sig m
-     , Has (State TState) sig m
-     )
-  => EmitBinding -> m Var
-gensymEmitRB = gensymEmitEB
-
--- | Similar to 'gensymEmitRangeQTy' but gensym without adding it the 'emitSt'
-gensymRangeQTy
-  :: ( Has (Gensym EmitBinding) sig m
-     )
-  => Range -> QTy -> m Var
-gensymRangeQTy r qty =
-  gensym $ rbindingOfRange r (inj qty)
-
-gensymEmitPartitionQTy
-  :: ( Has (Gensym EmitBinding) sig m
-     , Has (State TState) sig m
-     )
-  => Partition -> QTy -> m [Var]
-gensymEmitPartitionQTy p qty =
-  forM (unpackPart p) (`gensymEmitRangeQTy` qty)
-
-liftPartition :: Monad m => (Range -> m b) -> Partition -> m [b]
-liftPartition f p = forM (unpackPart p) f
-
-findEmitEB
-  :: ( Has (State TState) sig m
+genEDStUpdatePhaseFromSTuple
+  :: ( GensymWithState sig m
      , Has (Error String) sig m
      )
-  => EmitBinding -> m Var
-findEmitEB eb = do
-  st <- use emitSt
-  rethrowMaybe
-    (return (st ^. at eb)) $
-    printf "the binding `%s` cannot be found in the renaming state.\n%s"
-      (show eb)
-      (show st)
+  => Loc -> [Range] -> QTy -> [Int] -> m [EmitData]
+genEDStUpdatePhaseFromSTuple l rs qt is = do
+  is' <- if isEN qt
+    then (: repeat (-1)) <$> onlyOne throwError is
+    else (-1 : is)  <$ checkListCorr is rs
+  zipWithM genEDStUpdatePhase is (inj l : (inj <$> rs))
 
-findEmitRangeDegree
-  :: ( Has (State TState) sig m
+
+-- | Generate an 'EmitData' w/o Phase, managed by 'emitSt'
+genEDStSansPhaseByLocAndRange
+  :: GensymWithState sig m
+  => Loc -> QTy -> [Range] -> m (EmitData, [(Range, EmitData)])
+genEDStSansPhaseByLocAndRange l qt = genEDStByLoc l (-1) qt . ((, -1) <$>)
+
+{-# INLINE genEDStByRangesSansPhase #-}
+genEDStByRangesSansPhase
+  :: GensymWithState sig m
+  => QTy -> [Range] -> m [(Range, EmitData)]
+genEDStByRangesSansPhase qt = genEDStByRanges qt . ((, -1) <$>) 
+
+-- | Same as `genEDStByRangesSansPhase` but without `Range` indices
+genEDStByRangesSansPhase'
+  :: GensymWithState sig m
+  => QTy -> [Range] -> m [EmitData]
+genEDStByRangesSansPhase' qt = ((snd <$>) <$>) . genEDStByRanges qt . ((, -1) <$>) 
+
+
+
+genEDStSansPhaseByRanges
+  :: GensymWithState sig m
+  => QTy -> [Range] -> m [(Range, EmitData)]
+genEDStSansPhaseByRanges = genEDStByRangesSansPhase
+
+-- | Append the given `EmitData` to the given entry.
+appendEDSt
+  :: StateMayFail sig m
+  => RangeOrLoc -> EmitData -> m EmitData
+appendEDSt rl ed = do
+  emitSt %= Map.adjust (<> ed) rl
+  findED rl
+
+-- | Update an existing `EmitData` by generating a phase from the given degree.
+genEDStUpdatePhase
+  :: ( GensymWithState sig m
      , Has (Error String) sig m
      )
-  => Range -> Int -> m PhaseTy
-findEmitRangeDegree r 0 = return PT0
-findEmitRangeDegree r i = do
-  let rBinding = RBinding (r, inj i)
-      bBinding = BBinding (inj r, i)
-  st <- use emitSt
-  let vReprM = st ^. at rBinding
-  let vBaseM = st ^. at bBinding
-  case (,) <$>  vReprM <*> vBaseM of
-    Just (vRepr', vBase') -> return . PTN i $
-      PhaseRef { prRepr=vRepr', prBase=vBase' }
-    Nothing -> throwError @String $
-      printf "the phase binding of %s : %d cannot be found in the renaming state.\n%s"
-      (show r) i (show st)
+  => Int -> RangeOrLoc -> m EmitData
+genEDStUpdatePhase i rl  = errTrace "`genEDStUpdatePhase`" $ do
+  (evPhaseTy, evPhaseSeqTy)  <- genPhaseTyByDegree i rl
+  appendEDSt rl (mtEmitData {evPhaseTy, evPhaseSeqTy})
 
-findEmitLocDegree
-  :: ( Has (State TState) sig m
-     , Has (Error String) sig m
-     )
-  => Loc -> Int -> m PhaseTy
-findEmitLocDegree l 0 = return PT0
-findEmitLocDegree l i = do
-  let rBinding = LBinding (l, i)
-      bBinding = BBinding (inj l, i)
-  st <- use emitSt
-  let vReprM = st ^. at rBinding
-  let vBaseM = st ^. at bBinding
-  case (,) <$>  vReprM <*> vBaseM of
-    Just (vRepr', vBase') -> return . PTN i $
-      PhaseRef { prRepr=vRepr', prBase=vBase' }
-    Nothing -> throwError @String $
-      printf "the phase binding of %s : %d cannot be found in the renaming state.\n%s"
-      (show l) i (show st)
+-- ** Getters
+type StateMayFail sig m =
+  (Has (Error String) sig m , Has (State TState) sig m)
 
-
-findEmitRangeQTy
-  :: ( Has (State TState) sig m
-     , Has (Error String) sig m
-     )
-  => Range -> QTy -> m Var
-findEmitRangeQTy r qty = do
-  let rb = rbindingOfRange r (inj qty)
-  st <- use emitSt
-  rethrowMaybe
-    (return (st ^. at rb)) $
-    printf "the binding `%s` cannot be found in the renaming state.\n%s"
-      (show rb)
-      (show st)
-
-findEmitBindingsFromPartition
-  :: ( Has (State TState) sig m
-     , Has (Error String) sig m
-     )
-  => Partition -> QTy -> m [Binding']
-findEmitBindingsFromPartition part q =
-  forM (unpackPart part) $ (uncurry Binding . (, typingQEmit q) <$>) . (`findEmitRangeQTy` q)
-
-
-findEmitVarsFromPartition
-  :: ( Has (State TState) sig m
-     , Has (Error String) sig m
-     )
-  => Partition -> QTy -> m [Var]
-findEmitVarsFromPartition part q =
-  forM (unpackPart part) (`findEmitRangeQTy` q)
-
-
-
-modifyEmitRangeQTy
-  :: ( Has (State TState) sig m )
-  => Range -> QTy -> Var -> m ()
-modifyEmitRangeQTy r qty name = do
-  let rb = rbindingOfRange r (inj qty)
-  emitSt %= (at rb ?~ name)
-
-
-removeEmitPartitionQTys
-  :: ( Has (State TState) sig m)
-  => Partition -> QTy -> m ()
-removeEmitPartitionQTys p qty = do
-  removeEmitRangeQTys ((, qty) <$> unpackPart p)
-
-removeEmitRangeQTys
-  :: ( Has (State TState) sig m)
-  => [(Range, QTy)] -> m ()
-removeEmitRangeQTys rqts = do
-  let bs = uncurry rbindingOfRange <$> (rqts <&> second inj)
-  emitSt %= (`Map.withoutKeys` Set.fromList bs)
-
-
--- * Codegen-related
-
---------------------------------------------------------------------------------
--- * EmitBinding Related
-
-projEmitBindingRangeQTy :: EmitBinding -> Maybe (Range, QTy)
-projEmitBindingRangeQTy (RBinding (r, Inl qty)) = Just (r, qty)
-projEmitBindingRangeQTy _                       = Nothing
-
-
-collectRQTyBindings ::[(EmitBinding, Var)] -> [((Range, QTy), Var)]
-collectRQTyBindings = mapMaybe (\(e, v) -> projEmitBindingRangeQTy e <&> (, v))
-
-bindingFromEmitBinding :: (EmitBinding, Var) -> Binding'
-bindingFromEmitBinding = go
+findED :: StateMayFail sig m => RangeOrLoc -> m EmitData
+findED rl = do
+  ed <- use emitSt <&> (^. at rl)
+  maybe (complain =<< use emitSt) return ed
   where
-    go (RBinding (_, Inl qty), v) = Binding v (typingQEmit qty)
-    go (RBinding (_, Inr dgr), v) = Binding v (typingPhaseEmitReprN dgr)
-    go (LBinding (_, dgr), v)     = Binding v (typingPhaseEmitReprN dgr)
-    go (BBinding (_, dgr), v)     = Binding v TNat
+    complain st = throwError @String $
+      printf "%s cannot be found in emitSt!\n%s" (show rl) (show st)
+
+-- | Find the EmitData and visit it with an accessor
+visitED :: Has (Error String) sig m => (EmitData -> Maybe a) -> EmitData -> m a
+visitED evF ed = do
+  maybe (complain ed) return (evF ed)
+  where
+    complain ed' = throwError @String $
+      printf "Attempting to access non-Just field in %s" (show ed')
+
+visitEDs
+  :: Has (Error String) sig m
+  => (EmitData -> Maybe a) -> [EmitData] -> m [a]
+visitEDs f = mapM (visitED f)
+
+findVisitED
+  :: StateMayFail sig m
+  => (EmitData -> Maybe c) -> RangeOrLoc -> m c
+findVisitED evF = findED >=> visitED evF
+
+findVisitEDs
+  :: StateMayFail sig m
+  => (EmitData -> Maybe c) -> [RangeOrLoc] -> m [c]
+findVisitEDs f = errTrace "findVisitEDs" .
+  mapM (findVisitED f)
+  
+
+-- *** Shorthands
+visitEDBasis :: Has (Error String) sig m => EmitData -> m Var
+visitEDBasis = visitED evBasis
+
+visitEDsBasis :: Has (Error String) sig m => [EmitData] -> m [Var]
+visitEDsBasis = mapM visitEDBasis
+
+findVisitEDsBasis
+  :: StateMayFail sig m
+  => [RangeOrLoc] -> m [Var]
+findVisitEDsBasis = findVisitEDs evBasis 
+
+findEmitBasisByRange
+  :: StateMayFail sig m
+  => Range -> m Var
+findEmitBasisByRange = findVisitED evBasis . inj
+
+findEmitBasesByRanges
+  :: StateMayFail sig m
+  => [Range] -> m [Var]
+findEmitBasesByRanges = findVisitEDs evBasis . (inj <$>)
+
+
+-- ** Destructor
+deleteED :: (Has (State TState) sig m) => RangeOrLoc -> m ()
+deleteED rl = emitSt %= sans rl
+
+deleteEDs :: (Has (State TState) sig m) => [RangeOrLoc] -> m ()
+deleteEDs s = emitSt %= (`Map.withoutKeys` Set.fromList s)
+
+deleteEDPartition :: (Has (State TState) sig m) => Loc -> [Range] -> m ()
+deleteEDPartition l rs =
+  deleteEDs (inj l : (inj <$> rs))

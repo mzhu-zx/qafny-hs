@@ -39,6 +39,13 @@ typingPhaseEmitReprN :: Int -> Ty
 typingPhaseEmitReprN n =
   foldr ($) TNat (replicate n TSeq)
 
+-- the given degree of phases
+emitTypeFromDegree :: Int -> Maybe Ty
+emitTypeFromDegree 0 = Nothing
+emitTypeFromDegree n =
+  Just $ typingPhaseEmitReprN n
+
+
 -- | Check if the given type is an 'EN'-like type.
 isEN :: QTy -> Bool
 isEN TEN01 = True

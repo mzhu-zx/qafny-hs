@@ -1,0 +1,4 @@
+method SimpleMethod(q : qreg[1])
+  requires { q [0 .. 1] : nor ↦ _ }
+{
+}
