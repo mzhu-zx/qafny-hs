@@ -113,6 +113,9 @@ data EmitTy
   = TAny String
   deriving (Show, Eq, Ord)
 
+tyReal :: Ty
+tyReal = TEmit $ TAny "real"
+
 data QTy
   = TNor
   | THad
