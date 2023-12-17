@@ -76,6 +76,6 @@ data Emitter
   | EmPhaseSeq (Range :+: Loc) Int   -- ^ Phase Seq per range/loc with degree
   | EmPhaseBase (Range :+: Loc)      -- ^ Phase Base per range/loc with degree
   -- TODO: I may need to add a Phase Index here
-  | EmAmplitude                      -- ^ Amplitude?
+  | EmAmplitude                     -- ^ Amplitude?
   | EmAnyBinding Var Ty              -- ^ Anything like a binding
   deriving (Show)

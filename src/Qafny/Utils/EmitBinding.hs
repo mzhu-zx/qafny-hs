@@ -107,12 +107,13 @@ genEDStByRange qt i r = do
 genEDByRange :: (Has (Gensym Emitter) sig m) => QTy -> Int -> Range -> m EmitData
 genEDByRange qt i r = do
   vB  <- gensym $ EmBaseSeq r qt
+  vC  <- gensym EmAmplitude -- add amplitude vars
   (vmP, tyP) <- genPhaseTyByDegree i (inj r)
   let ed =  EmitData { evPhaseTy = vmP
                      , evPhaseSeqTy = tyP
                      , evBasis = Just vB
                      , evBasisTy = Just $ typingQEmit qt
-                     , evAmp   = Nothing
+                     , evAmp   = Just vC -- add amplitude vars
                      }
   return ed
 

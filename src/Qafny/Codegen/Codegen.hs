@@ -306,7 +306,7 @@ codegenToplevel'Method q@(QMethod vMethod bds rts rqs ens (Just block)) = runWit
       Just $ mkSVar v' TNat
     fDecl (EmAnyBinding v' t) _ =
       Just $ mkSVar v' t
-    fDecl _ _ = Nothing
+    fDecl _ _ = Just $ mkSVar v' TReal
 
     mkSVar :: Var -> Ty -> Stmt'
     mkSVar v ty = SVar (Binding v ty) Nothing

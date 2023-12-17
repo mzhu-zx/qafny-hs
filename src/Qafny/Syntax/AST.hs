@@ -83,6 +83,7 @@ phaseTyN n vBase vRepr = PTN n $ PhaseRef { prBase=vBase, prRepr=vRepr }
 data Ty
   = TNat
   | TInt
+  | TReal -- add real types
   | TBool
   | TSeq Ty
   | TQReg AExp
