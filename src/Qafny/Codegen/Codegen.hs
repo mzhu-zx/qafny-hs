@@ -465,6 +465,12 @@ codegenStmt'Apply
      )
   => Stmt'
   -> m [Stmt']
+  
+-- 1. unpackPart to get a list of ranges. 2. return ranges, otherwise, cannot partrition (need to verify). 
+-- 3. split stmt-tuple with each range see Typing.hs. still don't understand why we need splitScheme. Can be simplified.
+-- STuple is in Env.hs. it is a datatype referring to a seaperable unit.
+-- essentailly splitScheme is a type inference algorithm that partitions a quantum loci.
+-- need to add a case when the state is EN type. 
 codegenStmt'Apply (s :*=: EHad) = do
   r <- case unpackPart s of
     [r] -> return r
@@ -482,18 +488,24 @@ codegenStmt'Apply (s :*=: EHad) = do
     opCastHad TNor = return "CastNorHad"
     opCastHad t = throwError $ "type `" ++ show t ++ "` cannot be casted to Had type"
 
+-- apply quantum arithemetic expressions.
+-- subtyping is useful in theory, but is it necessary here? If we restrict the subtyping, and do case analysis, will it better?
+-- need to deal with cases when ranges are not singleton
 codegenStmt'Apply stmt@(s@(Partition {ranges}) :*=: eLam@(ELambda pbinder _ pexpMaybe _)) = do
   (st'@(STuple (_, _, (qt', _))), corr) <- resolvePartition' s
   qtLambda <- ask
   checkSubtypeQ qt' qtLambda
   -- compute the correspondence between range written and the range in partition
   -- record
+  -- range is singleton? Maybe this is not enough.
   r@(Range _ erLower erUpper) <- case ranges of
     []  -> throwError "Parser says no!"
     [x] -> return x
     _   -> throwError errRangeGt1
 
   -- do the type cast and split first
+  -- why we need this step? We will need type cast (really, why, why not just do for each cast?)
+  -- why we need split? Need to have a functionality discussion here.
   (STuple (_, _, (qt, _)), maySplit, mayCast) <- hdlSC st' $ splitThenCastScheme st' qtLambda r
   stmts <- codegenSplitThenCastEmit maySplit mayCast
 
@@ -501,6 +513,9 @@ codegenStmt'Apply stmt@(s@(Partition {ranges}) :*=: eLam@(ELambda pbinder _ pexp
   (stS', corr') <- resolvePartition' s
 
   -- handle promotions in phases
+  -- is it necessary to use the phase representation?
+  -- in testing the system, I found that reals with omega data-structures will provide better verification performance.
+  -- maybe the phase representation is overly complicated?
   stmtsPhase <- case pexpMaybe of
     Just pexp -> do
       promoteMaybe <- promotionScheme stS' pbinder pexp;
@@ -519,6 +534,8 @@ codegenStmt'Apply stmt@(s@(Partition {ranges}) :*=: eLam@(ELambda pbinder _ pexp
   trace $ printf "LEFT: %s, RIGHT: %s" (show r) (show rSt)
   -- | It's important not to use the fully resolved `s` here because the OP
   -- should only be applied to the sub-partition specified in the annotation.
+  -- why we will have different cases? TEN and TEN01 could be the same case.
+  -- TNor is just a singleton TEN case.
   ~[vEmit] <- findEmitRanges $ unpackPart s
   ((stmts ++) . (stmtsPhase ++) <$>) . putOpt $ case qtLambda of
     TEN -> return [ mkMapCall vEmit ]
@@ -556,6 +573,7 @@ codegenStmt'Apply stmt@(s@(Partition {ranges}) :*=: eLam@(ELambda pbinder _ pexp
     mkMapCall v = v ::=: callMap eLamPure (EVar v)
     eLamPure = lambdaUnphase eLam
 
+-- need to implement EQFT and EQFT^{-1}
 codegenStmt'Apply (s :*=: EQFT) = undefined
 
 codegenStmt'Apply _ = throwError' "What could possibly go wrong?"
@@ -577,6 +595,7 @@ codegenStmt'If
   => Stmt'
   -> m [Stmt']
 
+-- Should have a TNor type, instead of a THad type, it is impossible and necessary to have THad type.
 codegenStmt'If (SIf e _ b) = do
   -- resolve the type of the guard
   (stG@(STuple (_, _, (qtG, _))), pG) <- typingGuard e
@@ -597,6 +616,11 @@ codegenStmt'If (SIf e _ b) = do
 codegenStmt'If _ = throwError' "What could go wrong?"
 
 -- | Code Generation of an `If` statement with a Had partition
+-- what does it mean by a if with a Had partition?
+-- Had partition on a if-statement does not make sense.
+-- A singleton Had type is basically a singleton TEN type, so we do not need a special case for Had
+-- A multi-qubit Had type, if it appears in the Guard position, it needs to be turned into TEN type first;
+-- otherwise, the result is simply wrong
 codegenStmt'If'Had
   :: ( Has (Reader TEnv) sig m
      , Has (State TState)  sig m
@@ -650,6 +674,7 @@ codegenStmt'For
   => Stmt'
   -> m [Stmt']
 
+-- Loop should be a general case for if-statement. So, we just need to handle TEN/TNor, as well as the guard is completely classical
 codegenStmt'For (SFor idx boundl boundr eG invs (Just seps) body) = do
   -- statePreLoop: the state before the loop starts
   -- stateLoop:    the state for each iteration
@@ -941,6 +966,7 @@ codegenFor'Body idx boundl boundr eG body stSep@(STuple (_, Partition rsSep, (qt
     stmtAssignSelfRest eBegin idSelf = stmtAssignSlice eBegin (EEmit . ECard . EVar $ idSelf) idSelf idSelf
 
 -- | Code Generation of a `For` statement with a Had partition
+-- do we need to have a Had case for for-loop? why?
 codegenStmt'For'Had
   :: ( Has (Reader TEnv) sig m
      , Has (Reader IEnv) sig m
@@ -1229,6 +1255,7 @@ codegenSplitEmitMaybe = maybe (return []) codegenSplitEmit
 
 -- | Generate emit variables and split operations from a given split scheme.
 -- FIXME: implement split for phases as well
+-- only for bases
 codegenSplitEmit
   :: ( Has (Error String) sig m
      )
