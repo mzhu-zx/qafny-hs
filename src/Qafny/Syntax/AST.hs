@@ -172,6 +172,7 @@ data Op2
   | OSub
   | OMul
   | OMod
+  | OExp
   | ONor
   | OLt
   | OLe
@@ -209,7 +210,7 @@ data Exp x
   | EDafny String
   | EEmit EmitExp
   | EPartition Partition
-  | ESpec Partition QTy [(XRec x (SpecExp x), PhaseExp )]
+  | ESpec Partition QTy [(XRec x (SpecExp x), (XRec x (AmpExp x)), PhaseExp )]
   | ERepr Range
   | ELambda PhaseBinder Var (Maybe PhaseExp) (XRec x (Exp x))
   -- ?
@@ -229,6 +230,7 @@ data PhaseExpF f :: Type where
 --   PhaseOmega' :: f -> f -> PhaseExpF' f 1
 --   PhaseSumOmega' :: Range -> f -> f -> PhaseExpF' f 2
 --   PhaseWildCard' :: PhaseExpF' f 0
+
 
 type PhaseExp = PhaseExpF Exp'
 type PhaseBinder = PhaseExpF Var
@@ -270,6 +272,21 @@ deriving instance (Ord (XRec x (Exp x))) => Ord (SpecExp x)
 -- deriving instance (Data (SpecExp ()))
 -- deriving instance (Typeable (SpecExp Source))
 -- deriving instance (Data (SpecExp Source))
+
+data AmpExp x
+ = AExp (XRec x (Exp x))
+ | ASin (XRec x (AmpExp x))
+ | ACos (XRec x (AmpExp x))
+ | ADivSq (XRec x (Exp x)) (XRec x (Exp x))
+ 
+deriving instance (Generic (AmpExp ()))
+deriving instance (Generic (AmpExp Source))
+deriving instance (Show (AmpExp ()))
+deriving instance (Show (AmpExp Source))
+deriving instance (Eq (AmpExp ()))
+deriving instance (Eq (AmpExp Source))
+deriving instance (Ord (AmpExp ()))
+deriving instance (Ord (AmpExp Source))
 
 showExp :: Exp () -> String
 showExp (ENum n) = show n
@@ -449,15 +466,14 @@ data ExpF f
   | EDafnyF String
   | EEmitF EmitExp
   | EPartitionF Partition
-  | ESpecF Partition QTy [(XRec () (SpecExp ()), PhaseExp)]
+  | ESpecF Partition QTy [(XRec () (SpecExp ()), XRec () (AmpExp ()), PhaseExp)]
   | EReprF Range
   | ELambdaF PhaseBinder Var (Maybe PhaseExp) f
   deriving (Functor, Foldable, Traversable, Show, Generic)
-
+  
 type instance Base (Exp ()) = ExpF
 instance Recursive (Exp ())
 instance Corecursive (Exp ())
-
 
 --------------------------------------------------------------------------------
 -- * Exp Utils
@@ -574,6 +590,7 @@ type Exp' = Exp ()
 type Binding' = Binding ()
 type Block' = Block ()
 type SpecExp' = SpecExp ()
+type AmpExp' = AmpExp ()
 type Toplevel' = Toplevel ()
 
 -- * Annotated Types

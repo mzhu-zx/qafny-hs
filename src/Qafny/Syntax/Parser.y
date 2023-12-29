@@ -65,6 +65,7 @@ dafny                 { ( _, L.TDafny $$  ) }
 ')'                   { ( _, L.TRPar      ) }
 '<'                   { ( _, L.TLAng      ) }
 '>'                   { ( _, L.TRAng      ) }
+"⟩"                   { ( _, L.TRAngA     ) }
 '['                   { ( _, L.TLBracket  ) }
 ']'                   { ( _, L.TRBracket  ) }
 '{'                   { ( _, L.TLBrace    ) }
@@ -83,6 +84,11 @@ id                    { ( _, L.TId $$     ) }
 "*="                  { ( _, L.TApply     ) }
 ".."                  { ( _, L.TDots      ) }
 '~'                   { ( _, L.TTilde     ) }
+"sqrt"                { ( _, L.TSqrt      ) }
+"sin"                 { ( _, L.TSin     ) }
+"cos"                 { ( _, L.TCos      ) }
+'^'                   { ( _, L.TExp      ) }
+'/'                   { ( _, L.TDiv      ) }
 
 %%
 AST
@@ -168,23 +174,33 @@ spec ::   { Exp' }
   | '{' partition ':'  qty "↦" qspec '}'
                                       { ESpec $2 $4 [$6]                     }
 
-qspec ::  { (SpecExp', PhaseExp) }
-  : "⊗" id '.' pspec expr
-                                      { (SESpecNor $2 $5, $4)                   }
-  | "Σ" id "∈" '[' expr ".." expr ']' '.' pspec tuple(expr)
-                                      { (SESpecEN $2 (Intv $5 $7) $11, $10)  }
+qspec ::  { (SpecExp', AmpExp', PhaseExp) }
+  : "⊗" id '.' tuple(expr)
+                                      { SESpecNor $2 $4                   }
+
+  | "Σ" id "∈" '[' expr ".." expr ']' '.' aspec pspec basis(expr)
+                                      { (SESpecEN $2 (Intv $5 $7) $12, $10, $11)  }
+                                      
   | "Σ" id "∈" '[' expr ".." expr ']' '.'             {- 9  -}
-    pspec                                             {- 10 -}
+    aspec pspec                                         {- 10 -}
     "⊗" id "∈" '[' expr ".." expr ']' '.'             {- 19 -}
     tuple(expr)
-                                      { (SESpecEN01 $2 (Intv $5 $7) $12 (Intv $15 $17) $20, $10) }
+                                      { (SESpecEN01 $2 (Intv $5 $7) $13 (Intv $16 $18) $21, $10, $11) }
   | '_'                               { (SEWildcard, PhaseZ) }
 
+-- amplitude specification
+aspec :: { AmpExp' }
+  : {- empty -}                            { AExp (ENum 1)          }
+  | expr '/' "sqrt" '(' expr ')'  '.'          { ADivSq $1 $5       }
+  | "sin" '(' aspec ')' '.'                   { ASin $3 }
+  | "cos" '(' aspec ')' '.'                   { ASin $3 }
+                                           
+                                           
 -- phase specification
 pspec :: { PhaseExp }
   : {- empty -}                            { PhaseZ                 }
-  | "ω" '(' expr ',' expr ')' '~'          { PhaseOmega $3 $5       }
-  | "Ω" id "∈" '[' expr ".." expr ']' '.' '(' expr ',' expr ')' '~'
+  | "ω" '(' expr ',' expr ')' '.'          { PhaseOmega $3 $5       }
+  | "Ω" id "∈" '[' expr ".." expr ']' '.' '(' expr ',' expr ')' '.'
                                            { PhaseSumOmega (Range $2 $5 $7) $11 $13 }
 
 pbinder :: { PhaseBinder }
@@ -193,15 +209,17 @@ pbinder :: { PhaseBinder }
   | "Ω" id "∈" '[' expr ".." expr ']' '.' '(' id ',' id ')'
                                            { PhaseSumOmega (Range $2 $5 $7) $11 $13 }
 
-
 tuple(p)
   : '(' manyComma(p) ')'              { $2 }
+  
+basis(p)
+  : '|' manyComma(p) "⟩"              { $2 }
 
 expr                                                                      
   : atomic                            { $1                     }
-  | '_'                               { EWildcard              }
+  | '_'                               { EWildcard              } 
   | spec                              { $1                     }
-  | partition                         { EPartition $1          }
+  | '{' partition '}'                 { EPartition $2          }
   | qops                              { $1                     }
   | "meas" id                         { EMea $2                }
   | "not" atomic                      { EOp1 ONot $2           }
@@ -226,17 +244,15 @@ logicAndExp :: { Exp' }
   : cmpExpr "&&" logicAndExp          { EOp2 OAnd $1 $3        }
   | cmpExpr                           { $1 }
 
-cmpPartial
- : cmp arithExpr  { ($1, $2) }
-
 cmpExpr :: { Exp' }
- : arithExpr many(cmpPartial)         { unchainExps $1 $2  }
+ : arithExpr cmp arithExpr         { EOp2 $2 $1 $3  }
 
 cmp :: { Op2 }
  : '>'                      { OGt }
  | '<'                      { OLt }
  | ">="                     { OGe }
  | "<="                     { OLe }
+ | "=="                     { OEq }
 
 arithExpr :: { Exp' }
  : atomic arith arithExpr   { EOp2 $2 $1 $3 }
@@ -247,6 +263,7 @@ arith :: { Op2 }
  | '-'                      { OSub }
  | '*'                      { OMul }
  | '\%'                     { OMod }
+ | '^'                      { OExp }
 
 atomic                                                                      
   : digits                            { ENum $1                }
@@ -256,19 +273,12 @@ atomic
 
 -- | Combinators 
 many(p)                                                                  
-  : many_(p)                          { reverse $1 }
-                                                                          
-many_(p)
   : {- empty -}                       { []      }
-  | many_(p) p                        { $2 : $1 }
+  | p many(p)                        { $1 : $2 }
 
 manyComma(p)                                                                  
-  : manyComma_(p)                     { reverse $1 }
-                                                                          
-manyComma_(p)
   : {- empty -}                       { []      }
-  | p                                 { [$1]    }
-  | manyComma_(p) ',' p               { $3 : $1 }
+  | p ',' manyComma(p)               { $1 : $3 }
     
 opt(p)
   : {- empty -}                       { Nothing }

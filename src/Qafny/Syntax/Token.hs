@@ -30,7 +30,7 @@ data Token
 
   -- Delimiters
   | TLPar | TRPar | TTilde
-  | TLAng | TRAng
+  | TLAng | TRAng | TRAngA 
   | TLBrace | TRBrace
   | TLBracket | TRBracket
   | TBar | TComma | TColon | TSemi
@@ -59,7 +59,7 @@ data Token
   | TAnd | TOr | TNot
 
   -- Arithmetics
-  | TMul | TAdd | TMod | TSub
+  | TMul | TAdd | TMod | TSub | TDiv | TSqrt | TSin | TCos | TExp
 
   -- Gates
   | THApp | TQFT | TRQFT

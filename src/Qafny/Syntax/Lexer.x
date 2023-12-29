@@ -72,6 +72,9 @@ token :-
   "↦"              { emit $  TUnicodeMap         }
   "\mapsto"        { emit $  TUnicodeMap         }
   repr             { emit $  TRepr               }
+  sqrt             { emit $  TSqrt               }
+  sin              { emit $  TSin                }
+  cos              { emit $  TCos                }
   with             { emit $  TWith               }
   invariant        { emit $  TInv                }
   H                { emit $  THApp               }
@@ -91,6 +94,8 @@ token :-
   \+               { emit $  TAdd                }
   \-               { emit $  TSub                }
   \%               { emit $  TMod                }
+  \^               { emit $  TExp                }
+  \/               { emit $  TDiv               }
   \[               { emit $  TLBracket           }
   \]               { emit $  TRBracket           }
   @aand            { emit $  TAnd                }
@@ -103,6 +108,8 @@ token :-
   \{               { emit $  TLBrace             }
   \}               { emit $  TRBrace             }
   \<               { emit $  TLAng               }
+  "⟩"              { emit $  TRAngA              }
+  "\u27E9"         { emit $  TRAngA              }
   \>               { emit $  TRAng               }
   \,               { emit $  TComma              }
   \:               { emit $  TColon              }
