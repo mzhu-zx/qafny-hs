@@ -245,7 +245,7 @@ logicAndExp :: { Exp' }
   | cmpExpr                           { $1 }
 
 cmpExpr :: { Exp' }
- : arithExpr cmp arithExpr         { EOp2 $2 $1 $3  }
+ : modArithExpr cmp modArithExpr         { EOp2 $2 $1 $3  }
 
 cmp :: { Op2 }
  : '>'                      { OGt }
@@ -253,17 +253,31 @@ cmp :: { Op2 }
  | ">="                     { OGe }
  | "<="                     { OLe }
  | "=="                     { OEq }
+ 
 
+modArithExpr :: { Exp' }
+ : multArithExpr modarith modArithExpr { EOp2 $2 $1 $3 }
+ | multArithExpr                       { $1 }
+
+modarith :: { Op2 }
+ : '\%'                     { OMod }
+ | '^'                      { OExp }
+
+multArithExpr :: { Exp' }
+ : arithExpr multarith multArithExpr   { EOp2 $2 $1 $3 }
+ | arithExpr                           { $1 }
+
+multarith :: { Op2 }
+ : '*'                      { OMod }
+ 
 arithExpr :: { Exp' }
  : atomic arith arithExpr   { EOp2 $2 $1 $3 }
  | atomic                   { $1 }
 
+
 arith :: { Op2 }
  : '+'                      { OAdd }
  | '-'                      { OSub }
- | '*'                      { OMul }
- | '\%'                     { OMod }
- | '^'                      { OExp }
 
 atomic                                                                      
   : digits                            { ENum $1                }
