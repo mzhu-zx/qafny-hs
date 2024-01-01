@@ -38,3 +38,8 @@ Quantum Walk for Triangle Problem
 Quantum Walk for subgroup finding 
 Quantum Walk for Associativity Testing
 
+Quantum Arithmetic Operations:
+QFT adders
+CCX adders
+Mod-multiplications
+Quantum Comparators:
