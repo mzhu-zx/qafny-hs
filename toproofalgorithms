@@ -16,6 +16,11 @@ Abelian stabilizer/Kitaev's algorithm (https://arxiv.org/pdf/quant-ph/0505030.pd
 Kitaev phase estimation (https://people.eecs.berkeley.edu/~vazirani/s09quantum/notes/lecture6.pdf)
 Quantum Phase Estimation
 
+Amplitude Estimation algorithms:
+Amplitude Estimation (https://www.mdpi.com/2624-960X/6/1/1, https://www.nature.com/articles/s41534-021-00379-1)
+Amplitude Estimation without Phase Estimation (https://arxiv.org/pdf/1904.10246.pdf)
+Quantum capacity analysis of multi-level amplitude damping channels (https://www.nature.com/articles/s42005-021-00524-4)
+
 Grovers:
 Grover's search
 Grover's search for collision
