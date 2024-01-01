@@ -17,9 +17,11 @@ Kitaev phase estimation (https://people.eecs.berkeley.edu/~vazirani/s09quantum/n
 Quantum Phase Estimation
 
 Amplitude Estimation algorithms:
+The SWAP test (https://arxiv.org/pdf/quant-ph/0102001.pdf)
 Amplitude Estimation (https://www.mdpi.com/2624-960X/6/1/1, https://www.nature.com/articles/s41534-021-00379-1)
 Amplitude Estimation without Phase Estimation (https://arxiv.org/pdf/1904.10246.pdf)
 Quantum capacity analysis of multi-level amplitude damping channels (https://www.nature.com/articles/s42005-021-00524-4)
+fidelity estimation (https://arxiv.org/pdf/2108.08406.pdf,https://arxiv.org/pdf/2203.15993.pdf)
 
 Grovers:
 Grover's search
