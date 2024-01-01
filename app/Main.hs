@@ -75,3 +75,16 @@ main =
 -- loadDefaultFile =
 --   let src = "./test/Resource/3.qfy" in
 --     readFile src
+
+
+pipeline :: String -> Configs -> Either String (IO (Production Txt.Text))
+pipeline s configs =
+  -- do parsing, rethrow error if any
+  withAST <$> scanAndParse s
+  where
+    -- withAST :: AST -> IO (Production Txt.Text)
+    withAST ast = do
+      let prod = produceCodegen configs ast
+      -- print trace
+      putStr $ pTrace prod
+      return $ prod { pResult = texify <$> pResult prod }

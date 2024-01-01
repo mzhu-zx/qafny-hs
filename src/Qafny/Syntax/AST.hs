@@ -288,6 +288,9 @@ deriving instance (Eq (AmpExp Source))
 deriving instance (Ord (AmpExp ()))
 deriving instance (Ord (AmpExp Source))
 
+instance DafnyPrinter (AmpExp ()) where
+  build = build . show
+  
 showExp :: Exp () -> String
 showExp (ENum n) = show n
 showExp (EVar v) = v

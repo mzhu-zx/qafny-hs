@@ -1,0 +1,40 @@
+Simple algorithms:
+Bell Pairs
+Superdense Coding Circuit
+GHZ
+Controlled GHZ
+Linear Combination of Unitaries (https://pennylane.ai/qml/demos/tutorial_lcu_blockencoding/)
+
+HSP algorithms:
+Shor's algorithm
+Simon's algorithm
+Bernstein–Vazirani algorithm
+Discrete Log
+Hidden Subgroup
+Decomposing abelian Hidden Subgroup
+Abelian stabilizer/Kitaev's algorithm (https://arxiv.org/pdf/quant-ph/0505030.pdf)
+Kitaev phase estimation (https://people.eecs.berkeley.edu/~vazirani/s09quantum/notes/lecture6.pdf)
+Quantum Phase Estimation
+
+Grovers:
+Grover's search
+Grover's search for collision
+Amplitude amplification (https://arxiv.org/pdf/quant-ph/0005055.pdf)
+Amplitude amplification for approximate counting (https://arxiv.org/pdf/quant-ph/0005055.pdf)
+Approximating Partition Functions (https://arxiv.org/pdf/2207.08643.pdf)
+Quantum counting algorithm
+Quantum existence problem (similar to Quantum counting)
+Non-Boolean Quantum Amplitude Amplification and Quantum Mean Estimation (https://arxiv.org/pdf/2102.04975.pdf)
+Fixed‑point oblivious quantum amplitude‑amplifcation algorithm (https://www.nature.com/articles/s41598-022-15093-x)
+Repeat-Until-Success circuits with fixed-point oblivious amplitude amplification (https://arxiv.org/pdf/1808.02900.pdf)
+
+Quantum Walks:
+Simple Quantum Walk
+Quantum counting by Quantum Walk
+Quantum walk for search problem
+Quantum Walk Element Distinctness
+Quantum Walk for Boolean Equations?
+Quantum Walk for Triangle Problem
+Quantum Walk for subgroup finding 
+Quantum Walk for Associativity Testing
+
