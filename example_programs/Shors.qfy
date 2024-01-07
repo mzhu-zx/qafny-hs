@@ -19,7 +19,7 @@ method Shors(q : Q[n], p : Q[n], n:nat, N : nat, base : nat, r:nat , c:nat) retu
       q[0, i), p[0, n) : En ↦ ∑ k ∈ [0, Pow2(i)) . | k , ((Pow(base, k)) % N) ⟩
     }
     invariant {
-      q [i , N) : Had ↦ |+⟩
+      q [i , n) : Had ↦ |+⟩
     }
   {
     //quantum mod-mult requires gcd(base,N) == 1 to implement, otherwise, it is not implementable.
