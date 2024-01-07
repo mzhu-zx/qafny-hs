@@ -10,7 +10,7 @@ method DLog(q : Q[n], p : Q[n], t : Q[n], n:nat, N : nat, x : nat, g:nat, r:nat 
   requires { p[0 , n) : Nor ↦ |0⟩ }
   requires { t[0 , n) : Nor ↦ |0⟩ }
 
-  //please fill the ensures. 
+  //please fill the ensures. This means the final result. It is also in Andrew Childs' notes
   ensures u == FILL
   ensures v == FILL
   ensures p == FILL
