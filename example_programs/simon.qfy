@@ -1,0 +1,40 @@
+//This version of Simon algorithm really shows that Simon algorithm is one of the HSP group
+
+method Simon(q : Q[n], p : Q[n], n:nat, f : [Bool] -> [Bool], s : [Bool]) returns (y:nat, p : real)
+  requires forall k :: 0 <= k < 2^(n-1) ==> f(n2b(k)) == f(s xor n2b(k+2^n))
+  requires b2n(s) != 0
+    // we can assume that all elements in the function are lined up with, without losing generality, since we do not rely on the structure
+  requires { q[0 , n) : Nor ↦ |0⟩ }
+  requires { p[0 , n) : Nor ↦ |0⟩ }
+  //we should have a way of only specifying basis.
+  //but we also care about amplitudes here.
+  ensures n2b(y) . s == 0 ==>  p == 0
+  ensures n2b(y) . s == 1 ==> p == 1 / 2^(n-1)
+{
+  q[0, n) *= H;
+  
+  for i in [0, n) with q[i]
+    separates q[0, i), p[0, n)
+    invariant {
+      q[0, i), p[0, n) : En ↦ ∑ k ∈ [0, Pow2(i)) . 1 / sqrt(2^n) . | k , ∑ j ∈ [0, i) . f(n2b(k))[j] ⟩
+    }
+    invariant {
+      q [i , n) : Had ↦ |+⟩
+    }
+  {
+    //quantum mod-mult requires gcd(base,N) == 1 to implement, otherwise, it is not implementable.
+    p[0, N) *= λ ((x: Q n, y:Q n) => (x, ((y + f(x)))));
+
+    // This is super hacky, but I have no good way to do this now....
+    // TODO: find out one way to take the reference of the underlying range
+    // e.g. [[ p[0 .. N] ]] ?
+    //#LemmaPowEquiv(p_seq'nat'_7__emit, base, i, N);
+  }
+
+  q[0,n) *= H;
+  //the 1 / sqrt(2^n) * 1 / sqrt(2^n) can be rewritten as 1 / 2^n, but we can keep it in 1 / sqrt(2^n) * 1 / sqrt(2^n) or 1/ (sqrt(2^n) * sqrt(2^n))
+  assert { q[0 .. n] : En ↦ ∑ y ∈ [0, 2^n) . 1 / sqrt(2^n) * 1 / sqrt(2^n) . ∑ x ∈ [0 .. 2^n] . ω (x * y, 2) . |y⟩ };
+  y,p *= measure(q);
+  //we will need the post-analysis leading to the above result set up in https://en.wikipedia.org/wiki/Simon%27s_problem
+}  
+
