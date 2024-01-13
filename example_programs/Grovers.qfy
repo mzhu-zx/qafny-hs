@@ -1,6 +1,6 @@
 //This is the Grovers algorithm file. 
 
-method Grovers(q : Q[n], n:nat, f : [Bool] -> [Bool], m:nat, N : nat) returns (y:nat, p : real)
+method Grovers(q : Q[n], n:nat, f : [Bool] -> Bool, m:nat, N : nat) returns (y:nat, p : real)
   requires m < 2^n
   requires forall k :: 0 <= k < m ==> f(n2b(k)) == 1
   requires forlal k :: m <= k < m ==> f(n2b(k)) == 0
