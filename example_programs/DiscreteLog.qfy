@@ -47,8 +47,8 @@ method DLog(q : Q[n], p : Q[n], t : Q[n], n:nat, N : nat, x : nat, g:nat, r:nat 
   assert { FILL THIS };
   
   //we will also need two QFT application to both q and p.
-  q[0,n) *= QFT;
-  p[0,n) *= QFT;
+  q[0,n) *= RQFT;
+  p[0,n) *= RQFT;
 
   //Please see andrew's note to see what is the result.
   assert { FILL THIS };

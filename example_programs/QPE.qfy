@@ -35,7 +35,7 @@ method QPE(q : Q[n], p : Q[n], n:nat, U : [Bool] -> [Bool], lambda : [Bool]) ret
     //#LemmaPowEquiv(p_seq'nat'_7__emit, base, i, N);
   }
 
-  q[0,n) *= QPE;
+  q[0,n) *= RQFT;
   //the 1 / sqrt(2^n) * 1 / sqrt(2^n) can be rewritten as 1 / 2^n, but we can keep it in 1 / sqrt(2^n) * 1 / sqrt(2^n) or 1/ (sqrt(2^n) * sqrt(2^n))
   assert { q[0 .. n] : En ↦ ∑ y ∈ [0, 2^n) . 1 / sqrt(2^n) * 1 / sqrt(2^n) . ∑ x ∈ [0 .. 2^n] . ω (x * y, 2) . |y⟩ };
   y,p *= measure(q);
