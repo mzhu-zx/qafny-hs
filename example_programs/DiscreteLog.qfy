@@ -44,19 +44,23 @@ method DLog(q : Q[n], p : Q[n], t : Q[n], n:nat, N : nat, x : nat, g:nat, r:nat 
   //another loop here
 
   v,prob *= measure(t);//we will then measure t, please see andrew's note, to see what is the result assertion
-  assert { FILL THIS };
+  assert { FILL THIS }; // each possible value occurs with equal probability
   
   //we will also need two QFT application to both q and p.
   q[0,n) *= QFT;
   p[0,n) *= QFT;
 
   //Please see andrew's note to see what is the result.
-  assert { FILL THIS };
+  assert { FILL THIS }; 
   
   //below is not in the current syntax now, we actually want to measure both q and p at the same time.
   //but we want to get two values, instead of 1.
   //we could measure q first, and then p.
   u,v,p *= measure(q[0,n),p[0,n));
+
+  // if v has a multiplicative inverse modulo N, we can divide q by v to get the desired answer.
+  // if v does not have a mult. inverse, repeat the procedure again.
+  // the probability of success for each attempt is Omega(1/log log N)
   
 }  
 
