@@ -62,7 +62,7 @@ method DLog(q : Q[n], p : Q[n], t : Q[n], n:nat, N : nat, x : nat, g:nat, r:nat 
   //another loop here
 
   v,prob *= measure(t);//we will then measure t, please see andrew's note, to see what is the result assertion
-  assert { v == 1 / sqrt(N) . En ↦ ∑ k ∈ [0, 2^i) . | k , log(g, p) - k * log(g, x) }; // first log impossible? how to deal with delta
+  assert { v == 1 / sqrt(N) . En ↦ ∑ k ∈ [0, 2^i) . | k , log(g, v) - k * log(g, x) }; // first log impossible? how to deal with delta
   
   //we will also need two QFT application to both q and p.
   q[0,n) *= RQFT;

@@ -60,7 +60,7 @@ method HSGParent(q : Q[n], p : Q[n], n:nat, f : [Bool] -> [Bool], H: set<nat>, r
 
 {
   ker := [];
-  for _ in range(log(|G|))
+  for _ in range(log(2^n)) // |G| iterations
   {
     y, p, k := HSG(q, p, n, f, H, r);
     ker := ker /\ k;
