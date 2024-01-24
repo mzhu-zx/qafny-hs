@@ -11,9 +11,9 @@ method DLog(q : Q[n], p : Q[n], t : Q[n], n:nat, N : nat, x : nat, g:nat, r:nat 
   requires { t[0 , n) : Nor ↦ |0⟩ }
 
   //please fill the ensures. This means the final result. It is also in Andrew Childs' notes
-  ensures u == FILL
-  ensures v == FILL
-  ensures p == FILL
+  ensures u == v * log(g, x)
+  ensures v == log(g, x)
+  ensures p == Omega(1 / log(log(N)))
 {
   //instead of applying H to q, we apply H to both q and p, and we have t.
   q[0, n) *= H;
@@ -23,17 +23,35 @@ method DLog(q : Q[n], p : Q[n], t : Q[n], n:nat, N : nat, x : nat, g:nat, r:nat 
   //we will have additional loop below to entangle not only q but also p,
   //we will also apply the same mod-multiplication, but this time, instead of applying on x,
   //we will apply on g
-  for i in [0, n) with q[i]
-    separates q[0, i), p[0, n)
+  for i in [0, n) with t[i]
+    separates q[0, i), t[0, n)
     invariant {
-      q[0, i), p[0, n) : En ↦ ∑ k ∈ [0, Pow2(i)) . | k , ((Pow(x, k)) % N) ⟩
+      q[0, i), t[0, n) : En ↦ ∑ k ∈ [0, 2^i) . | k , ((Pow(x, k)) % N) ⟩
     }
     invariant {
       q [i , N) : Had ↦ |+⟩
     }
   {
     //quantum mod-mult requires gcd(base,N) == 1 to implement, otherwise, it is not implementable.
-    p[0, N) *= λ (a => ((Pow(x, Pow2(i))) * a) % N);
+    t[0, N) *= λ (a => ((Pow(x, 2^i)) * a) % N);
+
+    // This is super hacky, but I have no good way to do this now....
+    // TODO: find out one way to take the reference of the underlying range
+    // e.g. [[ p[0 .. N] ]] ?
+    //#LemmaPowEquiv(p_seq'nat'_7__emit, x, i, N);
+  }
+
+  for i in [0, n) with t[i]
+    separates p[0, i), t[0, n)
+    invariant {
+      p[0, i), t[0, n) : En ↦ ∑ k ∈ [0, 2^i) . | k , ((Pow(x, k)) % N) ⟩
+    }
+    invariant {
+      p [i , N) : Had ↦ |+⟩
+    }
+  {
+    //quantum mod-mult requires gcd(base,N) == 1 to implement, otherwise, it is not implementable.
+    t[0, N) *= λ (a => ((Pow(x, 2^i)) * a) % N);
 
     // This is super hacky, but I have no good way to do this now....
     // TODO: find out one way to take the reference of the underlying range
@@ -44,14 +62,14 @@ method DLog(q : Q[n], p : Q[n], t : Q[n], n:nat, N : nat, x : nat, g:nat, r:nat 
   //another loop here
 
   v,prob *= measure(t);//we will then measure t, please see andrew's note, to see what is the result assertion
-  assert { FILL THIS }; // each possible value occurs with equal probability
+  assert { v == 1 / sqrt(N) . En ↦ ∑ k ∈ [0, 2^i) . | k , log(g, p) - k * log(g, x) }; // first log impossible? how to deal with delta
   
   //we will also need two QFT application to both q and p.
   q[0,n) *= RQFT;
   p[0,n) *= RQFT;
 
   //Please see andrew's note to see what is the result.
-  assert { FILL THIS }; 
+  assert { q[0, n), p[0, n) : 1 / sqrt(N) . En ↦ ∑ k ∈ [0, 2^i) . omega(k, delta, N) . | k * log(g, x) , k}; 
   
   //below is not in the current syntax now, we actually want to measure both q and p at the same time.
   //but we want to get two values, instead of 1.

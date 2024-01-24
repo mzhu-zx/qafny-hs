@@ -9,7 +9,7 @@ method QPE(q : Q[n], p : Q[n], n:nat, U : [Bool] -> [Bool], lambda : [Bool]) ret
   requires b2n(s) != 0
     // we can assume that all elements in the function are lined up with, without losing generality, since we do not rely on the structure
   requires { q[0 , n) : Nor ↦ |0⟩ }
-  requires { p[0 , n) : Nor ↦ |0⟩ }
+  requires { p[0 , n) : Nor ↦ |0⟩ } // maybe not true?
   //we should have a way of only specifying basis.
   //but we also care about amplitudes here.
   ensures n2b(y) . s == 0 ==>  p == 0
@@ -20,14 +20,14 @@ method QPE(q : Q[n], p : Q[n], n:nat, U : [Bool] -> [Bool], lambda : [Bool]) ret
   for i in [0, n) with q[i]
     separates q[0, i), p[0, n)
     invariant {
-      q[0, i), p[0, n) : En ↦ ∑ k ∈ [0, Pow2(i)) . 1 / sqrt(2^n) . | k , ∑ j ∈ [0, i) . f(n2b(k))[j] ⟩
+      q[0, i), p[0, n) : En ↦ ∑ k ∈ [0, 2^i)) . 1 / sqrt(2^n) . | k , ∑ j ∈ [0, i) . f(k, p[k]) ⟩
     }
     invariant {
       q [i , n) : Had ↦ |+⟩
     }
   {
     //quantum mod-mult requires gcd(base,N) == 1 to implement, otherwise, it is not implementable.
-    p[0, N) *= λ ((x: Q n, y:Q n) => (x, ((y + f(x)))));
+    p[0, n) *= λ ((x: Q n, y:Q n) => (x, ((y + f(x)))));
 
     // This is super hacky, but I have no good way to do this now....
     // TODO: find out one way to take the reference of the underlying range
