@@ -176,17 +176,17 @@ spec ::   { Exp' }
 
 qspec ::  { (SpecExp', AmpExp', PhaseExp) }
   : "⊗" id '.' tuple(expr)
-                                      { SESpecNor $2 $4                   }
+                                      { (SESpecNor $2 $4, ANone, PhaseWildCard) }
 
   | "Σ" id "∈" '[' expr ".." expr ']' '.' aspec pspec basis(expr)
-                                      { (SESpecEN $2 (Intv $5 $7) $12, $10, $11)  }
+                                      { (SESpecEN $2 (Intv $5 $7) $12, $10, $11) }
                                       
   | "Σ" id "∈" '[' expr ".." expr ']' '.'             {- 9  -}
     aspec pspec                                         {- 10 -}
     "⊗" id "∈" '[' expr ".." expr ']' '.'             {- 19 -}
     tuple(expr)
                                       { (SESpecEN01 $2 (Intv $5 $7) $13 (Intv $16 $18) $21, $10, $11) }
-  | '_'                               { (SEWildcard, PhaseZ) }
+  | '_'                               { (SEWildcard, ANone, PhaseZ) }
 
 -- amplitude specification
 aspec :: { AmpExp' }
@@ -215,7 +215,7 @@ tuple(p)
 basis(p)
   : '|' manyComma(p) "⟩"              { $2 }
 
-expr                                                                      
+expr :: { Exp' }
   : atomic                            { $1                     }
   | '_'                               { EWildcard              } 
   | spec                              { $1                     }
@@ -231,7 +231,7 @@ expr
   | "repr" '(' range ')'              { ERepr $3               }
   | logicOrExp                        { $1                     }
 
-qops
+qops :: { Exp' }
   : "H"                               { EHad                   }
   | "QFT"                             { EQFT                   }
   | "RQFT"                            { ERQFT                  }

@@ -210,7 +210,7 @@ data Exp x
   | EDafny String
   | EEmit EmitExp
   | EPartition Partition
-  | ESpec Partition QTy [(XRec x (SpecExp x), (XRec x (AmpExp x)), PhaseExp )]
+  | ESpec Partition QTy [(XRec x (SpecExp x), XRec x (AmpExp x), PhaseExp)]
   | ERepr Range
   | ELambda PhaseBinder Var (Maybe PhaseExp) (XRec x (Exp x))
   -- ?
@@ -278,7 +278,8 @@ data AmpExp x
  | ASin (XRec x (AmpExp x))
  | ACos (XRec x (AmpExp x))
  | ADivSq (XRec x (Exp x)) (XRec x (Exp x))
- 
+ | ANone
+
 deriving instance (Generic (AmpExp ()))
 deriving instance (Generic (AmpExp Source))
 deriving instance (Show (AmpExp ()))
@@ -288,8 +289,6 @@ deriving instance (Eq (AmpExp Source))
 deriving instance (Ord (AmpExp ()))
 deriving instance (Ord (AmpExp Source))
 
-instance DafnyPrinter (AmpExp ()) where
-  build = build . show
   
 showExp :: Exp () -> String
 showExp (ENum n) = show n

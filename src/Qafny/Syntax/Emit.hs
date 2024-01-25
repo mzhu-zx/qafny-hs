@@ -297,6 +297,8 @@ instance DafnyPrinter MTy where
   build (MTy (Inl t)) = build t
   build (MTy (Inr m)) = byComma (mtSrcParams m) <+> "↪" <+> byComma (mtSrcReturns m)
 
+instance DafnyPrinter (AmpExp ()) where
+  build = build . show
 
 -- | Warning: don't emit parentheses in `buildOp2` because `EOpChained` relies
 -- on this function not to be parenthesized
@@ -337,7 +339,7 @@ runBuilder i debug = TB.toLazyText . flip runReader (i, debug) . doBuild . build
 texify :: DafnyPrinter a => a -> Text
 texify = runBuilder 0 False
 
-showEmit :: DafnyPrinter a => a -> String
+pshowEmit :: DafnyPrinter a => a -> String
 showEmit = unpack . texify
 
 -- Debug mode
