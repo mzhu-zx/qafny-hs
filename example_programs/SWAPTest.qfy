@@ -1,0 +1,27 @@
+// The SWAP Test
+// 2. Quantum Fingerprinting without Shared Keys
+// https://arxiv.org/pdf/quant-ph/0102001.pdf 
+
+// q and p are messages, we want to check if they are equal. r is initialized to all zeroes
+// r is one qubit. q and p are n qubits.
+method SWAPTest(q: Q[n], p: Q[n], r: Q[1], n:nat) returns (y:nat, prob:real)
+    requires { r[0 , n) : Nor ↦ |0⟩ }
+    requires { q[0,n) : EN ↦ u }
+    requires { p[0,n) : EN ↦ v }
+    ensures { u = v ==> y == 1 ==> prob == 0 }
+    ensures { u != v ==> y == 1 ==> prob = 1/2 - 1/2 * norm(u,v) } //we need to define norm of two states.
+{
+    r[0] *= H;
+
+    // controlled SWAP (controlled by first qubit of r)
+    if r[0] // is this a measurment, so wo just do if r[0]
+    {
+        if p[0] then q[0,n) *= q[0,n) + 1;
+        if q[0] then p[0,n) *= p[0,n) + 1;
+        if p[0] then q[0,n) *= q[0,n) + 1;
+    }
+
+    r[0] *= H; // A typical quantum state projection. turning information to the phase.
+
+    y, prob *= measure(r);
+}
