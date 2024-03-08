@@ -1381,7 +1381,7 @@ codegenRequires rqs = do
   -- indeed disjoint!
     case rq of
       ESpec s qt espec -> do
-        let pspec = snd <$> espec
+        let pspec = phase <$> espec
         let dgrs = pspec <&> analyzePhaseSpecDegree
         (vsEmit, ptys) <- extendTState s qt dgrs
         es <- runReader True $ codegenSpecExp (zip vsEmit (unpackPart s)) qt espec ptys
@@ -1471,18 +1471,20 @@ codegenSpecExp
   :: ( Has (Error String) sig m
      , Has (Reader Bool) sig m
      )
-  => [(Var, Range)] -> QTy -> [(SpecExp', PhaseExp)] -> [PhaseTy] -> m [Exp']
+  => [(Var, Range)] -> QTy -> [QSpec] -> [PhaseTy] -> m [Exp']
 codegenSpecExp vrs p specs ptys = putOpt $
   if isEN p
   then do
     when (length specs /= 1) $ throwError' $ printf "More then one specs!"
-    pspec <- onlyOne throwError' (snd <$> specs)
-    specPerPartition p (fst (head specs)) pspec
+    pspec <- onlyOne throwError' (phase <$> specs)
+    specPerPartition p (spec (head specs)) pspec
   else do
       -- For `nor` and `had`, one specification is given one per range
     checkListCorr vrs specs
-    concat <$> mapM (specPerRange p) (zip3 vrs specs ptys)
+    concat <$> mapM (specPerRange' p) (zip3 vrs specs ptys)
   where
+    specPerRange' ty (vr, qspec, pty) =
+      specPerRange ty (vr, (spec qspec, phase qspec), pty)
     specPerRange ty ((v, Range _ el er), (SESpecNor idx eBody, pspec), pty) |
       ty `elem` [TNor, THad] =
       -- In x[l .. r]

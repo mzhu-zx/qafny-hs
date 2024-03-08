@@ -893,7 +893,7 @@ analyzeMethodType (QMethod v bds rts rqs ens _) =
     -- FIXME: collect phase types as well
     collectSignature :: Exp' -> Maybe (Partition, QTy, [Int])
     collectSignature (ESpec s qt pexp) =
-      pure (s, qt, analyzePhaseSpecDegree . snd <$> pexp)
+      pure (s, qt, analyzePhaseSpecDegree . phase <$> pexp)
     collectSignature _                 = Nothing
 
     go
@@ -1116,7 +1116,7 @@ mergeCandidateHad st =
 -- | Collect all partitions with their types from spec expressions
 specPartitionQTys :: [Exp x] -> [(Partition, QTy, [Int])]
 specPartitionQTys es =
-  [ (p, qty, analyzePhaseSpecDegree . snd <$> specs)
+  [ (p, qty, analyzePhaseSpecDegree . phase <$> specs)
   | (ESpec p qty specs) <- es
   ]
 
