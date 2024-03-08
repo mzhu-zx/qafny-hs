@@ -210,7 +210,7 @@ expr
   | "λ" '(' pbinder '~' id "=>" pspec expr ')'   
                                       { ELambda $3 $5 (Just $7) $8 }
   | id tuple(expr)                    { EApp $1 $2             }
-  | "repr" '(' range ')'              { ERepr $3               }
+  | "repr" parens(range)              { ERepr $2               }
   | logicOrExp                        { $1                     }
 
 qops
@@ -254,7 +254,10 @@ atomic
   | '(' expr ')'                      { $2                     }
 
 
--- | Combinators 
+-- | Combinators
+parens(p)
+  : '(' p ')'                         { $2 }
+
 many(p)                                                                  
   : many_(p)                          { reverse $1 }
                                                                           

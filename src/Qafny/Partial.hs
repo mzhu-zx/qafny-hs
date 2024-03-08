@@ -7,7 +7,6 @@
   #-}
 
 module Qafny.Partial where
-import           Data.Bifunctor
 import           Data.Bool
     (bool)
 import           Data.Functor.Foldable
@@ -18,7 +17,6 @@ import           Data.Maybe
 import           Data.Sum                 as Sum
 
 import           Qafny.Syntax.AST
-import           Qafny.Syntax.EmitBinding
 
 --------------------------------------------------------------------------------
 -- $doc
