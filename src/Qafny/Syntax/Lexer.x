@@ -74,6 +74,9 @@ token :-
   repr             { emit $  TRepr               }
   with             { emit $  TWith               }
   invariant        { emit $  TInv                }
+  isqrt            { emit $  TISqrt              }
+  sin              { emit $  TSin                }
+  cos              { emit $  TCos                }  
   H                { emit $  THApp               }
   QFT              { emit $  TQFT                }
   RQFT             { emit $  TRQFT               }

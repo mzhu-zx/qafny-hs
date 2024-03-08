@@ -61,6 +61,9 @@ data Token
   -- Arithmetics
   | TMul | TAdd | TMod | TSub
 
+  -- Amplitudes
+  | TISqrt | TSin | TCos 
+
   -- Gates
   | THApp | TQFT | TRQFT
 

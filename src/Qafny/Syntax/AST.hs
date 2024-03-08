@@ -208,34 +208,34 @@ data Exp x
   | EDafny String
   | EEmit EmitExp
   | EPartition Partition
-  | ESpec Partition QTy [(XRec x (SpecExp x), PhaseExp )]
+  | ESpec Partition QTy [QSpecF (XRec x (Exp x))]
   | ERepr Range
   | ELambda PhaseBinder Var (Maybe PhaseExp) (XRec x (Exp x))
-  -- ?
-  -- | RInd Var Exp -- boolean at var[exp], var must be Q type
-  -- | REq Exp Exp Var Exp -- compare exp == exp and store the value in var[exp], var must be Q type
-  -- | RLt Exp Exp Var Exp -- compare exp < exp and store the value in var[exp], var must be Q type
 
+-- Amplitude expression
+data AmpExpF f
+  = ADefault
+  | AISqrt f f
+  | ASin f
+  | ACos f
+  deriving (Functor, Traversable, Foldable)
+
+deriving instance Generic (AmpExpF f)
+deriving instance Show f => Show (AmpExpF f)
+deriving instance Eq f => Eq (AmpExpF f)
+deriving instance Ord f => Ord (AmpExpF f)
+
+type AmpExp = AmpExpF Exp'
 
 data PhaseExpF f :: Type where
   PhaseZ :: PhaseExpF f
   PhaseOmega :: f -> f -> PhaseExpF f
   PhaseSumOmega :: Range -> f -> f -> PhaseExpF f
   PhaseWildCard :: PhaseExpF f
-
--- data PhaseExpF' f :: Natural -> Type where
---   PhaseZ' :: PhaseExpF' f 0
---   PhaseOmega' :: f -> f -> PhaseExpF' f 1
---   PhaseSumOmega' :: Range -> f -> f -> PhaseExpF' f 2
---   PhaseWildCard' :: PhaseExpF' f 0
+  deriving (Functor, Traversable, Foldable)
 
 type PhaseExp = PhaseExpF Exp'
 type PhaseBinder = PhaseExpF Var
-
--- deriving instance (Typeable (Exp ()))
--- deriving instance (Data (Exp ()))
--- deriving instance (Typeable (Exp Source))
--- deriving instance (Data (Exp Source))
 
 deriving instance Generic (PhaseExpF f)
 deriving instance Show f => Show (PhaseExpF f)
@@ -251,24 +251,20 @@ deriving instance (Eq (Exp Source))
 deriving instance (Ord (Exp ()))
 deriving instance (Ord (Exp Source))
 
--- deriving instance (Show (XRec x (Exp x))) => Show (Exp x)
--- deriving instance (Eq (XRec x (Exp x))) => Eq (Exp x)
--- deriving instance (Ord (XRec x (Exp x))) => Ord (Exp x)
 
-
-
-data SpecExp x
-  = SESpecNor  Var (XRec x (Exp x))
-  | SESpecEN   Var Intv [XRec x (Exp x)]
-  | SESpecEN01 Var Intv Var Intv [XRec x (Exp x)]
+data SpecExpF f
+  = SESpecNor  Var f
+  | SESpecEN   Var Intv [f]
+  | SESpecEN01 Var Intv Var Intv [f]
   | SEWildcard
-deriving instance (Show (XRec x (Exp x))) => Show (SpecExp x)
-deriving instance (Eq (XRec x (Exp x))) => Eq (SpecExp x)
-deriving instance (Ord (XRec x (Exp x))) => Ord (SpecExp x)
--- deriving instance (Typeable (SpecExp ()))
--- deriving instance (Data (SpecExp ()))
--- deriving instance (Typeable (SpecExp Source))
--- deriving instance (Data (SpecExp Source))
+  deriving (Functor, Foldable, Traversable)
+
+deriving instance Generic (SpecExpF f)
+deriving instance (Show f) => Show (SpecExpF f)
+deriving instance (Eq f) => Eq (SpecExpF f)
+deriving instance (Ord f) => Ord (SpecExpF f)
+
+type SpecExp = SpecExpF Exp'
 
 showExp :: Exp () -> String
 showExp (ENum n) = show n
@@ -448,7 +444,7 @@ data ExpF f
   | EDafnyF String
   | EEmitF EmitExp
   | EPartitionF Partition
-  | ESpecF Partition QTy [(XRec () (SpecExp ()), PhaseExp)]
+  | ESpecF Partition QTy [QSpecF f]
   | EReprF Range
   | ELambdaF PhaseBinder Var (Maybe PhaseExp) f
   deriving (Functor, Foldable, Traversable, Show, Generic)
@@ -457,6 +453,19 @@ type instance Base (Exp ()) = ExpF
 instance Recursive (Exp ())
 instance Corecursive (Exp ())
 
+
+data QSpecF f
+  = QSpecF { amp   :: AmpExpF f
+           , phase :: PhaseExpF f
+           , spec  :: SpecExpF f
+           }
+  deriving (Functor, Foldable, Traversable)
+
+deriving instance Generic (QSpecF f)
+deriving instance Show f => Show (QSpecF f)
+deriving instance Eq f => Eq (QSpecF f)
+deriving instance Ord f => Ord (QSpecF f)
+type QSpec = QSpecF Exp'
 
 --------------------------------------------------------------------------------
 -- * Exp Utils
@@ -572,8 +581,8 @@ type Stmt' = Stmt ()
 type Exp' = Exp ()
 type Binding' = Binding ()
 type Block' = Block ()
-type SpecExp' = SpecExp ()
 type Toplevel' = Toplevel ()
+type QSpec' = QSpecF ()
 
 -- * Annotated Types
 type LExp = XRec Source (Exp Source)

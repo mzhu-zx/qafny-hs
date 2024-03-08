@@ -33,8 +33,8 @@ method DeutschJozsa(q : qreg[n], p : qreg[1], n : nat, f : nat -> nat) :
   // the user may explicity downcast `en` to `had`, this will be enforced at the
   // verification time. only if the basis are "saturated", can you perform this
   // cast. I'm not sure if this is fruitful.
-
-  q[0 .. n] *= qft;
+  
+  q[0 .. n] *= qft;             // qft promotes the phase
   
   assert { q[0 .. n], p[0 .. 1] : en ↦ ∑ i ∈ [0 .. Pow2(n)] . Ω j ∈ [0 .. Pow2(n)] . (f(j) + i * j, 2) ~ ( i, _ ) };
 }

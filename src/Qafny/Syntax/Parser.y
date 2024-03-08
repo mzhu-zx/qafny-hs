@@ -46,6 +46,12 @@ dafny                 { ( _, L.TDafny $$  ) }
 "en01"                { ( _, L.TEN01      ) }
 "var"                 { ( _, L.TVar       ) }
 "if"                  { ( _, L.TIf        ) }
+
+"isqrt"                 { ( _, L.TISqrt       ) }
+"sin"                 { ( _, L.TSin       ) }
+"cos"                 { ( _, L.TCos       ) }
+
+
 "λ"                   { ( _, L.TCl        ) }
 "Σ"                   { ( _, L.TUnicodeSum    ) }
 "⊗"                   { ( _, L.TUnicodeTensor ) }
@@ -168,19 +174,29 @@ spec ::   { Exp' }
   | '{' partition ':'  qty "↦" qspec '}'
                                       { ESpec $2 $4 [$6]                     }
 
-qspec ::  { (SpecExp', PhaseExp) }
-  : "⊗" id '.' pspec expr
-                                      { (SESpecNor $2 $5, $4)                   }
-  | "⊗" pspec expr
-                                      { (SESpecNor "_" $5, $4)                  }
-  | "Σ" id "∈" '[' expr ".." expr ']' '.' pspec tuple(expr)
-                                      { (SESpecEN $2 (Intv $5 $7) $11, $10)  }
+qspec :: { QSpec }
+  : qspec_                            { let (amp, phase, spec) = $1 in QSpecF amp phase spec }
+
+
+qspec_ ::  { (AmpExp, PhaseExp, SpecExp) }
+  : "⊗" id '.' ampExp pspec expr
+                                      { ($4, $5, SESpecNor $2 $6)            }
+  | "⊗" ampExp pspec expr
+                                      { ($2, $3, SESpecNor "_" $4)           }
+  | "Σ" id "∈" '[' expr ".." expr ']' '.' ampExp pspec tuple(expr)
+                                      { ($10, $11, SESpecEN $2 (Intv $5 $7) $12)  }
   | "Σ" id "∈" '[' expr ".." expr ']' '.'             {- 9  -}
-    pspec                                             {- 10 -}
-    "⊗" id "∈" '[' expr ".." expr ']' '.'             {- 19 -}
+    ampExp pspec                                      {- 11 -}
+    "⊗" id "∈" '[' expr ".." expr ']' '.'             {- 20 -}
     tuple(expr)
-                                      { (SESpecEN01 $2 (Intv $5 $7) $12 (Intv $15 $17) $20, $10) }
-  | '_'                               { (SEWildcard, PhaseZ) }
+                                      { ($10, $11, SESpecEN01 $2 (Intv $5 $7) $13 (Intv $16 $18) $21) }
+  | '_'                               { (ADefault, PhaseZ, SEWildcard) }
+
+ampExp :: { AmpExp }
+  : {- empty -}                            { ADefault         }
+  | "isqrt" '(' expr ',' expr ')'          { AISqrt $3 $5     }
+  | "sin" '(' expr ')'                     { ASin $3          }
+  | "cos" '(' expr ')'                     { ASin $3          }
 
 -- phase specification
 pspec :: { PhaseExp }

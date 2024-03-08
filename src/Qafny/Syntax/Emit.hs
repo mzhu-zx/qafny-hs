@@ -1,5 +1,6 @@
 {-# LANGUAGE
     FlexibleContexts
+  , NamedFieldPuns
   , FlexibleInstances
   , GeneralizedNewtypeDeriving
   #-}
@@ -226,14 +227,14 @@ instance DafnyPrinter (Exp ()) where
           beb Nothing    = mempty
   build e@EHad = debugOnly e "H"
   build e@(ESpec p qt specs) = debugOnly e $
-    "{" <+> p <+> ":" <+> qt  <+> "↦" <+> byComma (swap <$> specs) <+> "}"
+    "{" <+> p <+> ":" <+> qt  <+> "↦" <+> byComma specs <+> "}"
   build e@(EApp v es) = v <!> withParen (byComma es)
   build (ELambda PhaseWildCard v Nothing e) = v <+> "=>" <+> e
   build e@(ELambda binder v (Just pspec) e') =
     debugOnly e (binder <+> "~" <+> v <+> "=>" <+> pspec <+> "~" <+> e')
   build e = "//" <!> show e <!> build " should not be in emitted form!"
 
-instance DafnyPrinter (SpecExp ()) where
+instance (DafnyPrinter f, Show f) => DafnyPrinter (SpecExpF f) where
   build s = debugOnly s $ buildSubterm
     where
       buildSubterm = case s of
@@ -255,6 +256,14 @@ instance (Show f, DafnyPrinter f) => DafnyPrinter (PhaseExpF f) where
     PhaseWildCard         -> build "_"
     PhaseOmega e1 e2      -> "ω" <!> withParen (byComma [e1, e2])
     PhaseSumOmega i e1 e2 -> "Ω" <+> i <+> "." <+> withParen (byComma [e1, e2])
+
+instance (Show f, DafnyPrinter f) => DafnyPrinter (AmpExpF f) where
+  build p = debugOnly p $ case p of
+    ADefault     -> build ""
+    AISqrt en ed -> "isqrt" <+> withParen (byComma [en, ed])
+    ASin e       -> "sin" <!> withParen (build e)
+    ACos e       -> "cos" <!> withParen (build e)
+
 
 instance DafnyPrinter EmitExp where
   build (ESelect e1 e2) = e1 <!> "[" <!> e2 <!> "]"
@@ -284,6 +293,17 @@ instance DafnyPrinter STuple where
 
 instance (Show a, Show b, DafnyPrinter a, DafnyPrinter b) => DafnyPrinter (a, b) where
   build t@(a, b) = debugOnly t $ withParen . byComma $ [build a, build b]
+
+instance (Show a, Show b, Show c,
+          DafnyPrinter a, DafnyPrinter b, DafnyPrinter c) =>
+
+         DafnyPrinter (a, b, c) where
+  build t@(a, b, c) = debugOnly t $
+    withParen . byComma $ [build a, build b, build c]
+
+instance (Show f, DafnyPrinter f) => DafnyPrinter (QSpecF f) where
+  build q@QSpecF{amp, phase, spec} = debugOnly q $ 
+    amp <!> phase <!> spec
 
 
 instance (Show k, Show v, DafnyPrinter k, DafnyPrinter v) => DafnyPrinter (Map.Map k v) where
