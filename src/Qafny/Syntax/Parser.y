@@ -171,6 +171,8 @@ spec ::   { Exp' }
 qspec ::  { (SpecExp', PhaseExp) }
   : "⊗" id '.' pspec expr
                                       { (SESpecNor $2 $5, $4)                   }
+  | "⊗" pspec expr
+                                      { (SESpecNor "_" $5, $4)                  }
   | "Σ" id "∈" '[' expr ".." expr ']' '.' pspec tuple(expr)
                                       { (SESpecEN $2 (Intv $5 $7) $11, $10)  }
   | "Σ" id "∈" '[' expr ".." expr ']' '.'             {- 9  -}
