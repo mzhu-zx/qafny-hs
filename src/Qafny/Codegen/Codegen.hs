@@ -106,6 +106,7 @@ import           Qafny.Utils.Emitter.Compat
     (findEmitRanges)
 import           Qafny.Utils.Utils
     (checkListCorr, dumpSt, fst2, gensymLoc, getMethodType, onlyOne, uncurry3)
+import Qafny.Utils.TraceF (Traceable(tracef))
 
 throwError'
   :: ( Has (Error String) sig m )
@@ -482,7 +483,9 @@ codegenStmt'Apply (s :*=: EHad) = do
     opCastHad TNor = return "CastNorHad"
     opCastHad t = throwError $ "type `" ++ show t ++ "` cannot be casted to Had type"
 
-codegenStmt'Apply stmt@(s@(Partition {ranges}) :*=: eLam@(ELambda pbinder _ pexpMaybe _)) = do
+codegenStmt'Apply
+  stmt@(s@(Partition {ranges}) :*=: eLam@(ELambda pbinder _ pexpMaybe _)) = do
+
   (st'@(STuple (_, _, (qt', _))), corr) <- resolvePartition' s
   qtLambda <- ask
   checkSubtypeQ qt' qtLambda
@@ -494,7 +497,8 @@ codegenStmt'Apply stmt@(s@(Partition {ranges}) :*=: eLam@(ELambda pbinder _ pexp
     _   -> throwError errRangeGt1
 
   -- do the type cast and split first
-  (STuple (_, _, (qt, _)), maySplit, mayCast) <- hdlSC st' $ splitThenCastScheme st' qtLambda r
+  (STuple (_, _, (qt, _)), maySplit, mayCast) <-
+    hdlSC st' $ splitThenCastScheme st' qtLambda r
   stmts <- codegenSplitThenCastEmit maySplit mayCast
 
   -- resolve again for consistency

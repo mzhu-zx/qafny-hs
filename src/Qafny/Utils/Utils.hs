@@ -16,7 +16,7 @@ import           Control.Lens          (at, (?~), (^.))
 import           Control.Monad         (forM, unless)
 
 import           Data.Sum
-import           Text.Printf           (printf)
+import           Text.Printf           (printf, PrintfType)
 
 --
 import           Effect.Gensym         (Gensym, gensym)

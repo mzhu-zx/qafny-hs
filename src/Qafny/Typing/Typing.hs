@@ -151,8 +151,10 @@ resolvePartition'
      )
   => Partition -> m (STuple, [(Range, Range)])
 resolvePartition' se' = do
+  -- resolve the canonical range names
   rsResolved <- rs `forM` resolveRange
-  let locs = [ ((rSe, rSt), loc) | (rSe, rSt, ans, loc) <- concat rsResolved, included ans ]
+  let locs = [ ((rSe, rSt), loc)
+             | (rSe, rSt, ans, loc) <- concat rsResolved, included ans ]
   constraints <- ask @IEnv
   let related = concatMap ("\n\t" ++) . concat $
                 [ showRel r1 r2 b | (r1, r2, b, _) <- concat rsResolved ]
@@ -198,6 +200,10 @@ removeTStateBySTuple st@(STuple (loc, p, (qt, _))) = do
   deleteEDPartition loc (unpackPart p)
 
 -- | Query all ranges related to the given range.
+-- Return a list of tuple standing for
+-- * matched ranges
+-- * statistics of the resolution
+-- * the owner locus of the canonical range
 resolveRange
   :: ( Has (State TState) sig m
      , Has (Error String) sig m

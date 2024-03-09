@@ -26,6 +26,7 @@ dependencies:
 - fused-effects-lens
 - recursion-schemes
 
+
 ghc-options:
 - -Wall
 - -Wcompat
