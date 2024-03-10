@@ -1,29 +1,34 @@
 {-# LANGUAGE
-    TypeApplications
+    NamedFieldPuns
+  , TypeApplications
   #-}
 
 module Qafny.Typing.Error where
 
 import qualified Control.Carrier.Error.Either as ErrE
 import           Control.Effect.Error
-import           Qafny.Syntax.IR                    (STuple(..))
-import           Qafny.Syntax.AST             (Range)
-import           Qafny.Syntax.Emit            (byComma, showEmit0)
-import           Text.Printf                  (printf)
+import           Qafny.Syntax.AST
+    (Range)
+import           Qafny.Syntax.Emit
+    (byComma, showEmit0)
+import           Qafny.Syntax.IR
+    (Locus (..))
+import           Text.Printf
+    (printf)
 
 data SCError
-  = SplitENError STuple Range [Range]
+  = SplitENError Locus Range [Range]
   | SplitOtherError String
 
 
 instance Show SCError where
-  show (SplitENError s@(STuple (_, p, _)) r0 rs) = printf
+  show (SplitENError s@Locus{part} r0 rs) = printf
     ("The partition %s cannot be obtained from the 'EN' partition %s.\n" ++
      "Reason: it requires tearing the range apart into %s.\n" ++
      "Advice: Use `EN01` isntead.\n" ++
      "Info: %s\n")
     (showEmit0 r0)
-    (showEmit0 p)
+    (showEmit0 part)
     (showEmit0 (byComma rs))
     (showEmit0 s)
   show (SplitOtherError s) = s

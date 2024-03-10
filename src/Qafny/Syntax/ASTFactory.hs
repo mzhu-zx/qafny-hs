@@ -87,7 +87,6 @@ mkDAssignment t v1 v2 = SVar (Binding v1 t) (Just (EVar v2))
 
 
 -- Erase phase arguments in a lambda term
-lambdaUnphase :: Exp' -> Exp'
-lambdaUnphase (ELambda l) = ELambda
+lambdaUnphase :: Lambda -> Exp'
+lambdaUnphase l = ELambda
   l{ bPhase = PhaseWildCard, ePhase = Nothing }
-lambdaUnphase _           = error "Internal"

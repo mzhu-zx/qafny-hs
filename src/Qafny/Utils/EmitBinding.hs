@@ -9,8 +9,8 @@
 module Qafny.Utils.EmitBinding
   ( -- * Gensyms
     gensymBinding
-  , genEDStUpdatePhase, genEDStByRange, genEDStByRanges, genEDStFromSTuple
-  , genEDStUpdatePhaseFromSTuple
+  , genEDStUpdatePhase, genEDStByRange, genEDStByRanges, genEDStFromLocus
+  , genEDStUpdatePhaseFromLocus
   , genEDStSansPhaseByRanges
   , genEDStByRangesSansPhase, genEDStByRangeSansPhase
   , genEDStByRangesSansPhase'
@@ -145,26 +145,26 @@ genEDStByLoc l iLoc qt ris = do
   return ( edL , rAndEDs )
 
 
--- | Generate a /complete/ 'EmitData' of a Partition from its STuple
+-- | Generate a /complete/ 'EmitData' of a Partition from its Locus
 -- In particular, generate degree and phases based on its qt
 
-genEDStFromSTuple
+genEDStFromLocus
   :: ( GensymWithState sig m
      , Has (Error String) sig m
      )
   => Loc -> [Range] -> QTy -> [Int] -> m (EmitData, [(Range, EmitData)])
-genEDStFromSTuple l rs qt is = do
+genEDStFromLocus l rs qt is = do
   (il, ir) <- if isEN qt
     then (, repeat (-1)) <$> onlyOne throwError is
     else (-1, is)  <$ checkListCorr is rs
   genEDStByLoc l il qt $ zip rs ir
 
-genEDStUpdatePhaseFromSTuple
+genEDStUpdatePhaseFromLocus
   :: ( GensymWithState sig m
      , Has (Error String) sig m
      )
   => Loc -> [Range] -> QTy -> [Int] -> m [EmitData]
-genEDStUpdatePhaseFromSTuple l rs qt is = do
+genEDStUpdatePhaseFromLocus l rs qt is = do
   is' <- if isEN qt
     then (: repeat (-1)) <$> onlyOne throwError is
     else (-1 : is)  <$ checkListCorr is rs

@@ -1,22 +1,26 @@
 {-# LANGUAGE
     FlexibleContexts
-  , NamedFieldPuns
   , FlexibleInstances
   , GeneralizedNewtypeDeriving
+  , NamedFieldPuns
   #-}
 
 module Qafny.Syntax.Emit where
 
 import           Qafny.Syntax.AST
 
-import           Control.Arrow          (Arrow (first))
+import           Control.Arrow
+    (Arrow (first))
 import           Control.Monad.Reader
 import qualified Data.Map.Strict        as Map
-import           Data.Maybe             (maybeToList)
+import           Data.Maybe
+    (maybeToList)
 import           Data.Sum
-import           Data.Text.Lazy         (Text, unpack)
+import           Data.Text.Lazy
+    (Text, unpack)
 import qualified Data.Text.Lazy.Builder as TB
-import           Qafny.Syntax.IR              (STuple (..))
+import           Qafny.Syntax.IR
+    (Locus (..), STuple (..))
 
 -------------------- Builder --------------------
 
@@ -45,8 +49,8 @@ indent = do (n, _) <- ask
             build $ replicate n ' '
 
 
-withParen :: Builder -> Builder
-withParen b = build '(' <> b <> build ')'
+withParen :: DafnyPrinter a => a -> Builder
+withParen b = build '(' <> build b <> build ')'
 
 withBracket :: Builder -> Builder
 withBracket b = build '[' <> b <> build ']'
@@ -80,7 +84,7 @@ byLineL a = lineHuh a <> by line a
 lineHuh :: Foldable t => t a -> Builder
 lineHuh a = if null a then mempty else line
 
--- FIXME : raise an error if a DEBUG mode term is emitted 
+-- FIXME : raise an error if a DEBUG mode term is emitted
 debugOnly :: (Show e, DafnyPrinter a) => e -> a -> Builder
 debugOnly e d = do
   (_, b) <- ask
@@ -212,7 +216,9 @@ instance DafnyPrinter (Stmt ()) where
 
       buildEmit :: EmitStmt -> Builder
       buildEmit (SVars bds e) = "var" <+> byComma bds <+> ":=" <+> e
-      buildEmit (vs :*:=: e)  = byComma vs <+> ":=" <+> e
+      buildEmit (vs :*:=: rhs)  = case rhs of
+        [] -> mempty
+        _  -> byComma vs <+> ":=" <+> byComma (withParen <$> rhs)
       -- buildEmit (SIfDafny e b) = "if " <!> withParen (build e) <!> b
       buildEmit _             = error "Should have been handled!!"
 
@@ -306,6 +312,11 @@ instance DafnyPrinter STuple where
   build st@(STuple (l, p, (qty, dgrs))) = debugOnly st $
     l <+> "↦" <+> p <+> "::" <+> qty <+> withBracket (byComma dgrs)
 
+instance DafnyPrinter Locus where
+  build st@(Locus {loc=l, part=p, qty, degrees=dgrs}) = debugOnly st $
+    l <+> "↦" <+> p <+> "::" <+> qty <+> withBracket (byComma dgrs)
+
+
 instance (Show a, Show b, DafnyPrinter a, DafnyPrinter b) => DafnyPrinter (a, b) where
   build t@(a, b) = debugOnly t $ withParen . byComma $ [build a, build b]
 
@@ -317,7 +328,7 @@ instance (Show a, Show b, Show c,
     withParen . byComma $ [build a, build b, build c]
 
 instance (Show f, DafnyPrinter f) => DafnyPrinter (QSpecF f) where
-  build q@QSpecF{amp, phase, spec} = debugOnly q $ 
+  build q@QSpecF{amp, phase, spec} = debugOnly q $
     amp <!> phase <!> spec
 
 

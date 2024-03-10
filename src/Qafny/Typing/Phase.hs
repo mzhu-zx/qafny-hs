@@ -36,15 +36,15 @@ import           Qafny.Utils
 -- Utils
 import           Control.Effect.Trace
 import           Control.Lens
-    (at, (%~), (?~), (^.))
+    (at, (?~))
 import           Control.Monad
-    (forM, when)
+    (when)
 import           Data.List
     (nub, singleton)
 import           Data.Sum
     (Injection (inj))
 import           Qafny.Syntax.ASTUtils
-    (getPhaseRef, phaseRefToTy)
+    (getPhaseRef)
 import           Qafny.Syntax.Emit
     (showEmitI)
 import           Text.Printf
@@ -80,8 +80,8 @@ promotionScheme
      , Has (Error String) sig m
      , Has Trace sig m
      )
-  => STuple -> PhaseBinder -> PhaseExp -> m (Maybe PromotionScheme)
-promotionScheme st@(STuple (loc, Partition rs, (qt, dgrsSt))) pb pe = do
+  => Locus -> PhaseBinder -> PhaseExp -> m (Maybe PromotionScheme)
+promotionScheme st@Locus{loc, part, qty, degrees=dgrsSt} pb pe = do
   -- FIXME: for now, the simple dirty way is to restrict `dgrsSt` to have only
   -- one consistent degree. So the promotionScheme can act on the entire
   -- partition, which I think is a good idea for now.  Unless one specified a
@@ -104,6 +104,7 @@ promotionScheme st@(STuple (loc, Partition rs, (qt, dgrsSt))) pb pe = do
     (dBind, dSpec) | dBind > dSpec  -> errDemotion dBind dSpec
     (dBind, dSpec)                  -> errUnimplementedPrompt dBind dSpec
   where
+    rs = ranges part
     -- Promote 0 to 1
     promote'0'1
       :: ( Has (Gensym Emitter) sig m'
@@ -121,7 +122,7 @@ promotionScheme st@(STuple (loc, Partition rs, (qt, dgrsSt))) pb pe = do
         { psPrefs = prefs
         , psDgrPrev = 0
         , psDgrCurr = 1
-        , psPromotion = Promote'0'1 (i, n) rs qt
+        , psPromotion = Promote'0'1 (i, n) rs qty
         }
     promote'0'1 _ = internalError
 
@@ -170,15 +171,15 @@ analyzePhaseSpecDegree PhaseSumOmega{} = 2
 --   vEmitRepr <- gensym (LBinding ("repr", inj (typingPhaseEmitReprN 1)))
 --   return (PTN n $ PhaseRef { prBase = vEmitBase, prRepr = vEmitRepr })
 
--- | Generate a new phase type based on the STuple.
+-- | Generate a new phase type based on the Locus.
 --
 -- allocPhaseType
 --   :: ( Has (Gensym Emitter) sig m
 --      , Has (State TState) sig m
 --      , Has (Error String) sig m
 --      )
---   => STuple -> m [PhaseTy]
--- allocPhaseType (STuple (loc, Partition rs, (qt, dgrs))) =
+--   => Locus -> m [PhaseTy]
+-- allocPhaseType (Locus (loc, Partition rs, (qt, dgrs))) =
 --   if isEN qt
 --     then
 --     do dgr <- onlyOne throwError' dgrs
@@ -192,9 +193,9 @@ analyzePhaseSpecDegree PhaseSumOmega{} = 2
 
 updateTState
   :: ( Has (State TState) sig m )
-  => STuple -> m ()
-updateTState s@(STuple (loc, p, (qt, dgrs))) =
-  sSt %= (at loc ?~ (p, (qt, dgrs)))
+  => Locus -> m ()
+updateTState s@Locus{loc, part, qty, degrees} =
+  sSt %= (at loc ?~ (part, (qty, degrees)))
 
 
 allocAndUpdatePhaseType
@@ -202,23 +203,22 @@ allocAndUpdatePhaseType
      , Has (State TState) sig m
      , Has (Error String) sig m
      )
-  => STuple -> m [PhaseTy]
-allocAndUpdatePhaseType s@(STuple(loc, Partition{ranges}, (qt, dgrs))) = do
+  => Locus -> m [PhaseTy]
+allocAndUpdatePhaseType s@Locus{loc, part=Partition{ranges}, qty, degrees} = do
   updateTState s
-  mapMaybe evPhaseTy <$> genEDStUpdatePhaseFromSTuple loc ranges qt dgrs
-  
+  mapMaybe evPhaseTy <$> genEDStUpdatePhaseFromLocus loc ranges qty degrees
 
--- | Query in the emit state the phase types of the given STuple
+-- | Query in the emit state the phase types of the given Locus
 queryPhaseType
   :: ( Has (State TState) sig m
      , Has (Error String) sig m
      )
-  => STuple -> m [PhaseTy]
-queryPhaseType (STuple (loc, Partition rs, (qt, dgrs))) =
-  if isEN qt
-    then do dgr <- onlyOne throwError' dgrs
+  => Locus -> m [PhaseTy]
+queryPhaseType Locus{loc, part=Partition{ranges}, qty, degrees} =
+  if isEN qty
+    then do dgr <- onlyOne throwError' degrees
             catMaybes . singleton . evPhaseTy <$> findED (inj loc)
-    else do checkListCorr rs dgrs
+    else do checkListCorr ranges degrees
             catMaybes <$> sequence [ evPhaseTy <$> findED (inj r)
-                                   | (r, dgr) <- zip rs dgrs
+                                   | (r, dgr) <- zip ranges degrees
                                    ]

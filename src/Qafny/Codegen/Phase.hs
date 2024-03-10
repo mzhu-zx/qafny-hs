@@ -118,7 +118,7 @@ codegenPhaseLambda
   :: ( Has (State TState) sig m
      , Has (Error String) sig m
      )
-  => STuple -> PhaseBinder -> PhaseExp -> m [Stmt']
+  => Locus -> PhaseBinder -> PhaseExp -> m [Stmt']
 codegenPhaseLambda st pb pe = do
   (dgrs, prefs) <- queryPhaseType st <&> unzip . getPhaseRefN
   dgrSt <- onlyOne throwError' $ nub dgrs

@@ -5,17 +5,15 @@ module Qafny.TypeUtils where
 
 -- | Pure utility functions related to types
 
-import           Control.Lens          (over)
+import           Control.Lens
+    (over)
 import           Control.Lens.Tuple
-import           Qafny.Syntax.IR             (STuple (..))
 import           Qafny.Syntax.AST
-    ( Binding (..)
-    , PhaseRef (..)
-    , PhaseTy (..)
-    , QTy (..)
-    , Ty (..)
-    )
-import           Qafny.Syntax.ASTUtils (getPhaseRefN)
+    (Binding (..), PhaseRef (..), PhaseTy (..), QTy (..), Ty (..))
+import           Qafny.Syntax.ASTUtils
+    (getPhaseRefN)
+import           Qafny.Syntax.IR
+    (Locus (Locus, degrees), STuple (..))
 
 
 
@@ -54,8 +52,8 @@ isEN _     = False
 
 
 -- | STuple
-modifyPty :: ([Int] -> [Int]) -> STuple -> STuple
-modifyPty f (STuple st) = STuple $ over (_3. _2) f st
+modifyPty :: ([Int] -> [Int]) -> Locus -> Locus
+modifyPty f st@Locus{degrees} = st{degrees=f degrees}
 
 bindingsFromPtys :: [PhaseTy] -> [Binding ()]
 bindingsFromPtys ptys = concat

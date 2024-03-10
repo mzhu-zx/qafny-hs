@@ -17,7 +17,6 @@ module Qafny.Typing.Typing where
 -- | Typing though Fused Effects
 
 -- Effects
-import qualified Control.Carrier.Error.Either as ErrE
 import           Control.Carrier.Reader
     (runReader)
 import           Control.Carrier.State.Lazy
@@ -31,7 +30,7 @@ import           Control.Effect.Reader
 import           Control.Effect.State
     (State, get, modify)
 import           Effect.Gensym
-    (Gensym, gensym)
+    (Gensym)
 
 -- Qafny
 import           Qafny.Error
@@ -41,15 +40,14 @@ import           Qafny.Partial
     (Reducible (reduce))
 import           Qafny.Syntax.AST
 import           Qafny.Syntax.Emit
-    (DafnyPrinter (build), byComma, byLineT, showEmit0, showEmitI)
+    (byComma, byLineT, showEmit0, showEmitI)
 import           Qafny.Syntax.EmitBinding
 import           Qafny.Syntax.IR
 import           Qafny.TypeUtils
 import           Qafny.Typing.Phase           hiding
     (throwError')
 import           Qafny.Utils.Utils
-    (checkListCorr, dumpSt, errTrace, exp2AExp, gensymLoc, rethrowMaybe,
-    uncurry3)
+    (errTrace, exp2AExp, gensymLoc, rethrowMaybe)
 
 import           Qafny.Utils.EmitBinding
 
@@ -59,11 +57,10 @@ import           Control.Carrier.State.Lazy
 import           Control.Effect.Trace
 import           Control.Lens
     (at, (%~), (?~), (^.))
-import           Control.Lens.Tuple
 import           Control.Monad
-    (forM, forM_, liftM2, mapAndUnzipM, unless, when, zipWithM, (>=>))
+    (forM, forM_, liftM2, mapAndUnzipM, unless, when, zipWithM)
 import           Data.Bifunctor
-    (Bifunctor (first, second))
+    (Bifunctor (second))
 import           Data.Bool
     (bool)
 import           Data.Functor
@@ -78,14 +75,10 @@ import           Data.Maybe
     (catMaybes, isJust, listToMaybe, mapMaybe)
 import qualified Data.Set                     as Set
 import           Data.Sum
-import           Data.Sum
-    (projLeft)
-import           Data.Text
-    (unpack)
 import           GHC.Stack
     (HasCallStack)
 import           Qafny.Typing.Error
-    (SCError (SplitENError, SplitOtherError), failureAsSCError, hdlSCError)
+    (SCError (SplitENError), failureAsSCError, hdlSCError)
 import           Text.Printf
     (printf)
 
@@ -133,30 +126,15 @@ typingExp e = throwError' $
 -- resolve and give me `s` instead of `s1` as the partition itself is
 -- inseparable!
 --
--- Examine each Range in a given Partition and resolve to a STuple
+-- Examine each Range in a given Partition and resolve to a Locus
 resolvePartition
   :: ( Has (State TState) sig m
      , Has (Error String) sig m
      , Has (Reader IEnv) sig m
      , Has Trace sig m
      )
-  => Partition -> m STuple
+  => Partition -> m Locus
 resolvePartition = (fst <$>) . resolvePartition'
-
-resolvePartition''
-  :: ( Has (State TState) sig m
-     , Has (Error String) sig m
-     , Has (Reader IEnv) sig m
-     , Has Trace sig m
-     )
-  => Partition -> m (Locus, [(Range, Range)])
-resolvePartition'' p =
-  first locusCompat <$> resolvePartition' p
-
-
-locusCompat :: STuple -> Locus
-locusCompat (STuple(loc, part, (qty, degrees))) =
-  Locus { loc, part, qty, degrees }
 
 resolvePartition'
   :: ( Has (State TState) sig m
@@ -164,7 +142,7 @@ resolvePartition'
      , Has (Reader IEnv) sig m
      , Has Trace sig m
      )
-  => Partition -> m (STuple, [(Range, Range)])
+  => Partition -> m (Locus, [(Range, Range)])
 resolvePartition' se' = do
   -- resolve the canonical range names
   rsResolved <- rs `forM` resolveRange
@@ -176,10 +154,10 @@ resolvePartition' se' = do
   trace $ printf "[resolvePartition] (%s) with %s %s" (show se) (show constraints) related
   case List.nub (snd <$> locs) of
     [] ->  throwError $ errInternal related
-    [x] -> do
-      (p, qt) <- use (sSt . at x) `rethrowMaybe` (show . UnknownLocError) x
-      trace (printf "Resolved: %s ∈ %s" (show se) (show p))
-      return (STuple (x, p, qt), fst <$> locs)
+    [loc] -> do
+      (part, (qty, degrees)) <- use (sSt . at loc) `rethrowMaybe` (show . UnknownLocError) loc
+      trace (printf "Resolved: %s ∈ %s" (show se) (show part))
+      return (Locus{loc, part, qty, degrees}, fst <$> locs)
     ss -> throwError $ errNonunique ss related
   where
     se@(Partition rs) = reduce se'
@@ -189,7 +167,7 @@ resolvePartition' se' = do
     included :: NonEmpty (Maybe Bool, AEnv) -> Bool
     included = all ((== Just True) . fst)
 
-    -- Format 
+    -- Format
     errNonunique :: [Loc] -> String -> String
     errNonunique ss = printf
       ("Type Error: " ++
@@ -212,10 +190,10 @@ resolvePartition' se' = do
             (showEmitI 0 r2) (showEmitI 0 $ byComma env)
 
 
-removeTStateBySTuple
+removeTStateByLocus
   :: (Has (State TState) sig m)
-  => STuple -> m ()
-removeTStateBySTuple st@(STuple (loc, p, (qt, _))) = do
+  => Locus -> m ()
+removeTStateByLocus st@(Locus{loc, part=p, qty}) = do
   sSt %= flip Map.withoutKeys (Set.singleton loc)
   xSt %= Map.map (filter ((/= loc) . snd))
   deleteEDPartition loc (unpackPart p)
@@ -245,7 +223,7 @@ resolvePartitions
      , Has (Reader IEnv) sig m
      , Has Trace sig m
      )
-  => [Partition] -> m STuple
+  => [Partition] -> m Locus
 resolvePartitions =
   resolvePartition . Partition . concatMap unpackPart
 
@@ -256,7 +234,10 @@ inferRangeTy
      , Has (Reader IEnv) sig m
      , Has Trace sig m)
   => Range -> m (QTy, [Int])
-inferRangeTy r = (^. _3) . unSTup <$> resolvePartition (Partition [r])
+inferRangeTy r =
+  go <$>  resolvePartition (Partition [r])
+  where
+    go Locus{qty, degrees} = (qty, degrees)
 
 --------------------------------------------------------------------------------
 -- | Split Typing
@@ -264,7 +245,7 @@ inferRangeTy r = (^. _3) . unSTup <$> resolvePartition (Partition [r])
 -- | Given a partition and a range, compute a split scheme if the range is a
 -- part of the partition.
 --
--- The returned 'STuple' is the partition covering the range
+-- The returned 'Locus' is the partition covering the range
 --
 -- For the optional return value, return 'Nothing' if no split needs **on a specific
 -- range** needs to be performed, i.e. no codegen needs to be done.
@@ -276,14 +257,14 @@ splitScheme
      , Has (Reader IEnv) sig m
      , Has Trace sig m
      )
-  => STuple
+  => Locus
   -> Range
-  -> m (STuple, Maybe SplitScheme)
+  -> m (Locus, Maybe SplitScheme)
 splitScheme s r = errTrace "`splitScheme`" $ do
-  ans <- splitScheme' s r
+  splitScheme' s r
   -- trace $ printf "[splitScheme]\n\tIn: %s %s\n\tOut: %s"
   --   (show s) (show r) (show ans)
-  return ans
+
 
 
 -- | Rationale: there's no good reason to split a partition with multiple ranges
@@ -296,9 +277,9 @@ splitSchemePartition
      , Has (Reader IEnv) sig m
      , Has Trace sig m
      )
-  => STuple
+  => Locus
   -> Partition
-  -> m (STuple, Maybe SplitScheme)
+  -> m (Locus, Maybe SplitScheme)
 splitSchemePartition st p =
   case unpackPart p of
     [r] -> splitScheme st r
@@ -337,14 +318,14 @@ splitScheme'
      , Has (Reader IEnv) sig m
      , Has Trace sig m
      )
-  => STuple
+  => Locus
   -> Range
-  -> m (STuple, Maybe SplitScheme)
-splitScheme' s@(STuple (loc, p, xt@(qt, ptys))) rSplitTo@(Range to rstL rstR) = do
+  -> m (Locus, Maybe SplitScheme)
+splitScheme' s@(Locus{loc, part, qty, degrees}) rSplitTo@(Range to rstL rstR) = do
   -- FIXME: Type checking of `qt` should happen first because splitting an EN
   -- typed partition should not be allowed.
   -- TODO: Is this correct?
-  when (isEN qt) $ throwError'' errSplitEN
+  when (isEN qty) $ throwError'' errSplitEN
   RangeSplits { rsRsRest=rsRest
               , rsDsRest=dgrsRest
               , rsRLeft=rLMaybe
@@ -374,7 +355,8 @@ splitScheme' s@(STuple (loc, p, xt@(qt, ptys))) rSplitTo@(Range to rstL rstR) = 
       --
       -- 1. Allocate partitions, break ranges and move them around
       locAux <- gensymLoc to
-      sSt %= (at loc ?~ (pMain, (qt, dgrsMain))) . (at locAux ?~ (pAux, (qt, [dgrOrigin])))
+      sSt %= (at loc ?~ (pMain, (qty, dgrsMain))) .
+        (at locAux ?~ (pAux, (qty, [dgrOrigin])))
       -- use sSt >>= \s' -> trace $ printf "sSt: %s" (show s')
       xRangeLocs <- use (xSt . at to) `rethrowMaybe` errXST
       let xrl =
@@ -386,25 +368,25 @@ splitScheme' s@(STuple (loc, p, xt@(qt, ptys))) rSplitTo@(Range to rstL rstR) = 
             List.filter ((/= rOrigin) . fst) xRangeLocs
       xSt %= (at to ?~ xrl)
       -- 2. Generate emit symbols for split ranges
-      let sMain' = (loc, pMain, (qt, dgrsMain)) -- the part that's split _from_
+      let sMain' = s{part=pMain, degrees=dgrsMain} -- the part that's split _from_
       case rsRem of
-        [] -> case qt of
+        [] -> case qty of
           t | t `elem` [ TEN, TEN01 ] ->
               throwError'' errSplitEN
           _ ->
             -- only split in partition but not in a range,
             -- therefore, no need to duplicate the range-based phases
-            let sAux' = (locAux, pAux, xt)
-            in return (STuple sAux', Nothing)
+            let sAux' = s { loc=locAux, part=pAux }
+            in return (sAux', Nothing)
         _  -> do
-          (vEmitR, vSyms, rPhReprs) <- case qt of
+          (vEmitR, vSyms, rPhReprs) <- case qty of
             t | t `elem` [ TNor, THad ] -> do
               -- locate the original range
               vEmitR <- findVisitED evBasis (inj rOrigin)
               -- delete it from the record
               deleteEDs [inj rOrigin]
               -- gensym for each split ranges
-              rsEDs <- genEDStSansPhaseByRanges qt (rSplitTo : rsRem)
+              rsEDs <- genEDStSansPhaseByRanges qty (rSplitTo : rsRem)
               vSyms <- mapM (visitED evBasis . snd) rsEDs
               --
               -- FIXME: cobble "genEDStUpdatePhase" with "genEDStSansPhaseByRanges"
@@ -415,23 +397,26 @@ splitScheme' s@(STuple (loc, p, xt@(qt, ptys))) rSplitTo@(Range to rstL rstR) = 
               --
               return (vEmitR, vSyms, (ptySplitTo : ptysRem))
             _    -> throwError'' $ errUnsupprtedTy ++ "\n" ++ infoSS
-          let sAux' = (locAux, pAux, (qt, [dgrOrigin]))
+          let sAux' = Locus { loc=locAux, part=pAux, qty, degrees=[dgrOrigin] }
           let ans = SplitScheme
                 { schROrigin = rOrigin
                 , schRTo = rSplitTo
                 , schRsRem = rsRem
-                , schQty = qt
-                , schSMain = STuple sMain'
+                , schQty = qty
+                , schSMain = sMain'
                 , schVEmitOrigin = vEmitR
                 , schVsEmitAll = vSyms
                 }
           -- trace $ printf "[splitScheme (post)] %s" (show ans)
-          return (STuple sAux', Just ans)
+          return (sAux', Just ans)
   where
-    infoSS :: String = printf "[splitScheme] from (%s) to (%s)" (show s) (show rSplitTo)
+    infoSS :: String = printf
+      "[splitScheme] from (%s) to (%s)" (show s) (show rSplitTo)
     throwError'' = throwError' . ("[split] " ++)
-    errUnsupprtedTy = printf "Splitting a %s partition is unsupported." (show qt)
-    errXST = printf "No range beginning with %s cannot be found in `xSt`" to
+    errUnsupprtedTy = printf
+      "Splitting a %s partition is unsupported." (show qty)
+    errXST = printf
+      "No range beginning with %s cannot be found in `xSt`" to
     errSplitEN = "Splitting an EN partition is disallowed!"
 
 -- | Duplicate a phase type by allocating a new reference to its Repr if
@@ -467,8 +452,8 @@ getRangeSplits
   :: ( Has (Error String) sig m
      , Has (Reader IEnv) sig m
      )
-  => STuple -> Range -> m RangeSplits
-getRangeSplits s@(STuple (loc, p, (qty, dgrs))) rSplitTo@(Range to rstL rstR) = do
+  => Locus -> Range -> m RangeSplits
+getRangeSplits s@(Locus{loc, part=p, qty, degrees}) rSplitTo@(Range to rstL rstR) = do
   botHuh <- ($ rSplitTo) <$> isBotI
   case botHuh of
     _ | all (== Just True)  botHuh -> throwError' errBotRx
@@ -481,14 +466,14 @@ getRangeSplits s@(STuple (loc, p, (qty, dgrs))) rSplitTo@(Range to rstL rstR) = 
     Just (rRemL, _, rRemR, rOrigin, idx)  -> do
       rRemLeft <- contractRange rRemL
       rRemRight <- contractRange rRemR
-      let psRest = if isEN qty then [] else removeNth idx dgrs
+      let psRest = if isEN qty then [] else removeNth idx degrees
           rsRest = removeNth idx (unpackPart p)
       return $ RangeSplits
         { rsRLeft = rRemLeft
         , rsRRight = rRemRight
         , rsRSplit = rSplitTo
         , rsRFocused = rOrigin
-        , rsDFocused = head dgrs
+        , rsDFocused = head degrees
         , rsRsRest = rsRest
         , rsDsRest = psRest
         , rsRsRem = catMaybes [rRemLeft, rRemRight]
@@ -519,14 +504,14 @@ splitThenCastScheme
      , Has (Reader IEnv) sig m
      , Has (Error SCError) sig m
      )
-  => STuple
+  => Locus
   -> QTy
   -> Range
-  -> m ( STuple             -- the finally resolved partition
+  -> m ( Locus              -- the finally resolved partition
        , Maybe SplitScheme  -- May split if cast or not
        , Maybe CastScheme   -- May cast or not
        )
-splitThenCastScheme s'@(STuple (loc, p, (qt1, ptys))) qt2 rSplitTo =
+splitThenCastScheme s'@Locus{ loc, part, qty=qt1, degrees } qt2 rSplitTo =
   failureAsSCError . errTrace "`splitThenCastScheme`" $
   case (qt1, qt2) of
     (_, _) | isEN qt1 && qt1 == qt2 -> do
@@ -566,7 +551,7 @@ typingGuard
      , Has (Reader IEnv) sig m
      , Has Trace sig m
      )
-  => GuardExp -> m (STuple, Partition)
+  => GuardExp -> m (Locus, Partition)
 typingGuard (GEPartition s' _) = resolvePartition s' <&> (,s')
 
 -- | Type check if the given partition exists in the context
@@ -576,10 +561,10 @@ typingPartitionQTy
      , Has (Reader IEnv) sig m
      , Has Trace sig m
      )
-  => Partition -> QTy -> m STuple
+  => Partition -> QTy -> m Locus
 typingPartitionQTy s qt = do
-  st@(STuple tup) <- resolvePartition s
-  when (qt /= (tup ^. _3 ^. _1)) $ throwError' (errTypeMismatch st)
+  st <- resolvePartition s
+  when (qt /= qty st) $ throwError' (errTypeMismatch st)
   return st
   where
     errTypeMismatch st =
@@ -592,14 +577,14 @@ typingPartition
      , Has (Reader IEnv) sig m
      , Has Trace sig m
      )
-  => Partition -> m STuple
+  => Partition -> m Locus
 typingPartition s = do
-  st@(STuple(_, pResolved, qtResolved)) <- resolvePartition s
+  st@Locus{part=pResolved, qty=qtResolved} <- resolvePartition s
   when (List.sort (unpackPart s) /= List.sort (unpackPart pResolved)) $
     throwError' $ errIncompletePartition st
   return st
   where
-    errIncompletePartition st@(STuple(_, p, _)) =
+    errIncompletePartition st@(Locus{part=p}) =
       printf "The partition %s is a sub-partition of %s.\nResolved: %s"
       (show s) (show p) (show st)
 
@@ -669,7 +654,7 @@ retypePartition1
      , Has (State TState) sig m
      , Has (Gensym Emitter) sig m
      )
-  => STuple -> QTy -> m (Var, Ty, Var, Ty)
+  => Locus -> QTy -> m (Var, Ty, Var, Ty)
 retypePartition1 st qtNow = do
   schemeC <- retypePartition st qtNow
   let CastScheme{ schVsOldEmit=vsPrev
@@ -693,9 +678,9 @@ castScheme
      , Has (State TState) sig m
      , Has (Gensym Emitter) sig m
      )
-  => STuple -> QTy -> m (STuple, CastScheme)
+  => Locus -> QTy -> m (Locus, CastScheme)
 castScheme st qtNow = errTrace "`castScheme`" $ do
-  let STuple(locS, sResolved, (qtPrev, dgrs)) = st
+  let Locus{ loc=locS, part=sResolved, qty=qtPrev, degrees=dgrs } = st
   when (qtNow == qtPrev) $
     throwError @String  $ printf
      "Partition `%s` is of type `%s`. No retyping need to be done."
@@ -710,7 +695,7 @@ castScheme st qtNow = errTrace "`castScheme`" $ do
   sSt %= (at locS ?~ (sResolved, (qtNow, dgrs)))
   rsEDsNew <- genEDStSansPhaseByRanges qtNow $ unpackPart sResolved
   vsNewEmit <- mapM (visitED evBasis . snd) rsEDsNew
-  return ( STuple (locS, sResolved, (qtNow, dgrs))
+  return ( st { qty=qtNow }
          , CastScheme { schVsOldEmit=vsOldEmit
                       , schTOldEmit=tOldEmit
                       , schVsNewEmit=vsNewEmit
@@ -727,7 +712,7 @@ retypePartition
      , Has (State TState) sig m
      , Has (Gensym Emitter) sig m
      )
-  => STuple -> QTy -> m CastScheme
+  => Locus -> QTy -> m CastScheme
 retypePartition = (snd <$>) .: castScheme
 
 --------------------------------------------------------------------------------
@@ -798,19 +783,20 @@ mergeMatchedTState
     getQPTy ts r = evalState ts $ inferRangeTy r
 
 
--- | Merge the second STuple into the first one
+-- | Merge the second Locus into the first one
 -- FIXME: Check if phase type is correct!
 mergeScheme
   :: ( Has (State TState) sig m
      , Has (Error String) sig m
      , Has (Reader IEnv) sig m
      )
-  => STuple -- ^ Main
-  -> STuple -- ^ Servent
+  => Locus -- ^ Main
+  -> Locus -- ^ Servent
   -> m [MergeScheme]
 mergeScheme
-  stM'@(STuple (locMain, _, (qtMain, ptysMain)))
-  stA@(STuple (locAux, sAux@(Partition rsAux), (qtAux, ptysAuz))) = do
+  stM'@Locus{loc=locMain, qty=qtMain, degrees=ptysMain}
+  stA@Locus{loc=locAux, part=sAux@(Partition rsAux), qty=qtAux, degrees=ptysAuz} = do
+
   sSt %= (`Map.withoutKeys` Set.singleton locAux) -- GC aux's loc
   forM rsAux $ \rAux@(Range _ _ erAux) -> do
     -- fetch the latest 'rsMain'
@@ -864,17 +850,17 @@ lookupAdjacentRange rs r@(Range _ el er) = do
   return  [ r' | r'@(Range x' el' er') <- rs, er' ≡? el ]
 
 
--- | Given two STuples in EN type where the first is for the body partition and
+-- | Given two Loci in EN type where the first is for the body partition and
 -- the other one is for the guard partition.
 --
-mergeSTuplesHadEN
+mergeLociHadEN
   :: ( Has (State TState) sig m
      , Has (Error String) sig m
      )
-  => STuple -> STuple -> m ()
-mergeSTuplesHadEN
-  stM@(STuple (locMain, sMain@(Partition rsMain), (qtMain, ptysMain)))
-  stA@(STuple (locAux, sAux@(Partition rsAux), (qtAux, ptysAux))) =
+  => Locus -> Locus -> m ()
+mergeLociHadEN
+  stM@Locus{loc=locMain, part=sMain@(Partition rsMain), qty=qtMain, degrees=ptysMain}
+  stA@Locus{loc=locAux , part=sAux@(Partition rsAux)  , qty=qtAux , degrees=ptysAux} =
   do
     -- Sanity Check
     unless (qtMain == qtAux && qtAux == TEN) $
@@ -997,7 +983,7 @@ normalizeArguments es params = runState Map.empty $
 -- arguments to be emitted w.r.t. the calling convention.
 --
 -- Return a map from QVars to ranges passed, arguments to be emitted, and passed
--- STuples in the caller's context.
+-- Loci in the caller's context.
 resolveMethodApplicationArgs
   ::  ( Has (Gensym String) sig m
       , Has (Gensym Emitter) sig m
@@ -1009,7 +995,7 @@ resolveMethodApplicationArgs
       )
   => [Exp']
   -> MethodType
-  -> m (Map.Map Var Range, [Exp'], [(STuple, Maybe SplitScheme, Maybe CastScheme)])
+  -> m (Map.Map Var Range, [Exp'], [(Locus, Maybe SplitScheme, Maybe CastScheme)])
 resolveMethodApplicationArgs es
   MethodType { mtSrcParams=srcParams
              , mtInstantiate=instantiator
@@ -1107,7 +1093,7 @@ collectConstraints es = (Map.mapMaybe glb1 <$>) . execState Map.empty $
     flipLOp _   = Nothing
 
 
--- | Given an STuple for a fragment of a Had guard match in the current
+-- | Given an Locus for a fragment of a Had guard match in the current
 -- environment for a EN partition to be merged with this stuple.
 mergeCandidateHad
   :: ( Has (State TState) sig m
@@ -1115,14 +1101,15 @@ mergeCandidateHad
      , Has (Reader IEnv) sig m
      , Has Trace sig m
      )
-  => STuple -> m STuple
-mergeCandidateHad st@(STuple (_, Partition [r], (THad, ptys))) = do
+  => Locus -> m Locus
+mergeCandidateHad st@(Locus{part, qty=THad, degrees}) = do
   ps <- use sSt <&> Map.elems
   matched <- catMaybes <$> forM ps matchMergeable
   case matched of
     [p'] -> resolvePartition p'
     _    -> throwError' $ ambiguousCandidates matched
   where
+    [r] = ranges part
     matchMergeable (p'@(Partition rs), (TEN, ptysEN)) = do
       rsAdjacent <- lookupAdjacentRange rs r
       pure $ case rsAdjacent of
@@ -1208,16 +1195,16 @@ extendTState p@Partition{ranges} qt dgrs = do
   sLoc <- gensymLoc "requires"
   sSt %= (at sLoc ?~ (p, (qt, dgrs)))
   let xMap = [ (v, [(r, sLoc)]) | r@(Range v _ _) <- ranges ]
-  (edL, rEd) <- genEDStFromSTuple sLoc ranges qt dgrs
+  (edL, rEd) <- genEDStFromLocus sLoc ranges qt dgrs
   let eds = snd <$> rEd
   -- bdsEmit <- genEDStByRangesSansPhase qt (unpackPart p)
-  -- ptys <- allocPhaseType (STuple (sLoc, p, (qt, dgrs)))
+  -- ptys <- allocPhaseType (Locus (sLoc, p, (qt, dgrs)))
   vsEmit <- visitEDs evBasis eds
-  -- FIXME: redesign dgrs in STuple so that len(dgrs)==1+len(ranges)
+  -- FIXME: redesign dgrs in Locus so that len(dgrs)==1+len(ranges)
   let ptys = mapMaybe evPhaseTy (edL : eds)
   trace "* Die?"
   xSt %= Map.unionWith (++) (Map.fromListWith (++) xMap)
-  return $ (vsEmit, ptys)
+  return (vsEmit, ptys)
 
 extendTState'Degree
   :: ( Has (Gensym Emitter) sig m

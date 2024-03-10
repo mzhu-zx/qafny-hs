@@ -33,7 +33,7 @@ data Locus =
         , qty     :: QTy       -- * entanglement type
         , degrees :: [Int]     -- * degrees of phase info
         }
-
+  deriving (Show, Eq)
 
 instance Show STuple where
   show (STuple (loc, s, qt)) =
@@ -114,7 +114,7 @@ data SplitScheme = SplitScheme
   , schRTo         :: Range    -- | the range splitted _to_
   , schRsRem       :: [Range]  -- | the remainder range
   , schQty         :: QTy      -- | entanglement types
-  , schSMain       :: STuple   -- | the partition that was splitted _from_
+  , schSMain       :: Locus    -- | the partition that was splitted _from_
   , schVEmitOrigin :: Var      -- | the emit variable of the original range
   , schVsEmitAll   :: [Var]    -- | the emit variables of new ranges
   -- , schVsEmitPhaseAll :: [Maybe Var] -- | the emit variables of new phases

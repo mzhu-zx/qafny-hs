@@ -26,6 +26,7 @@ dependencies:
 - fused-effects-lens
 - recursion-schemes
 
+language: GHC2021
 
 ghc-options:
 - -Wall

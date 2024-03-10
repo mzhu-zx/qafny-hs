@@ -1,6 +1,5 @@
 {-# LANGUAGE
-    CPP
-  , DataKinds
+    DataKinds
   , FlexibleContexts
   , FlexibleInstances
   , MultiWayIf
@@ -43,35 +42,30 @@ import           Qafny.Gensym
 -- Utils
 import           Control.Lens
     (at, non, (%~), (?~), (^.))
-import           Control.Lens.Tuple
 import           Control.Monad
-    (MonadPlus (mzero), forM, forM_, liftM2, when, unless)
+    (MonadPlus (mzero), forM, forM_, unless, when)
 
-import           Control.Arrow
-    ((&&&))
 import           Data.Bifunctor
-import           Data.Bool
-    (bool)
 import           Data.Functor
     ((<&>))
-import qualified Data.List                    as List
 import           Data.List.NonEmpty
     (NonEmpty (..))
 import qualified Data.Map.Strict              as Map
 import           Data.Maybe
-    (catMaybes, mapMaybe)
+    (mapMaybe)
 import qualified Data.Sum                     as Sum
 import           Text.Printf
     (printf)
 
 -- Qafny
-import           Qafny.Codegen.Phase
-    (codegenPhaseLambda, codegenPromotion)
+import           Qafny.Codegen.Utils
+    (putOpt)
+
 import           Qafny.Config
 import           Qafny.Interval
     (Interval (Interval))
 import           Qafny.Partial
-    (Reducible (reduce), sizeOfRangeP)
+    (Reducible (reduce))
 import           Qafny.Syntax.AST
 import           Qafny.Syntax.ASTFactory
 import           Qafny.Syntax.Emit
@@ -79,18 +73,17 @@ import           Qafny.Syntax.Emit
 import           Qafny.Syntax.EmitBinding
 import           Qafny.Syntax.IR
 import           Qafny.TypeUtils
-    (bindingsFromPtys, emitTypeFromDegree, isEN, typingPhaseEmitReprN,
+    (bindingsFromPtys, emitTypeFromDegree, isEN,
     typingQEmit)
 import           Qafny.Typing
-    (Promotion (..), PromotionScheme (..), allocAndUpdatePhaseType,
+    (allocAndUpdatePhaseType,
     analyzePhaseSpecDegree, appkEnvWithBds, checkSubtype, checkSubtypeQ,
-    collectConstraints, collectMethodTypes, collectPureBindings, extendTState,
-    matchEmitStates, matchEmitStatesVars, matchStateCorrLoop, mergeCandidateHad,
-    mergeMatchedTState, mergeSTuplesHadEN, mergeScheme, promotionScheme,
-    queryPhaseType, removeTStateBySTuple, resolveMethodApplicationArgs,
+    collectConstraints, collectMethodTypes, collectPureBindings, extendTState, matchEmitStatesVars, matchStateCorrLoop, mergeCandidateHad,
+    mergeLociHadEN, mergeMatchedTState, mergeScheme,
+    queryPhaseType, removeTStateByLocus, resolveMethodApplicationArgs,
     resolveMethodApplicationRets, resolvePartition, resolvePartition',
-    resolvePartition'', resolvePartitions, retypePartition, retypePartition1,
-    specPartitionQTys, splitScheme, splitSchemePartition, splitThenCastScheme,
+    resolvePartitions, retypePartition1, specPartitionQTys,
+    splitScheme, splitSchemePartition, splitThenCastScheme,
     tStateFromPartitionQTys, typingExp, typingGuard, typingPartition,
     typingPartitionQTy)
 
@@ -98,22 +91,22 @@ import           Data.Sum
     (Injection (inj))
 import           Qafny.Codegen.Bindings
     (findEmitBindingsFromPartition)
+import           Qafny.Codegen.Lambda
+    (codegenLambdaEntangle, codegenUnaryLambda)
 import           Qafny.Codegen.Method
     (codegenMethodParams, genEmitSt)
+import           Qafny.Codegen.SplitCast      hiding
+    (throwError')
 import           Qafny.Typing.Error
+import           Qafny.Typing.Range
+    (areRangesEquiv)
 import           Qafny.Utils.EmitBinding
 import           Qafny.Utils.Emitter.Compat
     (findEmitRanges)
+import           Qafny.Utils.TraceF
+    (Traceable (tracef))
 import           Qafny.Utils.Utils
     (checkListCorr, dumpSt, fst2, gensymLoc, getMethodType, onlyOne, uncurry3)
-import Qafny.Typing.Range (areRangesEquiv)
-import Text.Read (Lexeme(String))
-
-throwError'
-  :: ( Has (Error String) sig m )
-  => String -> m a
-throwError' = throwError @String . ("[Codegen] " ++)
-
 
 first3 :: (a -> d) -> (a, b, c) -> (d, b, c)
 first3 f (a, b, c) = (f a, b, c)
@@ -131,18 +124,11 @@ first3 f (a, b, c) = (f a, b, c)
 -- $doc
 --------------------------------------------------------------------------------
 
---------------------------------------------------------------------------------
--- * Splits
---------------------------------------------------------------------------------
--- put Stmt's anyway
-putPure :: Has (Reader Bool) sig m
-        => [Stmt'] -> m [Stmt']
-putPure = pure
 
--- put Stmt's only if it's allowed
-putOpt :: Has (Reader Bool) sig m => m [a] -> m [a]
-putOpt s = do
-  bool (pure []) s =<< ask
+throwError'
+  :: ( Has (Error String) sig m )
+  => String -> m a
+throwError' = throwError @String . ("[Codegen] " ++)
 
 --------------------------------------------------------------------------------
 -- * Codegen
@@ -403,13 +389,13 @@ codegenStmt' s@(_ :*=: _) =
 
 codegenStmt' (SIf e seps b) = do
   -- resolve the type of the guard
-  (stG'@(STuple (_, _, (qtG, ptysG))), pG) <- typingGuard e
+  (stG'@Locus{qty=qtG, degrees=ptysG}, pG) <- typingGuard e
   -- perform a split to separate the focused guard range from parition
   (stG, maySplit) <- splitSchemePartition stG' pG
   stmtsSplit <- codegenSplitEmitMaybe maySplit
   -- resolve and collect partitions in the body of the IfStmt
   -- analogous to what we do in SepLogic
-  stB'@(STuple( _, sB, (qtB, ptysB))) <-
+  stB'@Locus{part=sB, qty=qtB, degrees=ptysB} <-
     resolvePartitions . leftPartitions . inBlock $ b
   let annotateCastB = qComment $
         printf "Cast Body Partition %s => %s" (show qtB) (show TEN)
@@ -435,9 +421,9 @@ codegenStmt' (SCall x eargs) = do
   mty <- maybe errNoAMethod return mtyMaybe
   (envArgs, resolvedArgs, rSts) <- resolveMethodApplicationArgs eargs mty
   stmtsSC <- forM rSts codegenStupleSplitCast
-  forM_ rSts $ removeTStateBySTuple . fst3
+  forM_ rSts $ removeTStateByLocus . fst3
   rets <- resolveMethodApplicationRets envArgs mty
-  pure $ concat stmtsSC ++ [SEmit (rets :*:=: EEmit (ECall x resolvedArgs))]
+  pure $ concat stmtsSC ++ [SEmit (rets :*:=: [EEmit (ECall x resolvedArgs)])]
   where
     fst3 (a, _, _) = a
     codegenStupleSplitCast (_, mS, mC) =
@@ -471,7 +457,7 @@ codegenStmt'Apply (s :*=: EHad) = do
   r <- case unpackPart s of
     [r] -> return r
     _   -> throwError "TODO: support non-singleton partition in `*=`"
-  st@(STuple(_, _, (qt, _))) <- resolvePartition s
+  st@Locus{qty=qt} <- resolvePartition s
   opCast <- opCastHad qt
   -- run split semantics here!
   (stSplit, ssMaybe) <- splitScheme st r
@@ -485,94 +471,32 @@ codegenStmt'Apply (s :*=: EHad) = do
     opCastHad t = throwError $ "type `" ++ show t ++ "` cannot be casted to Had type"
 
 codegenStmt'Apply
-  stmt@(s@(Partition {ranges}) :*=: (ELambdaF lam)) = do
+  stmt@(s@(Partition {ranges}) :*=: (ELambda lam)) = do
 
-  -- FIXME: `resolve` fails on inter-locus ranges. 
+  -- FIXME: `resolve` fails on inter-locus ranges.
   -- I should apply cast before the resolution occurs to entangle two
   -- previously disjoint partitions.
-  (locusS, rMapS) <- resolvePartition'' s
+  (locusS, rMapS) <- resolvePartition' s
 
   -- FIXME : qt' & qtLambda stuff should be turned into something better
   qtLambda <- ask
-  checkSubtypeQ qt' qtLambda
+  checkSubtypeQ (qty locusS) qtLambda
 
-  -- ranges must be complete  
-  unless (areRangesEquiv rMapS) $ throwError' errRangesAreProper
-
-  r@(Range _ erLower erUpper) <- case ranges of
-    []  -> throwError "Parser says no!"
-    [x] -> return x
-    _   -> throwError errRangeGt1
-
-  -- do the type cast and split first
-  (STuple (_, _, (qt, _)), maySplit, mayCast) <-
-    hdlSC st' $ splitThenCastScheme st' qtLambda r
-  stmts <- codegenSplitThenCastEmit maySplit mayCast
-
-  -- resolve again for consistency
-  (stS', corr') <- resolvePartition' s
-
-  -- handle promotions in phases
-  stmtsPhase <- case ePhase of
-    Just pexp -> do
-      promoteMaybe <- promotionScheme stS' bPhase pexp;
-      case promoteMaybe of
-        Just promote -> codegenPromotion promote
-        Nothing      -> codegenPhaseLambda stS' bPhase pexp
-    Nothing   -> pure []
-
-  -- resolve againnnnn for consistency
-  (stS', corr') <- resolvePartition' s
-
-  rSt@(Range _ esLower esUpper) <-
-    maybe (throwError' (errNotInCorr r corr')) return
-    $ lookup (reduce r) (first reduce <$> corr')
-
-  trace $ printf "LEFT: %s, RIGHT: %s" (show r) (show rSt)
-  -- | It's important not to use the fully resolved `s` here because the OP
-  -- should only be applied to the sub-partition specified in the annotation.
-  ~[vEmit] <- findEmitRanges $ unpackPart s
-  ((stmts ++) . (stmtsPhase ++) <$>) . putOpt $ case qtLambda of
-    TEN -> return [ mkMapCall vEmit ]
-    TEN01 -> do
-      vInner <- gensym "lambda_x"
-      let offset = erLower - esLower
-      let lambda = lambdaSplit vEmit offset (erUpper - offset)
-      return [ vEmit ::=: callMap lambda (EVar vEmit) ]
-    TNor -> do
-      let offset = erLower - esLower
-      let body = bodySplit vEmit offset (erUpper - erLower + offset)
-      return [ vEmit ::=: body ]
-    _    -> throwError' "I have no idea what to do in this case ..."
+  -- ranges must be complete
+  case rMapS of
+    [] -> throwError' "The parition specified on the LHS is empty!"
+    [(rLhs, rResolved)] ->
+      codegenUnaryLambda rLhs rResolved locusS qtLambda lam
+    _ -> do
+      -- do the complicated case
+      unless (areRangesEquiv rMapS) $ throwError' (errRangesAreProper rMapS)
+      codegenLambdaEntangle ranges lam
   where
-    LambdaF {ePhase, bPhase, eBases, bBases} = lam
-    hdlSC stuple m  = do
-      a <- ErrE.runError @SCError m
-      case a of
-        -- Left (SplitENError{}) -> return (stuple, Nothing, Nothing)
-        Left err -> throwError $ show err
-        Right v  -> return v
-
-    errNotInCorr r corr = printf "%s is not in the corr. %s" (show r) (show corr)
-    errRangeGt1 :: String
-    errRangeGt1 = printf "%s contains more than 1 range no!" (show ranges)
-
     errRangesAreProper :: [(Range, Range)] -> String
     errRangesAreProper rMap = printf
       "Ranges given on the LHS of the application contains some incomplete range(s).\n%s"
-      (showEmit0 rMap)
+      (showEmit0 $ byLineT rMap)
 
-    -- split a sequence into 3 parts and apply the operation 'f' to the second
-    -- one.
-    splitMap3 v el er f = EOpChained (sliceV v 0 el) $
-      (OAdd,) <$> [ callMap f (sliceV v el er)
-                  , sliceV v er (cardV v)
-                  ]
-    bodySplit v el er =  EEmit $ splitMap3 v el er (lambdaUnphase eLamPure)
-
-    lambdaSplit v el er = simpleLambda v (bodySplit v el er)
-    mkMapCall v = v ::=: callMap eLamPure (EVar v)
-    eLamPure = lambdaUnphase eLam
 
 codegenStmt'Apply (s :*=: EQFT) = undefined
 
@@ -597,10 +521,10 @@ codegenStmt'If
 
 codegenStmt'If (SIf e _ b) = do
   -- resolve the type of the guard
-  (stG@(STuple (_, _, (qtG, _))), pG) <- typingGuard e
+  (stG@Locus{qty=qtG}, pG) <- typingGuard e
   trace $ printf "Partitions collected from %s:\n%s" (showEmit0 e) (showEmit0 pG)
   -- resolve the body partition
-  stB'@(STuple( _, sB, (qtB, _))) <- resolvePartitions . leftPartitions . inBlock $ b
+  stB'@Locus{part=sB, qty=qtB} <- resolvePartitions . leftPartitions . inBlock $ b
   let annotateCastB = qComment $
         printf "Cast Body Partition %s => %s" (show qtB) (show TEN)
   (stmtsCastB, stB) <- case qtB of
@@ -626,11 +550,11 @@ codegenStmt'If'Had
      , Has (Reader Bool) sig m
      , Has Trace sig m
      )
-  => STuple -> STuple -> Block'
+  => Locus -> Locus -> Block'
   -> m [Stmt']
 codegenStmt'If'Had stG stB' b = do
   -- 0. extract partition, this will not be changed
-  let sB = unSTup stB' ^. _2
+  let sB = part stB'
   -- 1. duplicate the body partition
   (stmtsDupB, corr) <- dupState sB
   -- 2. codegen the body
@@ -806,12 +730,14 @@ codegenFor'Body
   -> Exp'   -- ^ upper bound
   -> GuardExp   -- ^ guard expression
   -> Block' -- ^ body
-  -> STuple -- ^ the partition to be merged into
+  -> Locus -- ^ the partition to be merged into
   -> [Exp'] -- ^ emitted invariants
   -> m [Stmt']
-codegenFor'Body idx boundl boundr eG body stSep@(STuple (_, Partition rsSep, (qtSep, _))) newInvs = do
+codegenFor'Body idx boundl boundr eG body stSep@(Locus{qty=qtSep}) newInvs = do
+
   let psBody = leftPartitions . inBlock $ body
-  (stG@(STuple (_, sG, (qtG, _))), pG) <- typingGuard eG
+  -- FIXME: what's the difference between pG and sG here?
+  (stG@Locus{ part=sG, qty=qtG }, pG) <- typingGuard eG
   trace $ printf "The guard partition collected from %s is %s" (showEmit0 eG) (showEmit0 pG)
   trace $ printf "From invariant typing, the guard partition is %s from %s" (showEmit0 pG) (show stG)
 
@@ -819,12 +745,13 @@ codegenFor'Body idx boundl boundr eG body stSep@(STuple (_, Partition rsSep, (qt
 
   (stmtsPrelude, stmtsBody) <- case qtG of
     THad -> do
-      stB'@(STuple (_, sB, (qtB, _))) <- resolvePartitions psBody
+      stB'@Locus{part=sB, qty=qtB} <- resolvePartitions psBody
 
       -- It seems that castEN semantics maybe unnecessary with invariant typing?
       (stmtsCastB, stB) <- case qtB of
         _ | isEN qtB -> return ([], stB')
-        _            -> (,) <$> castPartitionEN stB' <*> resolvePartition (unSTup stB' ^. _2)
+        _            ->
+          (,) <$> castPartitionEN stB' <*> resolvePartition (part stB')
 
       -- what to do with the guard partition is unsure...
       -- TODO: This comment seems out-of-date
@@ -851,7 +778,7 @@ codegenFor'Body idx boundl boundr eG body stSep@(STuple (_, Partition rsSep, (qt
       --       [ qComment "Retype from Had to EN and initialize with 0"
       --       , (::=:) vEmitG $
       --           EEmit $ EMakeSeq TNat cardVEmitG $ constExp $ ENum 0 ]
-      stG' <- resolvePartition (unSTup stGSplited ^. _2)
+      stG' <- resolvePartition (part stGSplited)
       stmtsCGHad <- codegenStmt'For'Had stB stG' idx body
       dumpSt "the end of Had for loop"
       stmtsMatchLoopBeginEnd <- codegenMatchLoopBeginEnd . inferTsLoopEnd $ stateIterBegin ^. emitSt
@@ -923,6 +850,7 @@ codegenFor'Body idx boundl boundr eG body stSep@(STuple (_, Partition rsSep, (qt
   let innerFor = SEmit $ SForEmit idx boundl boundr newInvs $ Block stmtsBody
   return $ stmtsPrelude ++ [innerFor]
   where
+    rsSep = ranges $ part stSep
     inferTsLoopEnd =  subst [(idx, EVar idx + 1)]
     codegenHalf psBody = do
       -- 2. generate the body statements with the hint that lambda should
@@ -970,14 +898,14 @@ codegenStmt'For'Had
      , Has (Gensym Emitter) sig m
      , Has Trace sig m
      )
-  => STuple -> STuple -> Var -> Block'
+  => Locus -> Locus -> Var -> Block'
   -> m [Stmt']
 codegenStmt'For'Had stB stG vIdx b = do
   -- 0. extract partition, this will not be changed
-  let sB = unSTup stB ^. _2
+  let sB = part stB
   -- 1. duplicate the body
   (stmtsDupB, corrB) <- dupState sB
-  trace $ ">>>>>\n" ++ showEmitI 4 (byLineT stmtsDupB)
+  () <- tracef ">>>>> \n%s" (showEmitI 4 (byLineT stmtsDupB))
   -- 3. codegen the body
   stmtB <- SEmit . SBlock <$> codegenBlock b
 
@@ -1009,7 +937,7 @@ mergeHadGuard
      , Has (Reader IEnv) sig m
      , Has Trace sig m
      )
-  => STuple -> STuple -> Exp' -> Exp' -> m [Stmt']
+  => Locus -> Locus -> Exp' -> Exp' -> m [Stmt']
 mergeHadGuard = mergeHadGuardWith (ENum 0)
 
 
@@ -1029,11 +957,11 @@ mergeHadGuardWith
      , Has (Reader IEnv) sig m
      , Has Trace sig m
      )
-  => Exp' -> STuple -> STuple -> Exp' -> Exp' -> m [Stmt']
+  => Exp' -> Locus -> Locus -> Exp' -> Exp' -> m [Stmt']
 mergeHadGuardWith eBase stG' stB cardBody cardStashed = do
   (_, _, vGENow, tGENow) <- retypePartition1 stG' TEN
-  stG <- resolvePartition (unSTup stG' ^. _2)
-  mergeSTuplesHadEN stB stG
+  stG <- resolvePartition (part stG')
+  mergeLociHadEN stB stG
   return $ hadGuardMergeExp vGENow tGENow cardBody cardStashed eBase
 
 hadGuardMergeExp :: Var -> Ty -> Exp' -> Exp' -> Exp' -> [Stmt']
@@ -1108,189 +1036,7 @@ codegenAlloc v e@(EOp2 ONor _ _) _ =
   throwError "Internal: Attempt to create a Nor partition that's not of nor type"
 codegenAlloc v e _ = return $ (::=:) v e
 
---------------------------------------------------------------------------------
--- * Cast Semantics
---------------------------------------------------------------------------------
-codegenCastEmitMaybe
-  :: ( Has (Error String) sig m)
-  => Maybe CastScheme -> m [Stmt']
-codegenCastEmitMaybe =
-  maybe (return []) codegenCastEmit
 
-
-codegenCastEmit
-  :: ( Has (Error String) sig m)
-  => CastScheme -> m [Stmt']
-codegenCastEmit
-  CastScheme{ schVsOldEmit=vsOldEmits
-            , schVsNewEmit=vsNewEmit
-            , schQtNew=qtNew
-            , schQtOld=qtOld
-            , schRsCast=rsCast
-            } = do
-  op <- mkOp qtOld qtNew
-  return . concat $
-      [ [ qComment $ "Cast " ++ show qtOld ++ " ==> " ++ show qtNew
-        , (::=:) vNew $ EEmit (op rCast  `ECall` [EEmit $ EDafnyVar vOld])
-        ]
-      | (vOld, vNew, rCast) <- zip3 vsOldEmits vsNewEmit rsCast ]
-  where
-    -- | Consume /from/ and /to/ types and return a function that consumes a
-    -- range and emit a specialized cast operator based on the property of the
-    -- range passed in
-    mkOp TNor TEN   = return $ const "CastNorEN"
-    mkOp TNor TEN01 = return $ const "CastNorEN01"
-    mkOp TNor THad  = return $ const "CastNorHad"
-    mkOp THad TEN01 = return $ \r -> case sizeOfRangeP r of
-      Just 1 -> "CastHadEN01'1"
-      _      -> "CastHadEN01"
-    mkOp _    _     = throwError err
-    err :: String = printf "Unsupport cast from %s to %s." (show qtOld) (show qtNew)
-
--- | Convert quantum type of `s` to `newTy` and emit a cast statement with a
--- provided `op`
-castWithOp
-  :: ( Has (Error String) sig m
-     , Has (State TState) sig m
-     , Has (Gensym Emitter) sig m
-     )
-  => String -> STuple -> QTy -> m [Stmt']
-castWithOp op s newTy =
-  do
-    schemeC <- retypePartition s newTy
-    let CastScheme{ schVsOldEmit=vsOldEmits , schVsNewEmit=vsNewEmit} = schemeC
-    let partitionTy = unSTup s ^. _3
-    -- assemble the emitted terms
-    return . concat $
-      [ [ qComment $ "Cast " ++ show partitionTy ++ " ==> " ++ show newTy
-        , (::=:) vNew $ EEmit (op `ECall` [EEmit $ EDafnyVar vOld])
-        ]
-      | (vOld, vNew) <- zip vsOldEmits vsNewEmit ]
-
-
--- | Cast the given partition to EN type!
-castPartitionEN
-  :: ( Has (Error String) sig m
-     , Has (State TState) sig m
-     , Has (Gensym Emitter) sig m
-     )
-  => STuple -> m [Stmt']
-castPartitionEN st@(STuple (locS, s, (qtS, _))) = do
-  case qtS of
-    TNor -> castWithOp "CastNorEN" st TEN
-    THad -> castWithOp "CastHadEN" st TEN
-    TEN -> throwError' $
-      printf "Partition `%s` is already of EN type." (show st)
-    TEN01 -> throwError' $
-      printf "Casting %s to TEN is expensive therefore not advised!" (show qtS)
-
--- | Duplicate the data, i.e. sequences to be emitted, by generating statements
--- that duplicates the data as well as the correspondence between the range
--- bindings, emitted variables from the fresh copy and the original emitted
--- varaibles.
---
--- However, this does not add the generated symbols to the typing environment or
--- modifying the existing bindings!
---
-dupState
-  :: ( Has (Error String) sig m
-     , Has (State TState) sig m
-     , Has (Gensym Emitter) sig m
-     , Has (Reader IEnv) sig m
-     , Has Trace sig m
-     )
-  => Partition -> m ([Stmt'], [(Var, Var)])
-dupState s' = do
-  STuple (locS, s, (qtS, ptys)) <- resolvePartition s'
-  let rs = ranges s
-  -- generate a set of fresh emit variables as the stashed partition
-  -- do not manipulate the `emitSt` here
-  vsEmitFresh <- genEDByRangeSansPhase qtS `mapM` rs >>= visitEDsBasis
-  -- the only place where state is used!
-  vsEmitPrev  <- findEmitBasesByRanges rs
-  let comm = qComment "Duplicate"
-  let stmts = [ (::=:) vEmitFresh (EVar vEmitPrev)
-              | (vEmitFresh, vEmitPrev) <- zip vsEmitFresh vsEmitPrev ]
-  return (comm : stmts, zip vsEmitPrev vsEmitFresh)
-
--- | Assemble a partition collected from the guard with bounds and emit a
--- verification time assertions that checks the partition is indeed within the
--- bound.
---
--- Precondition: Split has been performed at the subtyping stage so that it's
--- guaranteed that only one range can be in the partition
---
-makeLoopRange
-  :: Has (Error String) sig m
-  => Partition -> Exp' -> Exp' -> m (Range, Exp')
-makeLoopRange (Partition [Range r sl sh]) l h =
-  return
-    ( Range r l h
-    , EEmit (EOpChained l [(OLe, sl), (OLt, sh), (OLe, h)])
-    )
-makeLoopRange s _ _ =
-  throwError $
-    "Partition `"
-      ++ show s
-      ++ "` contains more than 1 range, this should be resolved at the typing stage"
-
-
---------------------------------------------------------------------------------
--- * Split Semantics
---------------------------------------------------------------------------------
-codegenSplitEmitMaybe
-  :: ( Has (Error String) sig m
-     )
-  => Maybe SplitScheme
-  -> m [Stmt']
-codegenSplitEmitMaybe = maybe (return []) codegenSplitEmit
-
--- | Generate emit variables and split operations from a given split scheme.
--- FIXME: implement split for phases as well
-codegenSplitEmit
-  :: ( Has (Error String) sig m
-     )
-  => SplitScheme
-  -> m [Stmt']
-codegenSplitEmit
-  ss@SplitScheme { schQty=qty
-                 , schROrigin=rOrigin@(Range x left _)
-                 , schRTo=rTo
-                 , schRsRem=rsRem
-                 , schVEmitOrigin=vEmitOrigin
-                 , schVsEmitAll=vEmitAll
-                 } =
-  -- trace ("codegenSplitEmit: " ++ show ss) >>
-  case qty of
-    t | t `elem` [ TNor, THad, TEN01 ] -> do
-      let offset e = reduce $ EOp2 OSub e left
-      let stmtsSplit =
-            [ [ (vEmitNew ::=:) $
-                EEmit (ESlice (EVar vEmitOrigin) (offset el) (offset er))
-              , infoWeirdAssertionNeeded
-              , SAssert (EOp2 OEq
-                          (EEmit (ESlice (EVar vEmitOrigin) (offset el) (offset er)))
-                          (EEmit (ESlice (EVar vEmitNew) 0 (reduce (er - el)))))
-              ]
-            | (vEmitNew, Range _ el er) <- zip (schVsEmitAll ss) (rTo : rsRem) ]
-      return . concat $ stmtsSplit
-    _    -> throwError @String $ printf "Splitting a %s partition is unsupported." (show qty)
-  where
-    infoWeirdAssertionNeeded = qComment "I have no idea why this assertion about equality is necessary...."
-
---------------------------------------------------------------------------------
--- * Split & Cast Semantics
---------------------------------------------------------------------------------
-codegenSplitThenCastEmit
-  :: ( Has (Error String) sig m
-     , Has Trace sig m
-     )
-  => Maybe SplitScheme
-  -> Maybe CastScheme
-  -> m [Stmt']
-codegenSplitThenCastEmit sS sC = do
-  trace "* codegenSplitThenCastEmit"
-  (++) <$> codegenSplitEmitMaybe sS <*> codegenCastEmitMaybe sC
 
 --------------------------------------------------------------------------------
 -- * Merge Semantics
@@ -1376,9 +1122,8 @@ codegenRangeRepr
      , Has Trace sig m
      )
   => Range -> m Var
-codegenRangeRepr r = do
-  STuple(_, _, (qt, _)) <- resolvePartition (Partition [r])
-  findEmitBasisByRange r
+codegenRangeRepr r =
+  resolvePartition (Partition [r]) >> findEmitBasisByRange r
 
 
 -- | Generate predicates for require clauses
@@ -1477,7 +1222,7 @@ codegenAssertion'
      )
   => Exp' -> m [Exp']
 codegenAssertion' (ESpec s qt espec) = do
-  st@(STuple (_, _, (_, dgrs))) <- typingPartitionQTy s qt
+  st@Locus{degrees=dgrs} <- typingPartitionQTy s qt
   vsEmit <- findEmitBasesByRanges (ranges s)
   qtys <- queryPhaseType st
   codegenSpecExp (zip vsEmit (unpackPart s)) qt espec qtys
