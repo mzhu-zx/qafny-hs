@@ -287,7 +287,7 @@ showExp e = show e
 -- | EmitExp : Unsafe Expressions for Codegen Only
 data EmitExp
   = EMtSeq
-  | EMakeSeq Ty (Exp ()) Exp'
+  | EMakeSeq Ty Exp' Exp'
   | ECard (Exp ())
   | ECall Var [Exp ()]
   | ESelect (Exp ()) (Exp ())
@@ -384,7 +384,7 @@ data EmitStmt
   | SBlock (Block ())
   | SForEmit Var (Exp ()) (Exp ()) [Exp ()] (Block ())
   | SVars [Binding ()] (Exp ())
-  | (:*:=:) [Var] (Exp ())
+  | (:*:=:) [Var] [Exp']
   deriving (Show, Eq)
 
 type AST = [Toplevel ()]

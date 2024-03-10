@@ -20,8 +20,6 @@ import           Qafny.Syntax.EmitBinding
 import           Text.Printf
     (printf)
 
--- FIXME : Re-organize this module into Qafny.Syntax.IR
-
 --------------------------------------------------------------------------------
 -- High-Order Types
 --------------------------------------------------------------------------------
@@ -62,7 +60,7 @@ type EmitState = Map.Map RangeOrLoc EmitData
 
 data TState = TState
   { _sSt    :: Map.Map Loc (Partition, (QTy, [Int])) -- partition type state
-  , _xSt    :: Map.Map Var [(Range, Loc)] -- range reference state
+  , _xSt    :: Map.Map Var [(Range, Loc)]            -- range reference state
   , _emitSt :: EmitState
   }
 
@@ -87,20 +85,13 @@ instance Reducible TState where
 $(makeLenses ''TState)
 $(makeLenses ''TEnv)
 
-
--- instance Substitutable TState where
---   subst aenv ts@TState{_sSt=sSt', _xSt=xSt'} =
---     ts { _sSt=subst aenv <$> sSt'
---        , _xSt=subst aenv <$> xSt'
---        }
---   fVars TState{_sSt=sSt', _xSt=xSt'} =
---     concatMap fVars sSt' ++ concatMap fVars xSt'
-
 instance Show TState where
   show st = "\n  Partition Reference State:\n    " ++
             (intercalate "\n    " . map show . Map.toList) (st ^. xSt) ++
             "\n  Partition State:\n    " ++
-            (intercalate "\n    " . map show . ((\(x, (y,z)) -> STuple (x, y, z)) <$>) . Map.toList) (st ^. sSt) ++
+            (intercalate "\n    " .
+             map show . ((\(x, (y,z)) -> STuple (x, y, z)) <$>) . Map.toList)
+            (st ^. sSt) ++
             "\n  Renaming State:\n    " ++
             (intercalate "\n    " . map show . Map.toList) (st ^. emitSt)
 
@@ -148,10 +139,10 @@ data MergeScheme
   deriving Show
 
 data EqualStrategy = EqualStrategy
-  { esRange :: Range -- the range
-  , esQTy   :: QTy   -- QTy of the corresponding range
-  , esVMain :: Var   -- the var to stay
-  , esVAux  :: Var   -- the var to be absorbed
+  { esRange :: Range -- ^ range
+  , esQTy   :: QTy   -- ^ QTy of the corresponding range
+  , esVMain :: Var   -- ^ the var to stay
+  , esVAux  :: Var   -- ^ the var to be absorbed
   }
   deriving Show
 

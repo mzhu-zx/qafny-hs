@@ -45,7 +45,7 @@ import           Control.Lens
     (at, non, (%~), (?~), (^.))
 import           Control.Lens.Tuple
 import           Control.Monad
-    (MonadPlus (mzero), forM, forM_, liftM2, when)
+    (MonadPlus (mzero), forM, forM_, liftM2, when, unless)
 
 import           Control.Arrow
     ((&&&))
@@ -68,7 +68,6 @@ import           Text.Printf
 import           Qafny.Codegen.Phase
     (codegenPhaseLambda, codegenPromotion)
 import           Qafny.Config
-import           Qafny.Syntax.IR
 import           Qafny.Interval
     (Interval (Interval))
 import           Qafny.Partial
@@ -78,6 +77,7 @@ import           Qafny.Syntax.ASTFactory
 import           Qafny.Syntax.Emit
     (DafnyPrinter, byLineT, showEmit0, showEmitI)
 import           Qafny.Syntax.EmitBinding
+import           Qafny.Syntax.IR
 import           Qafny.TypeUtils
     (bindingsFromPtys, emitTypeFromDegree, isEN, typingPhaseEmitReprN,
     typingQEmit)
@@ -89,8 +89,8 @@ import           Qafny.Typing
     mergeMatchedTState, mergeSTuplesHadEN, mergeScheme, promotionScheme,
     queryPhaseType, removeTStateBySTuple, resolveMethodApplicationArgs,
     resolveMethodApplicationRets, resolvePartition, resolvePartition',
-    resolvePartitions, retypePartition, retypePartition1, specPartitionQTys,
-    splitScheme, splitSchemePartition, splitThenCastScheme,
+    resolvePartition'', resolvePartitions, retypePartition, retypePartition1,
+    specPartitionQTys, splitScheme, splitSchemePartition, splitThenCastScheme,
     tStateFromPartitionQTys, typingExp, typingGuard, typingPartition,
     typingPartitionQTy)
 
@@ -106,6 +106,8 @@ import           Qafny.Utils.Emitter.Compat
     (findEmitRanges)
 import           Qafny.Utils.Utils
     (checkListCorr, dumpSt, fst2, gensymLoc, getMethodType, onlyOne, uncurry3)
+import Qafny.Typing.Range (areRangesEquiv)
+import Text.Read (Lexeme(String))
 
 throwError'
   :: ( Has (Error String) sig m )
@@ -483,12 +485,20 @@ codegenStmt'Apply (s :*=: EHad) = do
     opCastHad t = throwError $ "type `" ++ show t ++ "` cannot be casted to Had type"
 
 codegenStmt'Apply
-  stmt@(s@(Partition {ranges}) :*=: eLam@(ELambda pbinder _ pexpMaybe _)) = do
-  (st'@(STuple (_, _, (qt', _))), corr) <- resolvePartition' s
+  stmt@(s@(Partition {ranges}) :*=: (ELambdaF lam)) = do
+
+  -- FIXME: `resolve` fails on inter-locus ranges. 
+  -- I should apply cast before the resolution occurs to entangle two
+  -- previously disjoint partitions.
+  (locusS, rMapS) <- resolvePartition'' s
+
+  -- FIXME : qt' & qtLambda stuff should be turned into something better
   qtLambda <- ask
   checkSubtypeQ qt' qtLambda
-  -- compute the correspondence between range written and the range in partition
-  -- record
+
+  -- ranges must be complete  
+  unless (areRangesEquiv rMapS) $ throwError' errRangesAreProper
+
   r@(Range _ erLower erUpper) <- case ranges of
     []  -> throwError "Parser says no!"
     [x] -> return x
@@ -503,12 +513,12 @@ codegenStmt'Apply
   (stS', corr') <- resolvePartition' s
 
   -- handle promotions in phases
-  stmtsPhase <- case pexpMaybe of
+  stmtsPhase <- case ePhase of
     Just pexp -> do
-      promoteMaybe <- promotionScheme stS' pbinder pexp;
+      promoteMaybe <- promotionScheme stS' bPhase pexp;
       case promoteMaybe of
         Just promote -> codegenPromotion promote
-        Nothing      -> codegenPhaseLambda stS' pbinder pexp
+        Nothing      -> codegenPhaseLambda stS' bPhase pexp
     Nothing   -> pure []
 
   -- resolve againnnnn for consistency
@@ -535,6 +545,7 @@ codegenStmt'Apply
       return [ vEmit ::=: body ]
     _    -> throwError' "I have no idea what to do in this case ..."
   where
+    LambdaF {ePhase, bPhase, eBases, bBases} = lam
     hdlSC stuple m  = do
       a <- ErrE.runError @SCError m
       case a of
@@ -545,6 +556,11 @@ codegenStmt'Apply
     errNotInCorr r corr = printf "%s is not in the corr. %s" (show r) (show corr)
     errRangeGt1 :: String
     errRangeGt1 = printf "%s contains more than 1 range no!" (show ranges)
+
+    errRangesAreProper :: [(Range, Range)] -> String
+    errRangesAreProper rMap = printf
+      "Ranges given on the LHS of the application contains some incomplete range(s).\n%s"
+      (showEmit0 rMap)
 
     -- split a sequence into 3 parts and apply the operation 'f' to the second
     -- one.

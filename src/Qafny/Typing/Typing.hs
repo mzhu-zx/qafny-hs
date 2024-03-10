@@ -34,7 +34,6 @@ import           Effect.Gensym
     (Gensym, gensym)
 
 -- Qafny
-import           Qafny.Syntax.IR
 import           Qafny.Error
     (QError (..))
 import           Qafny.Interval
@@ -44,11 +43,13 @@ import           Qafny.Syntax.AST
 import           Qafny.Syntax.Emit
     (DafnyPrinter (build), byComma, byLineT, showEmit0, showEmitI)
 import           Qafny.Syntax.EmitBinding
+import           Qafny.Syntax.IR
 import           Qafny.TypeUtils
 import           Qafny.Typing.Phase           hiding
     (throwError')
 import           Qafny.Utils.Utils
-    (checkListCorr, dumpSt, exp2AExp, gensymLoc, rethrowMaybe, uncurry3, errTrace)
+    (checkListCorr, dumpSt, errTrace, exp2AExp, gensymLoc, rethrowMaybe,
+    uncurry3)
 
 import           Qafny.Utils.EmitBinding
 
@@ -62,7 +63,7 @@ import           Control.Lens.Tuple
 import           Control.Monad
     (forM, forM_, liftM2, mapAndUnzipM, unless, when, zipWithM, (>=>))
 import           Data.Bifunctor
-    (Bifunctor (second))
+    (Bifunctor (first, second))
 import           Data.Bool
     (bool)
 import           Data.Functor
@@ -87,7 +88,6 @@ import           Qafny.Typing.Error
     (SCError (SplitENError, SplitOtherError), failureAsSCError, hdlSCError)
 import           Text.Printf
     (printf)
-
 
 throwError'
   :: ( Has (Error String) sig m )
@@ -143,6 +143,21 @@ resolvePartition
   => Partition -> m STuple
 resolvePartition = (fst <$>) . resolvePartition'
 
+resolvePartition''
+  :: ( Has (State TState) sig m
+     , Has (Error String) sig m
+     , Has (Reader IEnv) sig m
+     , Has Trace sig m
+     )
+  => Partition -> m (Locus, [(Range, Range)])
+resolvePartition'' p =
+  first locusCompat <$> resolvePartition' p
+
+
+locusCompat :: STuple -> Locus
+locusCompat (STuple(loc, part, (qty, degrees))) =
+  Locus { loc, part, qty, degrees }
+
 resolvePartition'
   :: ( Has (State TState) sig m
      , Has (Error String) sig m
@@ -168,8 +183,13 @@ resolvePartition' se' = do
     ss -> throwError $ errNonunique ss related
   where
     se@(Partition rs) = reduce se'
+
+    -- | an inclusion predicate is satisfied only if it holds under all possible
+    -- environment constraints.
     included :: NonEmpty (Maybe Bool, AEnv) -> Bool
     included = all ((== Just True) . fst)
+
+    -- Format 
     errNonunique :: [Loc] -> String -> String
     errNonunique ss = printf
       ("Type Error: " ++
@@ -188,7 +208,8 @@ resolvePartition' se' = do
     showRel :: Range -> Range -> NonEmpty (Maybe Bool, AEnv) -> [String]
     showRel r1 r2 ne = NE.toList $ ne
       <&> \(rel, env) ->
-            printf "%s %s %s at %s" (showEmitI 0 r1) (mkRelOp rel) (showEmitI 0 r2) (showEmitI 0 $ byComma env)
+            printf "%s %s %s at %s" (showEmitI 0 r1) (mkRelOp rel)
+            (showEmitI 0 r2) (showEmitI 0 $ byComma env)
 
 
 removeTStateBySTuple
@@ -204,6 +225,7 @@ removeTStateBySTuple st@(STuple (loc, p, (qt, _))) = do
 -- * matched ranges
 -- * statistics of the resolution
 -- * the owner locus of the canonical range
+-- FIXME: provide "resolveRanges" that instantiates the predicate only once!
 resolveRange
   :: ( Has (State TState) sig m
      , Has (Error String) sig m
@@ -211,7 +233,7 @@ resolveRange
      )
   => Range -> m [(Range, Range, NonEmpty (Maybe Bool, AEnv), Loc)]
 resolveRange r@(Range name _ _) = do
-  (⊑//) <- (⊑/)
+  (⊑//) <- (⊑/) -- specialize the predicate using the current constraints
   rlocs <- use (xSt . at name) `rethrowMaybe` (show . UnknownRangeError) r
   return [ (r, r', r ⊑// r', loc)
          | (r', loc) <- rlocs ]
