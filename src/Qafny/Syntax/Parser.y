@@ -1,5 +1,11 @@
 {
-{-# LANGUAGE TypeFamilies, FlexibleContexts, FlexibleInstances #-}
+{-# LANGUAGE
+    TypeFamilies
+  , FlexibleContexts
+  , FlexibleInstances
+  , NamedFieldPuns
+
+  #-}
 
 
 module Qafny.Syntax.Parser(scanAndParse) where
@@ -224,12 +230,20 @@ expr
   | "meas" id                         { EMea $2                }
   | "not" atomic                      { EOp1 ONot $2           }
   | "nor" '(' atomic ',' digits ')'   { EOp2 ONor $3 (ENum $5) }
-  | "λ" '(' id "=>" expr ')'          { ELambda PhaseWildCard $3 Nothing $5 }
-  | "λ" '(' pbinder '~' id "=>" pspec expr ')'   
-                                      { ELambda $3 $5 (Just $7) $8 }
   | id tuple(expr)                    { EApp $1 $2             }
   | "repr" parens(range)              { ERepr $2               }
   | logicOrExp                        { $1                     }
+  | lamExpr                           { $1                     }
+
+lamExpr :: { Exp' }
+  : "λ" lamBinder "=>" opt(pspec) tuple(expr) 
+    { let (bPhase, bBases) = $2
+      in ELambda (LambdaF { bPhase, bBases, ePhase = $4, eBases = $5 })
+    }
+
+lamBinder :: { (PhaseBinder, [Var]) }
+  : pbinder '~' tuple(id)             { ($1, $3)               }
+  | tuple(id)                         { (PhaseWildCard, $1)    }
 
 qops
   : "H"                               { EHad                   }

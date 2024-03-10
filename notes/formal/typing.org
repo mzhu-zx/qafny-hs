@@ -1,0 +1,26 @@
+* Typing Designs
+
+** Typing of Application
+
+*** Oracle Application with 2 Receivers  
+#+begin_src racket
+  (with-judgement
+    ((Γ σ) ⊢ s1 : (l1 ~ s1_1 ↦ τ1))
+    ((Γ σ) ⊢ s2 : (l2 ~ s2_2 ↦ τ2))
+    ;; s1 and s2 must be 2 full ranges
+    (s1_1 ∈ l1) (s2_2 ∈ l2)              
+    ==> 
+    ((Γ σ) ⊢ (s1 s2) := (λ (x1 x2) (ket1 ket2)) >> σ1)
+
+    ;; more detailed cases
+    (cond
+      [(= τ1 τ2 'en)
+       (= l1 l2 )                         ; in the same locus
+       (not (= s1_1 s2_2))                ; different
+       ==>
+       (= σ σ1)
+       |>>
+       "equivalent to zip and map"
+       ]))
+#+end_src
+

@@ -20,11 +20,22 @@ import           Qafny.Syntax.EmitBinding
 import           Text.Printf
     (printf)
 
+-- FIXME : Re-organize this module into Qafny.Syntax.IR
+
 --------------------------------------------------------------------------------
 -- High-Order Types
 --------------------------------------------------------------------------------
 -- TODO: refactor STuple to a Record
 newtype STuple = STuple { unSTup :: (Loc, Partition, (QTy, [Int])) }
+
+-- TODO: Migrate to Locus representation
+data Locus =
+  Locus { loc     :: Loc       -- * identifier for the locus
+        , part    :: Partition -- * partition
+        , qty     :: QTy       -- * entanglement type
+        , degrees :: [Int]     -- * degrees of phase info
+        }
+
 
 instance Show STuple where
   show (STuple (loc, s, qt)) =

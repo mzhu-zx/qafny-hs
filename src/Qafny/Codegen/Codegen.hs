@@ -106,7 +106,6 @@ import           Qafny.Utils.Emitter.Compat
     (findEmitRanges)
 import           Qafny.Utils.Utils
     (checkListCorr, dumpSt, fst2, gensymLoc, getMethodType, onlyOne, uncurry3)
-import Qafny.Utils.TraceF (Traceable(tracef))
 
 throwError'
   :: ( Has (Error String) sig m )
@@ -485,7 +484,6 @@ codegenStmt'Apply (s :*=: EHad) = do
 
 codegenStmt'Apply
   stmt@(s@(Partition {ranges}) :*=: eLam@(ELambda pbinder _ pexpMaybe _)) = do
-
   (st'@(STuple (_, _, (qt', _))), corr) <- resolvePartition' s
   qtLambda <- ask
   checkSubtypeQ qt' qtLambda

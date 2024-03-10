@@ -210,7 +210,12 @@ data Exp x
   | EPartition Partition
   | ESpec Partition QTy [QSpecF (XRec x (Exp x))]
   | ERepr Range
-  | ELambda PhaseBinder Var (Maybe PhaseExp) (XRec x (Exp x))
+  | ELambda (LambdaF (XRec x (Exp x)))
+
+-- data LamdaExpF f
+--   = { bPhase :: PhaseBinder
+--     , 
+--     }
 
 -- Amplitude expression
 data AmpExpF f
@@ -446,12 +451,28 @@ data ExpF f
   | EPartitionF Partition
   | ESpecF Partition QTy [QSpecF f]
   | EReprF Range
-  | ELambdaF PhaseBinder Var (Maybe PhaseExp) f
+  | ELambdaF (LambdaF f)
   deriving (Functor, Foldable, Traversable, Show, Generic)
 
 type instance Base (Exp ()) = ExpF
 instance Recursive (Exp ())
 instance Corecursive (Exp ())
+
+
+-- Each locus can only have one phase term
+data LambdaF f
+  = LambdaF { bPhase :: PhaseBinder
+            , bBases :: [Var]
+            , ePhase :: Maybe PhaseExp
+            , eBases :: [f]
+            }
+  deriving (Functor, Foldable, Traversable)
+
+deriving instance Generic (LambdaF f)
+deriving instance Show f => Show (LambdaF f)
+deriving instance Eq f => Eq (LambdaF f)
+deriving instance Ord f => Ord (LambdaF f)
+type Lambda = LambdaF Exp'
 
 
 data QSpecF f

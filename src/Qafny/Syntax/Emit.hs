@@ -16,7 +16,6 @@ import           Data.Maybe             (maybeToList)
 import           Data.Sum
 import           Data.Text.Lazy         (Text, unpack)
 import qualified Data.Text.Lazy.Builder as TB
-import           Data.Tuple             (swap)
 import           Qafny.Env              (STuple (..))
 
 -------------------- Builder --------------------
@@ -64,6 +63,11 @@ by op (x:xs) = foldl (\ys y -> ys <!> op <!> build y) (build x) xs
 byComma :: DafnyPrinter a => [a] -> Builder
 byComma = by ", "
 
+tupleLike :: DafnyPrinter a => [a] -> Builder
+tupleLike []  = mempty
+tupleLike [x] = build x
+tupleLike xs  = withParen . byComma $ xs
+
 -- | Build and separate by line but with a trailing newline
 byLineT :: DafnyPrinter a => [a] -> Builder
 byLineT = foldr (\y ys -> y <!> line <!> ys) mempty
@@ -76,6 +80,7 @@ byLineL a = lineHuh a <> by line a
 lineHuh :: Foldable t => t a -> Builder
 lineHuh a = if null a then mempty else line
 
+-- FIXME : raise an error if a DEBUG mode term is emitted 
 debugOnly :: (Show e, DafnyPrinter a) => e -> a -> Builder
 debugOnly e d = do
   (_, b) <- ask
@@ -229,13 +234,21 @@ instance DafnyPrinter (Exp ()) where
   build e@(ESpec p qt specs) = debugOnly e $
     "{" <+> p <+> ":" <+> qt  <+> "↦" <+> byComma specs <+> "}"
   build e@(EApp v es) = v <!> withParen (byComma es)
-  build (ELambda PhaseWildCard v Nothing e) = v <+> "=>" <+> e
-  build e@(ELambda binder v (Just pspec) e') =
-    debugOnly e (binder <+> "~" <+> v <+> "=>" <+> pspec <+> "~" <+> e')
+  build (ELambda el) = build el
   build e = "//" <!> show e <!> build " should not be in emitted form!"
 
+instance (Show f, DafnyPrinter f) => DafnyPrinter (LambdaF f) where
+  build e@(LambdaF{ bPhase, bBases, ePhase, eBases }) =
+    case (bPhase, ePhase) of
+      (PhaseWildCard, Nothing) ->
+        tupleLike bBases <+> "=>" <+> tupleLike eBases
+      (_, _) -> debugOnly e $
+        bPhase <+> "~" <+> tupleLike bBases <+>
+        "=>" <+>
+        ePhase <+> "~" <+> tupleLike eBases
+
 instance (DafnyPrinter f, Show f) => DafnyPrinter (SpecExpF f) where
-  build s = debugOnly s $ buildSubterm
+  build s = debugOnly s buildSubterm
     where
       buildSubterm = case s of
         SEWildcard -> build "_"
@@ -248,7 +261,9 @@ instance (DafnyPrinter f, Show f) => DafnyPrinter (SpecExpF f) where
           "⊗" <+> v2 <+> "∈" <+> '[' <!> e3 <+> ".." <+> e4 <!> ']' <+> '.' <+>
           withParen (byComma e5)
 
-
+instance DafnyPrinter f => DafnyPrinter (Maybe f) where
+  build Nothing  = build "_"
+  build (Just x) = build x
 
 instance (Show f, DafnyPrinter f) => DafnyPrinter (PhaseExpF f) where
   build p = debugOnly p $ case p of

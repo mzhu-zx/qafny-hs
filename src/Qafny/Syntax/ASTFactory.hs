@@ -22,7 +22,8 @@ qComment = SDafny . ("// " ++)
 
 -- | An Oracle term w/o phase specification.
 simpleLambda :: Var -> Exp' -> Exp'
-simpleLambda v = ELambda PhaseWildCard v Nothing
+simpleLambda v e = ELambda $
+  LambdaF PhaseWildCard [v] Nothing [e]
 
 multiLambda :: [Var] -> Exp' -> Exp'
 multiLambda v = EEmit . EMultiLambda v
@@ -87,5 +88,6 @@ mkDAssignment t v1 v2 = SVar (Binding v1 t) (Just (EVar v2))
 
 -- Erase phase arguments in a lambda term
 lambdaUnphase :: Exp' -> Exp'
-lambdaUnphase (ELambda _ v _ e) = ELambda PhaseWildCard v Nothing e
-lambdaUnphase _                 = error "Internal"
+lambdaUnphase (ELambda l) = ELambda
+  l{ bPhase = PhaseWildCard, ePhase = Nothing }
+lambdaUnphase _           = error "Internal"
