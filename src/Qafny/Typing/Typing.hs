@@ -34,7 +34,7 @@ import           Effect.Gensym
     (Gensym, gensym)
 
 -- Qafny
-import           Qafny.Env
+import           Qafny.Syntax.IR
 import           Qafny.Error
     (QError (..))
 import           Qafny.Interval

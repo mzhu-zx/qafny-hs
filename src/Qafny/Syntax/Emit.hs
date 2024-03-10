@@ -16,7 +16,7 @@ import           Data.Maybe             (maybeToList)
 import           Data.Sum
 import           Data.Text.Lazy         (Text, unpack)
 import qualified Data.Text.Lazy.Builder as TB
-import           Qafny.Env              (STuple (..))
+import           Qafny.Syntax.IR              (STuple (..))
 
 -------------------- Builder --------------------
 

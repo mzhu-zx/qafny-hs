@@ -68,7 +68,7 @@ import           Text.Printf
 import           Qafny.Codegen.Phase
     (codegenPhaseLambda, codegenPromotion)
 import           Qafny.Config
-import           Qafny.Env
+import           Qafny.Syntax.IR
 import           Qafny.Interval
     (Interval (Interval))
 import           Qafny.Partial

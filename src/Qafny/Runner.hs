@@ -5,7 +5,7 @@ import           Control.Carrier.Trace.Returning (runTrace)
 import           Data.Maybe                      (catMaybes)
 import           Qafny.Codegen                   (codegenAST)
 import           Qafny.Config                    (Configs)
-import           Qafny.Env
+import           Qafny.Syntax.IR
 import           Qafny.Syntax.AST                (AST, Toplevel', Var)
 import           Qafny.Syntax.Parser             (scanAndParse)
 

@@ -51,7 +51,7 @@ import           Control.Effect.Reader
 import           Control.Effect.State
 import           Effect.Gensym
     (Gensym, gensym)
-import           Qafny.Env
+import           Qafny.Syntax.IR
     (RangeOrLoc, TState, emitSt)
 import           Qafny.Syntax.AST
 import           Qafny.Syntax.EmitBinding

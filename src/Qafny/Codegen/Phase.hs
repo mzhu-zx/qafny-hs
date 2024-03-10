@@ -30,7 +30,7 @@ import           Data.Maybe
 
 import           Data.Sum
     (Injection (inj))
-import           Qafny.Env
+import           Qafny.Syntax.IR
 import           Qafny.Syntax.AST
 import           Qafny.Syntax.ASTFactory
     (callMap, cardV, constLambda, simpleLambda)

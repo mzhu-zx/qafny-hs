@@ -22,7 +22,7 @@ import           Text.Printf           (printf, PrintfType)
 import           Effect.Gensym         (Gensym, gensym)
 
 --
-import           Qafny.Env             (TEnv, TState, emitSt, kEnv, sSt)
+import           Qafny.Syntax.IR             (TEnv, TState, emitSt, kEnv, sSt)
 import           Qafny.Error           (QError (UnknownVariableError))
 import           Qafny.Syntax.AST
 import           Qafny.Syntax.Emit     (showEmitI)

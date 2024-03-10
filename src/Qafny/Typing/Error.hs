@@ -6,7 +6,7 @@ module Qafny.Typing.Error where
 
 import qualified Control.Carrier.Error.Either as ErrE
 import           Control.Effect.Error
-import           Qafny.Env                    (STuple(..))
+import           Qafny.Syntax.IR                    (STuple(..))
 import           Qafny.Syntax.AST             (Range)
 import           Qafny.Syntax.Emit            (byComma, showEmit0)
 import           Text.Printf                  (printf)

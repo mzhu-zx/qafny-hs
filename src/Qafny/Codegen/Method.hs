@@ -30,7 +30,7 @@ import           Data.Maybe
     (catMaybes)
 import           Effect.Gensym
     (gensym)
-import           Qafny.Env
+import           Qafny.Syntax.IR
 import           Qafny.Syntax.AST
 import           Qafny.Syntax.ASTFactory
     (mkAssignment, mkDAssignment)

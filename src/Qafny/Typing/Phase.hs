@@ -27,7 +27,7 @@ import           Effect.Gensym
     (Gensym)
 
 -- Qafny
-import           Qafny.Env
+import           Qafny.Syntax.IR
 import           Qafny.Syntax.AST
 import           Qafny.Syntax.EmitBinding
 import           Qafny.TypeUtils

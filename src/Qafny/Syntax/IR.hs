@@ -5,7 +5,7 @@
   , TypeApplications
   , TypeOperators
   #-}
-module Qafny.Env where
+module Qafny.Syntax.IR where
 
 import           Control.Lens
 import           Data.Bifunctor

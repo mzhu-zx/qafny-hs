@@ -7,7 +7,7 @@ module Qafny.TypeUtils where
 
 import           Control.Lens          (over)
 import           Control.Lens.Tuple
-import           Qafny.Env             (STuple (..))
+import           Qafny.Syntax.IR             (STuple (..))
 import           Qafny.Syntax.AST
     ( Binding (..)
     , PhaseRef (..)
