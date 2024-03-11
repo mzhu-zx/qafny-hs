@@ -1,0 +1,34 @@
+* Amplitude
+
+Amplitude, Phase?, Ket
+
+** Grover
+
+*** =EN=
+
+projection?
+- seq<ampl, ket> -> (sum_of_ampl, seq<ket>)
+- loss of information
+
+
+(guard: bool) -> ((sum_of_ampl, seq<ket>))
+- guard ~ phase/amplitude/ket related function?
+- sum_of_ampl ~ sin/cos 
+- soa: sum of real/complex
+  - sin/cos: hard part
+    
+function
+- reason about domain
+
+amp operator
+- (sum_of_ampl, seq<ket>), dually
+  - ∑ ϕ = sin(α_i) -> ∑sin(α_i + θ)
+  - sin(α) -> sin(α + θ)
+  - θ ~ # of "good" states related
+  - what axiom/relations for θ?
+
+measure:
+- hard
+
+* Amplitude-less -> Amplitude
+(seq<ket>) ~~~> (guard: bool) -> ((sum_of_ampl, seq<ket>))
