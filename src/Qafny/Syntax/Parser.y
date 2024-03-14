@@ -19,6 +19,7 @@ import           Data.Sum
 %name runParser
 %tokentype { L.SToken }
 %error { parseError }
+%errorhandlertype explist
 %monad { Parser }{ >>= }{ return }
 
 %token
@@ -46,14 +47,15 @@ dafny                 { ( _, L.TDafny $$  ) }
 "QFT"                 { ( _, L.TQFT       ) }
 "RQFT"                { ( _, L.TRQFT      ) }
 "repr"                { ( _, L.TRepr      ) }
-"meas"                { ( _, L.TMea       ) }
+"measure"             { ( _, L.TMeasure   ) }
+"measured"            { ( _, L.TMeasured  ) }
 "en"                  { ( _, L.TEN        ) }
 "qreg"                { ( _, L.TQReg      ) }
 "en01"                { ( _, L.TEN01      ) }
 "var"                 { ( _, L.TVar       ) }
 "if"                  { ( _, L.TIf        ) }
 
-"isqrt"                 { ( _, L.TISqrt       ) }
+"isqrt"               { ( _, L.TISqrt       ) }
 "sin"                 { ( _, L.TSin       ) }
 "cos"                 { ( _, L.TCos       ) }
 
@@ -88,6 +90,7 @@ id                    { ( _, L.TId $$     ) }
 '.'                   { ( _, L.TDot       ) }
 ';'                   { ( _, L.TSemi      ) }
 "=="                  { ( _, L.TEq        ) }
+"->"                  { ( _, L.TTyArrow   ) }
 "=>"                  { ( _, L.TArrow     ) }
 ">="                  { ( _, L.TGe        ) }
 "<="                  { ( _, L.TLe        ) }
@@ -129,10 +132,12 @@ binding
 ty                                                                        
   : "nat"                             { TNat                                 }
   | "int"                             { TInt                                 }
+  | "measured"                        { TMeasured                            }
   | "bool"                            { TBool                                }
   | "seq" '<' ty '>'                  { TSeq $3                              }
   | "qreg" '[' digits ']'             { TQReg (ANat $3)                      }
   | "qreg" '[' id ']'                 { TQReg (AVar $3)                      }
+  | mayTuple(ty) "->" ty              { TArrow $1 $3                         }
           
 qty :: { QTy }
   : "nor"                             { TNor                            }
@@ -217,6 +222,9 @@ pbinder :: { PhaseBinder }
   | "Ω" id "∈" '[' expr ".." expr ']' '.' '(' id ',' id ')'
                                            { PhaseSumOmega (Range $2 $5 $7) $11 $13 }
 
+mayTuple(p)
+  : p                                 { [$1] }
+  | tuple(p)                          { $1 }
 
 tuple(p)
   : '(' manyComma(p) ')'              { $2 }
@@ -227,10 +235,9 @@ expr
   | spec                              { $1                     }
   | partition                         { EPartition $1          }
   | qops                              { $1                     }
-  | "meas" id                         { EMea $2                }
+  | "measure" partition               { EMeasure $2            }
   | "not" atomic                      { EOp1 ONot $2           }
   | "nor" '(' atomic ',' digits ')'   { EOp2 ONor $3 (ENum $5) }
-  | id tuple(expr)                    { EApp $1 $2             }
   | "repr" parens(range)              { ERepr $2               }
   | logicOrExp                        { $1                     }
   | lamExpr                           { $1                     }
@@ -284,6 +291,7 @@ atomic
   : digits                            { ENum $1                }
   | id                                { EVar $1                }
   | '(' expr ')'                      { $2                     }
+  | id tuple(expr)                    { EApp $1 $2             }
 
 
 -- | Combinators

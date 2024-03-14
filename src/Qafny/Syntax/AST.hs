@@ -41,6 +41,7 @@ import           GHC.Generics          hiding
     ((:+:))
 import           Text.Printf
     (printf)
+import Qafny.Syntax.Token (Token(TMeasured))
 --------------------------------------------------------------------------------
 
 data AExp
@@ -85,6 +86,8 @@ data Ty
   | TInt
   | TBool
   | TSeq Ty
+  | TArrow [Ty] Ty
+  | TMeasured
   | TQReg AExp
   -- | TMethod [Ty] [Ty] -- parameter and return types
   | TEmit EmitTy
@@ -199,7 +202,7 @@ data Exp x
   | EHad
   | EQFT
   | ERQFT
-  | EMea Var
+  | EMeasure Partition
   | EBool Bool
   | EApp Var [XRec x (Exp x)]
   | EOp1 Op1 (XRec x (Exp x))
@@ -440,7 +443,7 @@ data ExpF f
   | EHadF
   | EQFTF
   | ERQFTF
-  | EMeaF Var
+  | EMeasureF Partition
   | EBoolF Bool
   | EAppF Var [f]
   | EOp1F Op1 f

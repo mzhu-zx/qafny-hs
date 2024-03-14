@@ -71,8 +71,10 @@ token :-
   "\otimes"        { emit $  TUnicodeIn          }
   "↦"              { emit $  TUnicodeMap         }
   "\mapsto"        { emit $  TUnicodeMap         }
+  "->"             { emit $  TTyArrow            }
   repr             { emit $  TRepr               }
   with             { emit $  TWith               }
+  measured         { emit $  TMeasured           }
   invariant        { emit $  TInv                }
   isqrt            { emit $  TISqrt              }
   sin              { emit $  TSin                }
@@ -80,7 +82,7 @@ token :-
   H                { emit $  THApp               }
   QFT              { emit $  TQFT                }
   RQFT             { emit $  TRQFT               }
-  meas             { emit $  TMea                }
+  measure          { emit $  TMeasure           }
   @id              { pushToken $ TId             }
   @digits          { pushToken $ TLitInt . read  }
   @assign          { emit $  TAssign             }

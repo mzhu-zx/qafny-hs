@@ -13,11 +13,17 @@ separatesOnly (Separates s) = return s
 separatesOnly c             =
   Left $ withParse $ show c ++ "is not a `separates` specification"
 
-parseError :: [L.SToken] -> Parser a
-parseError [] = Left $ withParse "Expect more tokens"
-parseError ((L.SrcLoc {L.sLine=sLine, L.sColumn=sColumn}, tok) : xs) = Left . withParse $
-  printf "at line %s, col %s, token %s\nRest tokens: %s"
-    (show sLine) (show sColumn) (show tok) (show (snd <$> xs))
+parseError :: ([L.SToken], [String]) -> Parser a
+parseError (cont, expected) = go cont
+  where
+    go [] = Left $ withParse "Expect more tokens"
+    go ((L.SrcLoc {L.sLine=sLine, L.sColumn=sColumn}, tok) : xs) = 
+      Left . withParse $
+      printf "at line %s, col %s, token %s\nRest tokens: %s"
+      (show sLine) (show sColumn) (show tok) (show (snd <$> xs))
+      <> "\n" <>
+      printf "Candidate tokens: %s"
+      (show expected)
 
 requireEnsures :: [Conds] -> Parser ([Exp'], [Exp'])
 requireEnsures =

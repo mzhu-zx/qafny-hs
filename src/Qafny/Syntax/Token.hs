@@ -22,7 +22,7 @@ data Token
   | TVar | TIf | TCl | TFor
   | TWith
   | TSplit | TAt
-  | TMea | TRepr
+  | TMeasure | TRepr
   | TUnicodeMap
   | TUnicodeTensor
   | TUnicodeOmega
@@ -43,7 +43,7 @@ data Token
   | TUnicodeSum
 
   -- Types
-  | TArrow
+  | TArrow | TTyArrow | TMeasured
   | TNat | TInt | TBool
   | TSeq | TNor | THad | TEN | TEN01
   | TQReg
