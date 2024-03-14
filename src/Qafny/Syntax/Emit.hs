@@ -124,6 +124,9 @@ instance DafnyPrinter Ty where
   build TNat               = build "nat"
   build TInt               = build "int"
   build TBool              = build "bool"
+  build (TArrow tys ty)    =
+    withBracket (byComma tys) <+> "->" <+> ty
+  build TMeasured          = build  "measured"
   build (TQReg n)          = "qreg" <+> n
   build (TSeq t)           = "seq<" <!> t <!> ">"
   build t@(TEmit (TAny s)) = debugOnly t $ build s
@@ -240,6 +243,9 @@ instance DafnyPrinter (Exp ()) where
   build e@(ESpec p qt specs) = debugOnly e $
     "{" <+> p <+> ":" <+> qt  <+> "↦" <+> byComma specs <+> "}"
   build e@(EApp v es) = v <!> withParen (byComma es)
+  build e@(EMeasure s) = debugOnly e $
+    "measure" <+> s
+  build EWildcard = build "_"
   build (ELambda el) = build el
   build e = "//" <!> show e <!> build " should not be in emitted form!"
 
@@ -303,7 +309,7 @@ instance DafnyPrinter Range where
   build rr@(Range v l r) = debugOnly rr $ build (ESlice (EVar v) l r)
 
 instance DafnyPrinter Partition where
-  build pp@(Partition p) = debugOnly pp $ "[" <!> byComma p <!> "]"
+  build pp@(Partition p) = debugOnly pp $ byComma p
 
 instance DafnyPrinter Loc where
   build = build . deref
@@ -329,7 +335,7 @@ instance (Show a, Show b, Show c,
 
 instance (Show f, DafnyPrinter f) => DafnyPrinter (QSpecF f) where
   build q@QSpecF{amp, phase, spec} = debugOnly q $
-    amp <!> phase <!> spec
+    amp <+> phase <+> "~" <+> spec
 
 
 instance (Show k, Show v, DafnyPrinter k, DafnyPrinter v) => DafnyPrinter (Map.Map k v) where
