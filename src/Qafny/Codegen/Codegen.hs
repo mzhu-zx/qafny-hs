@@ -23,16 +23,8 @@ import           Control.Carrier.Reader
     (runReader)
 import           Control.Carrier.State.Strict
     (runState)
-import           Control.Effect.Catch
-import           Control.Effect.Error
-    (Error, throwError)
 import           Control.Effect.Lens
-import           Control.Effect.Reader
-import           Control.Effect.State
-    (State, get, put)
-import           Control.Effect.Trace
-import           Effect.Gensym
-    (Gensym, gensym)
+import           Qafny.Effect
 
 -- Handlers
 import qualified Carrier.Gensym.Emit          as GEmit
@@ -73,17 +65,16 @@ import           Qafny.Syntax.Emit
 import           Qafny.Syntax.EmitBinding
 import           Qafny.Syntax.IR
 import           Qafny.TypeUtils
-    (bindingsFromPtys, emitTypeFromDegree, isEN,
-    typingQEmit)
+    (bindingsFromPtys, emitTypeFromDegree, isEN, typingQEmit)
 import           Qafny.Typing
-    (allocAndUpdatePhaseType,
-    analyzePhaseSpecDegree, appkEnvWithBds, checkSubtype, checkSubtypeQ,
-    collectConstraints, collectMethodTypes, collectPureBindings, extendTState, matchEmitStatesVars, matchStateCorrLoop, mergeCandidateHad,
-    mergeLociHadEN, mergeMatchedTState, mergeScheme,
-    queryPhaseType, removeTStateByLocus, resolveMethodApplicationArgs,
-    resolveMethodApplicationRets, resolvePartition, resolvePartition',
-    resolvePartitions, retypePartition1, specPartitionQTys,
-    splitScheme, splitSchemePartition, splitThenCastScheme,
+    (allocAndUpdatePhaseType, analyzePhaseSpecDegree, appkEnvWithBds,
+    castScheme, checkSubtype, checkSubtypeQ, checkTypeEq, collectConstraints,
+    collectMethodTypes, collectPureBindings, extendTState, matchEmitStatesVars,
+    matchStateCorrLoop, mergeCandidateHad, mergeLociHadEN, mergeMatchedTState,
+    mergeScheme, promotionScheme, queryPhaseType, removeTStateByLocus,
+    resolveMethodApplicationArgs, resolveMethodApplicationRets,
+    resolvePartition, resolvePartition', resolvePartitions, retypePartition1,
+    specPartitionQTys, splitScheme, splitSchemePartition, splitThenCastScheme,
     tStateFromPartitionQTys, typingExp, typingGuard, typingPartition,
     typingPartitionQTy)
 
@@ -95,14 +86,14 @@ import           Qafny.Codegen.Lambda
     (codegenLambdaEntangle, codegenUnaryLambda)
 import           Qafny.Codegen.Method
     (codegenMethodParams, genEmitSt)
+import           Qafny.Codegen.Phase
+    (codegenQft)
 import           Qafny.Codegen.SplitCast      hiding
     (throwError')
 import           Qafny.Typing.Error
 import           Qafny.Typing.Range
     (areRangesEquiv)
 import           Qafny.Utils.EmitBinding
-import           Qafny.Utils.Emitter.Compat
-    (findEmitRanges)
 import           Qafny.Utils.TraceF
     (Traceable (tracef))
 import           Qafny.Utils.Utils
@@ -498,7 +489,13 @@ codegenStmt'Apply
       (showEmit0 $ byLineT rMap)
 
 
-codegenStmt'Apply (s :*=: EQFT) = undefined
+codegenStmt'Apply (s :*=: EQFT) = do
+  -- ensures that bases is `EN`
+  locusS <- resolvePartition s
+  (locusS, stmtCast) <- castScheme locusS TEN
+  -- ensures that phases is in 1st degree
+  when (degrees locusS /= [1]) $ throwError' "Degree not 1"
+  codegenQft locusS
 
 codegenStmt'Apply _ = throwError' "What could possibly go wrong?"
 
@@ -793,7 +790,7 @@ codegenFor'Body idx boundl boundr eG body stSep@(Locus{qty=qtSep}) newInvs = do
         _                         -> throwError' errNoSep
 
       -- 1. save the "false" part to a new variable
-      vsEmitG <- findEmitRanges $ unpackPart sG
+      vsEmitG <- findEmitBasesByRanges $ unpackPart sG
       redFalseG <- genEDStByRangesSansPhase qtG (ranges sG)
       vsEmitGFalse <- mapM (visitEDBasis . snd) redFalseG
       let stmtsSaveFalse = uncurry (stmtAssignSlice (ENum 0) eSep) <$> zip vsEmitGFalse vsEmitG
@@ -809,7 +806,7 @@ codegenFor'Body idx boundl boundr eG body stSep@(Locus{qty=qtSep}) newInvs = do
       -- TODO: I need one way to duplicate generated emit symbols in the split
       -- and cast semantics so that executing the computation above twice will
       -- solve the problem.
-      vsEmitSep <-  findEmitRanges rsSep
+      vsEmitSep <-  findEmitBasesByRanges rsSep
 
       -- compile for the 'false' branch with non-essential statements suppressed
       (tsFalse, (stmtsFalse, vsFalse)) <- runState stateIterBegin $ do
@@ -958,11 +955,13 @@ mergeHadGuardWith
      , Has Trace sig m
      )
   => Exp' -> Locus -> Locus -> Exp' -> Exp' -> m [Stmt']
-mergeHadGuardWith eBase stG' stB cardBody cardStashed = do
-  (_, _, vGENow, tGENow) <- retypePartition1 stG' TEN
-  stG <- resolvePartition (part stG')
-  mergeLociHadEN stB stG
-  return $ hadGuardMergeExp vGENow tGENow cardBody cardStashed eBase
+mergeHadGuardWith eBase stG' stB cardBody cardStashed =
+  retypePartition1 stG' TEN >>= maybe (return []) go
+  where
+    go (_, _, vGENow, tGENow) = do
+      stG <- resolvePartition (part stG')
+      mergeLociHadEN stB stG
+      return $ hadGuardMergeExp vGENow tGENow cardBody cardStashed eBase
 
 hadGuardMergeExp :: Var -> Ty -> Exp' -> Exp' -> Exp' -> [Stmt']
 hadGuardMergeExp vEmit tEmit cardMain cardStash eBase =
@@ -1083,7 +1082,7 @@ codegenMergeScheme = mapM $ \scheme -> do
           -- append the merged value (ket) into each kets in the main value
           vEmitResult <- genEDStByRangeSansPhase qtMain rResult >>= visitEDBasis
           vBind <- gensym "lambda_x"
-          let stmt = vEmitResult ::=: callMap ef (EVar vEmitMain)
+          let stmt = vEmitResult ::=: callMap ef vEmitMain
               ef   = simpleLambda vBind (EVar vBind + EVar vEmitMerged)
           return (stmt, vEmitMain)
         (TEN, THad) -> do
@@ -1254,7 +1253,7 @@ codegenSpecExp vrs p specs ptys = putOpt $
       -- @
       --   forall idx | 0 <= idx < (r - l) :: xEmit[idx] == eBody
       -- @
-      let eSelect x = EEmit (ESelect (EVar x) (EVar idx))
+      let eSelect x = x >:@: idx
           eBound = Just (eIntv idx (ENum 0) (reduce (er - el)))
           quantifier = EForall (natB idx) eBound . ($ idx)
           eSize = reduce (er - el)
@@ -1291,7 +1290,7 @@ codegenSpecExp vrs p specs ptys = putOpt $
       -- @
       let eBound = Just $ eIntv idx l r
           eSize = reduce (r - l)
-          eSelect x = EEmit (ESelect (EVar x) (EVar idx))
+          eSelect x = x >:@: idx
           quantifier = EForall (natB idx) eBound . ($ idx)
       pty <- onlyOne throwError' ptys
       ePSpec <- codegenPhaseSpec quantifier eSize pty pspec
@@ -1325,9 +1324,9 @@ codegenSpecExp vrs p specs ptys = putOpt $
         let cardSum = eSizeSum `eEq` EEmit (ECard (EVar vE))
         let rTen' = reduce (er - el)
         let eBoundTen = Just $ eIntv idxTen 0 rTen'
-        let cardTen = rTen' `eEq` EEmit (ECard (EVar vE `eAt` EVar idxSum))
+        let cardTen = rTen' `eEq` EEmit (ECard (vE >:@: idxSum))
         let eForallTen = EForall (natB idxTen) eBoundTen
-        let eSel = (EVar vE `eAt` EVar idxSum) `eAt` EVar idxTen
+        let eSel = vE >:@: idxSum >:@: idxTen
         let eBodys = [ cardTen
                      , EOp2 OEq eSel eV
                      ]
@@ -1355,8 +1354,8 @@ codegenPhaseSpec _ _ PT0 pe =
        throwError' $ printf "%s is not a zeroth degree predicate." (show pe)
 codegenPhaseSpec quantifier eSize (PTN 1 ref) (PhaseOmega eK eN) =
   let assertN = EOp2 OEq eN (EVar (prBase ref))
-      assertK idx = EOp2 OEq eK (EVar (prRepr ref) `eAt` EVar idx)
-      assertKCard = EOp2 OEq eSize (cardV (prRepr ref))
+      assertK idx = EOp2 OEq eK (prRepr ref >:@: idx)
+      assertKCard = EOp2 OEq eSize (mkCard (prRepr ref))
   in return [assertN, assertKCard, quantifier assertK ]
 
 codegenPhaseSpec quantifier eSize (PTN 2 ref) (PhaseSumOmega (Range v l r) eK eN) =
@@ -1365,8 +1364,10 @@ codegenPhaseSpec quantifier eSize (PTN 2 ref) (PhaseSumOmega (Range v l r) eK eN
       -- FIXME: emit the length of the 2nd-degree range and get the inner
       -- quantifier right
       assertK idx = EForall (Binding v TNat) Nothing $
-                    (EOp2 OEq eK ((EVar (prRepr ref) `eAt` EVar v) `eAt` EVar idx))
+                    (EOp2 OEq eK (prRepr ref >:@: v >:@: idx))
   in return [assertN, quantifier assertK]
 codegenPhaseSpec _ _ (PTN n _) e =
   throwError' $ printf "Invalid %s for %d-degree phase." (show e) n
+
+
 

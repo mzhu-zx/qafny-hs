@@ -1,7 +1,37 @@
 module Qafny.Syntax.ASTFactory where
 
-import           Qafny.Partial    (reduce)
+import           Qafny.Partial
+    (reduce)
 import           Qafny.Syntax.AST
+
+
+-- | AstInjection makes ast construction easier.
+class AstInjection a b where
+  injAst :: a -> b
+
+instance AstInjection Exp' Exp' where
+  injAst = id
+
+instance AstInjection Var Exp' where
+  injAst = EVar
+
+instance AstInjection EmitExp Exp' where
+  injAst = EEmit
+
+instance AstInjection Stmt' Stmt' where
+  injAst = id
+
+instance AstInjection EmitStmt Stmt' where
+  injAst = SEmit
+
+
+infixl 6 >+
+(>+) :: (AstInjection a Exp', AstInjection b Exp') => a -> b -> Exp'
+e1 >+ e2 = injAst e1 + injAst e2
+
+infixl 7 >*
+(>*) :: (AstInjection a Exp', AstInjection b Exp') => a -> b -> Exp'
+e1 >* e2 = injAst e1 * injAst e2
 
 --------------------------------------------------------------------------------
 -- | AST Constants
@@ -58,8 +88,11 @@ joinArith op _ (x : xs) =
   where
     inner y f = f . (EOp2 op `flip` y)
 
-eAt :: Exp' -> Exp' -> Exp'
-eAt e1 e2 = EEmit (ESelect (reduce e1) (reduce e2))
+infixl >:@:
+-- | Construct "e1 [ e2 ]"
+(>:@:) :: (AstInjection a Exp', AstInjection b Exp')
+       => a -> b -> Exp'
+(>:@:) e1 e2 = injAst (reduce (injAst e1) :@: reduce (injAst e2))
 
 eEq :: Exp' -> Exp' -> Exp'
 eEq = EOp2 OEq
@@ -68,16 +101,16 @@ sliceV :: Var -> Exp' -> Exp' -> Exp'
 sliceV x l r = EEmit (ESlice (EVar x) (reduce l) (reduce r))
 
 
-callMap :: Exp' -> Exp' -> Exp'
-callMap f e = EEmit (ECall "Map" [f, e])
+callMap :: (AstInjection a Exp', AstInjection b Exp')
+        => a -> b -> Exp'
+callMap f e = injAst $ ECall "Map" [injAst f, injAst e]
 
 callMaps :: Exp' -> [Exp'] -> Exp'
 callMaps f es = EEmit (ECall "Map" (f : es))
 
 
-
-cardV :: Var -> Exp'
-cardV = EEmit . ECard . EVar
+mkCard :: AstInjection a Exp' => a -> Exp'
+mkCard = injAst . ECard . injAst
 
 mkAssignment ::  Var -> Var -> Stmt'
 mkAssignment v1 v2 = v1 ::=: EVar v2
@@ -90,3 +123,7 @@ mkDAssignment t v1 v2 = SVar (Binding v1 t) (Just (EVar v2))
 lambdaUnphase :: Lambda -> Exp'
 lambdaUnphase l = ELambda
   l{ bPhase = PhaseWildCard, ePhase = Nothing }
+
+natSeqLike :: (AstInjection a Exp') => a -> Exp' -> Exp'
+natSeqLike liked = EEmit . EMakeSeq TNat (EEmit (ECard (injAst liked)))
+

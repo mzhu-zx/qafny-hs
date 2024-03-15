@@ -8,6 +8,8 @@
   #-}
 
 module Qafny.Codegen.Bindings where
+import           Qafny.Effect
+    (StateMayFail)
 import           Qafny.Syntax.AST
 import           Qafny.TypeUtils
     (typingQEmit)

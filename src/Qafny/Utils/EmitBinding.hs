@@ -27,15 +27,13 @@ module Qafny.Utils.EmitBinding
   , deleteED, deleteEDs, deleteEDPartition
     -- * Update
   , appendEDSt
-    -- * Types
-  , StateMayFail, GensymWithState
   )
 where
 
 import           Control.Lens
     (at, sans, (?~), (^.))
 import           Control.Monad
-    (liftM2, (>=>), zipWithM)
+    (liftM2, zipWithM, (>=>))
 import           Data.Functor
     ((<&>))
 import qualified Data.Map.Strict          as Map
@@ -44,21 +42,16 @@ import           Data.Sum
 import           Text.Printf
     (printf)
 
-import           Control.Effect.Error
-    (Error, throwError)
 import           Control.Effect.Lens
-import           Control.Effect.Reader
-import           Control.Effect.State
-import           Effect.Gensym
-    (Gensym, gensym)
-import           Qafny.Syntax.IR
-    (RangeOrLoc, TState, emitSt)
+import           Qafny.Effect
 import           Qafny.Syntax.AST
 import           Qafny.Syntax.EmitBinding
+import           Qafny.Syntax.IR
+    (RangeOrLoc, TState, emitSt, Locus(..))
 import           Qafny.TypeUtils
-    (emitTypeFromDegree, typingPhaseEmitReprN, typingQEmit, isEN)
-import Qafny.Utils.Utils (onlyOne, checkListCorr, errTrace)
-
+    (emitTypeFromDegree, isEN, typingPhaseEmitReprN, typingQEmit)
+import           Qafny.Utils.Utils
+    (checkListCorr, errTrace, onlyOne)
 
 --------------------------------------------------------------------------------
 -- * Gensym Utils
@@ -70,20 +63,8 @@ import Qafny.Utils.Utils (onlyOne, checkListCorr, errTrace)
 -- $doc
 --------------------------------------------------------------------------------
 
-type GensymWithState sig m =
-  (Has (Gensym Emitter) sig m , Has (State TState) sig m)
-
 gensymBinding :: (Has (Gensym Emitter) sig m) => Var -> Ty -> m Var
-gensymBinding v t = gensym (EmAnyBinding v t) 
-
--- genPhaseRefByDegree
---   :: ( Has (Gensym Emitter) sig m
---      )
---   => Int -> RangeOrLoc -> m (Maybe PhaseRef, Maybe Ty)
--- genPhaseRefByDegree 0 _ = return (Nothing, Nothing)
--- genPhaseRefByDegree n r =
---   (, emitTypeFromDegree n) . Just <$>
---   liftM2 mkPhaseRef (gensym (EmPhaseSeq r n)) (gensym (EmPhaseSeq r n))
+gensymBinding v t = gensym (EmAnyBinding v t)
 
 genPhaseTyByDegree
   :: ( Has (Gensym Emitter) sig m
@@ -92,13 +73,13 @@ genPhaseTyByDegree
 genPhaseTyByDegree 0 _ = return (Just PT0, Nothing)
 genPhaseTyByDegree n r
   | n < 0 = return (Nothing, Nothing)
-  | otherwise =  
+  | otherwise =
     (, emitTypeFromDegree n) . Just . PTN n <$>
     liftM2 mkPhaseRef (gensym (EmPhaseBase r)) (gensym (EmPhaseSeq r n))
 
 
 -- | Generate a /complete/ 'EmitData' of a Range and manage it within the 'emitSt'
-genEDStByRange :: GensymWithState sig m => QTy -> Int -> Range -> m EmitData
+genEDStByRange ::  GensymEmitterWithState sig m => QTy -> Int -> Range -> m EmitData
 genEDStByRange qt i r = do
   ed <- genEDByRange qt i r
   emitSt %= (at (inj r) ?~ ed)
@@ -117,7 +98,7 @@ genEDByRange qt i r = do
   return ed
 
 
-genEDStByRangeSansPhase ::  GensymWithState sig m => QTy -> Range -> m EmitData
+genEDStByRangeSansPhase ::  GensymEmitterWithState sig m => QTy -> Range -> m EmitData
 genEDStByRangeSansPhase qt = genEDStByRange qt 0
 
 genEDByRangeSansPhase
@@ -127,7 +108,7 @@ genEDByRangeSansPhase qt = genEDByRange qt 0
 
 
 genEDStByRanges
-  :: GensymWithState sig m
+  :: GensymEmitterWithState sig m
   => QTy -> [(Range, Int)] -> m [(Range, EmitData)]
 genEDStByRanges qt ris =
   sequence [ (r,) <$> genEDStByRange qt i r | (r, i) <- ris ]
@@ -135,7 +116,7 @@ genEDStByRanges qt ris =
 -- | Generate a /complete/ 'EmitData' of a Partition, managed 'emitSt'
 --
 genEDStByLoc
-  :: GensymWithState sig m
+  :: GensymEmitterWithState sig m
   => Loc -> Int -> QTy -> [(Range, Int)] -> m (EmitData, [(Range, EmitData)])
 genEDStByLoc l iLoc qt ris = do
   rAndEDs <- sequence [ (r,) <$> genEDStByRange qt i r | (r, i) <- ris ]
@@ -149,7 +130,7 @@ genEDStByLoc l iLoc qt ris = do
 -- In particular, generate degree and phases based on its qt
 
 genEDStFromLocus
-  :: ( GensymWithState sig m
+  :: ( GensymEmitterWithState sig m
      , Has (Error String) sig m
      )
   => Loc -> [Range] -> QTy -> [Int] -> m (EmitData, [(Range, EmitData)])
@@ -160,39 +141,39 @@ genEDStFromLocus l rs qt is = do
   genEDStByLoc l il qt $ zip rs ir
 
 genEDStUpdatePhaseFromLocus
-  :: ( GensymWithState sig m
+  :: ( GensymEmitterWithState sig m
      , Has (Error String) sig m
      )
-  => Loc -> [Range] -> QTy -> [Int] -> m [EmitData]
-genEDStUpdatePhaseFromLocus l rs qt is = do
-  is' <- if isEN qt
-    then (: repeat (-1)) <$> onlyOne throwError is
-    else (-1 : is)  <$ checkListCorr is rs
-  zipWithM genEDStUpdatePhase is (inj l : (inj <$> rs))
+  => Locus -> m [EmitData]
+genEDStUpdatePhaseFromLocus Locus{loc, part=Partition{ranges=rs}, qty, degrees} = do
+  is' <- if isEN qty
+    then (: repeat (-1)) <$> onlyOne throwError degrees
+    else (-1 : degrees)  <$ checkListCorr degrees rs
+  zipWithM genEDStUpdatePhase degrees (inj loc : (inj <$> rs))
 
 
 -- | Generate an 'EmitData' w/o Phase, managed by 'emitSt'
 genEDStSansPhaseByLocAndRange
-  :: GensymWithState sig m
+  :: GensymEmitterWithState sig m
   => Loc -> QTy -> [Range] -> m (EmitData, [(Range, EmitData)])
 genEDStSansPhaseByLocAndRange l qt = genEDStByLoc l (-1) qt . ((, -1) <$>)
 
 {-# INLINE genEDStByRangesSansPhase #-}
 genEDStByRangesSansPhase
-  :: GensymWithState sig m
+  :: GensymEmitterWithState sig m
   => QTy -> [Range] -> m [(Range, EmitData)]
-genEDStByRangesSansPhase qt = genEDStByRanges qt . ((, -1) <$>) 
+genEDStByRangesSansPhase qt = genEDStByRanges qt . ((, -1) <$>)
 
 -- | Same as `genEDStByRangesSansPhase` but without `Range` indices
 genEDStByRangesSansPhase'
-  :: GensymWithState sig m
+  :: GensymEmitterWithState sig m
   => QTy -> [Range] -> m [EmitData]
-genEDStByRangesSansPhase' qt = ((snd <$>) <$>) . genEDStByRanges qt . ((, -1) <$>) 
+genEDStByRangesSansPhase' qt = ((snd <$>) <$>) . genEDStByRanges qt . ((, -1) <$>)
 
 
 
 genEDStSansPhaseByRanges
-  :: GensymWithState sig m
+  :: GensymEmitterWithState sig m
   => QTy -> [Range] -> m [(Range, EmitData)]
 genEDStSansPhaseByRanges = genEDStByRangesSansPhase
 
@@ -206,18 +187,13 @@ appendEDSt rl ed = do
 
 -- | Update an existing `EmitData` by generating a phase from the given degree.
 genEDStUpdatePhase
-  :: ( GensymWithState sig m
-     , Has (Error String) sig m
-     )
+  :: GensymEmitterWithStateError sig m
   => Int -> RangeOrLoc -> m EmitData
 genEDStUpdatePhase i rl  = errTrace "`genEDStUpdatePhase`" $ do
   (evPhaseTy, evPhaseSeqTy)  <- genPhaseTyByDegree i rl
   appendEDSt rl (mtEmitData {evPhaseTy, evPhaseSeqTy})
 
 -- ** Getters
-type StateMayFail sig m =
-  (Has (Error String) sig m , Has (State TState) sig m)
-
 findED :: StateMayFail sig m => RangeOrLoc -> m EmitData
 findED rl = do
   ed <- use emitSt <&> (^. at rl)
@@ -249,7 +225,7 @@ findVisitEDs
   => (EmitData -> Maybe c) -> [RangeOrLoc] -> m [c]
 findVisitEDs f = errTrace "findVisitEDs" .
   mapM (findVisitED f)
-  
+
 
 -- *** Shorthands
 visitEDBasis :: Has (Error String) sig m => EmitData -> m Var
@@ -261,7 +237,7 @@ visitEDsBasis = mapM visitEDBasis
 findVisitEDsBasis
   :: StateMayFail sig m
   => [RangeOrLoc] -> m [Var]
-findVisitEDsBasis = findVisitEDs evBasis 
+findVisitEDsBasis = findVisitEDs evBasis
 
 findEmitBasisByRange
   :: StateMayFail sig m

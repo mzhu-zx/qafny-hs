@@ -13,6 +13,11 @@ method DeutschJozsa(q : qreg[n], p : qreg[1], n : nat, f : nat -> nat)
 {
   q[0 .. n] *= H;
   p[0 .. 1] *= H;
+  if (p [0..1])
+    separates q[0 .. n]
+  {
+    q[0..n] *= λ (x) => (x);
+  }
   q[0 .. n], p[0 .. 1] *= λ (x, y) => (x, ((y + f(x)) % 2));
 
   assert {

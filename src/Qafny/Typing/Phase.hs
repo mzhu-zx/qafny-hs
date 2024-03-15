@@ -4,12 +4,12 @@
   , LambdaCase
   , MultiParamTypeClasses
   , MultiWayIf
+  , NamedFieldPuns
   , ScopedTypeVariables
   , TupleSections
   , TypeApplications
   , TypeFamilies
   #-}
-{-# LANGUAGE NamedFieldPuns #-}
 
 
 module Qafny.Typing.Phase where
@@ -17,30 +17,24 @@ module Qafny.Typing.Phase where
 -- | Phase-related Typing
 
 -- Effects
-import           Control.Effect.Catch
-import           Control.Effect.Error
-    (Error, throwError)
-import           Control.Effect.Lens
-import           Control.Effect.State
-    (State)
-import           Effect.Gensym
-    (Gensym)
+import           Qafny.Effect
 
 -- Qafny
-import           Qafny.Syntax.IR
 import           Qafny.Syntax.AST
 import           Qafny.Syntax.EmitBinding
+import           Qafny.Syntax.IR
 import           Qafny.TypeUtils
 import           Qafny.Utils
 
 -- Utils
-import           Control.Effect.Trace
 import           Control.Lens
     (at, (?~))
 import           Control.Monad
     (when)
 import           Data.List
     (nub, singleton)
+import           Data.Maybe
+    (catMaybes, mapMaybe)
 import           Data.Sum
     (Injection (inj))
 import           Qafny.Syntax.ASTUtils
@@ -49,7 +43,6 @@ import           Qafny.Syntax.Emit
     (showEmitI)
 import           Text.Printf
     (printf)
-import Data.Maybe (catMaybes, mapMaybe)
 
 throwError'
   :: ( Has (Error String) sig m )
@@ -75,9 +68,7 @@ data Promotion
 --   where the promotion kicks in
 --
 promotionScheme
-  :: ( Has (Gensym Emitter) sig m
-     , Has (State TState) sig m
-     , Has (Error String) sig m
+  :: ( GensymEmitterWithStateError sig m
      , Has Trace sig m
      )
   => Locus -> PhaseBinder -> PhaseExp -> m (Maybe PromotionScheme)
@@ -206,7 +197,7 @@ allocAndUpdatePhaseType
   => Locus -> m [PhaseTy]
 allocAndUpdatePhaseType s@Locus{loc, part=Partition{ranges}, qty, degrees} = do
   updateTState s
-  mapMaybe evPhaseTy <$> genEDStUpdatePhaseFromLocus loc ranges qty degrees
+  mapMaybe evPhaseTy <$> genEDStUpdatePhaseFromLocus s
 
 -- | Query in the emit state the phase types of the given Locus
 queryPhaseType

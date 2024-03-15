@@ -44,7 +44,7 @@ import           Qafny.Syntax.Emit
 import           Qafny.Syntax.EmitBinding
 import           Qafny.Syntax.IR
 import           Qafny.TypeUtils
-import           Qafny.Typing.Phase           hiding
+import           Qafny.Typing.Phase         hiding
     (throwError')
 import           Qafny.Utils.Utils
     (errTrace, exp2AExp, gensymLoc, rethrowMaybe)
@@ -66,14 +66,14 @@ import           Data.Bool
 import           Data.Functor
     ((<&>))
 import           Data.Functor.Identity
-import qualified Data.List                    as List
+import qualified Data.List                  as List
 import           Data.List.NonEmpty
     (NonEmpty (..))
-import qualified Data.List.NonEmpty           as NE
-import qualified Data.Map.Strict              as Map
+import qualified Data.List.NonEmpty         as NE
+import qualified Data.Map.Strict            as Map
 import           Data.Maybe
     (catMaybes, isJust, listToMaybe, mapMaybe)
-import qualified Data.Set                     as Set
+import qualified Data.Set                   as Set
 import           Data.Sum
 import           GHC.Stack
     (HasCallStack)
@@ -98,6 +98,7 @@ typingExp (ENum _)  = return TNat
 typingExp (EVar x)  = do
   env <- view kEnv
   return ((env ^. at x) >>= projTy) `rethrowMaybe` (show $ UnknownVariableError x env)
+typingExp (EMeasure p) = return TMeasured
 typingExp (EOp2 op2 e1 e2) =
   do top <- typingOp2 op2
      t1 <- typingExp e1
@@ -526,8 +527,8 @@ splitThenCastScheme s'@Locus{ loc, part, qty=qt1, degrees } qt2 rSplitTo =
     (_ , _) | not (isEN qt1) && isEN qt2 -> do
       -- casting a smaller type to a larger type
       (sSplit, maySchemeS) <- splitScheme s' rSplitTo
-      (sCast, schemeC) <- castScheme sSplit qt2
-      return (sCast, maySchemeS, Just schemeC)
+      (sCast, maySchemeC) <- castScheme sSplit qt2
+      return (sCast, maySchemeS, maySchemeC)
     (_, _) | qt1 == qt2 -> do
       -- the same type, therefore, only try to compute a split scheme
       (sSplit, maySchemeS) <- splitScheme s' rSplitTo
@@ -637,13 +638,6 @@ checkSubtypeQ
   => QTy -> QTy -> m ()
 checkSubtypeQ t1 t2 =
   unless (subQ t1 t2) $
-  -- traceStack "" .
-
-  -- traceStack "" .
-
-  -- traceStack "" .
-
-  -- traceStack "" .
   throwError $
   "Type mismatch: `" ++ show t1 ++ "` is not a subtype of `" ++ show t2 ++ "`"
 -------------------------------------------------------------------------------
@@ -654,20 +648,18 @@ retypePartition1
      , Has (State TState) sig m
      , Has (Gensym Emitter) sig m
      )
-  => Locus -> QTy -> m (Var, Ty, Var, Ty)
-retypePartition1 st qtNow = do
-  schemeC <- retypePartition st qtNow
-  let CastScheme{ schVsOldEmit=vsPrev
-                , schTOldEmit=tPrev
-                , schVsNewEmit=vsNow
-                , schTNewEmit=tNow
-                } = schemeC
-  case (vsPrev, vsNow) of
-    ([vPrev], [vNow]) ->
-      return (vPrev, tPrev, vNow, tNow)
-    _ ->
-      throwError @String $ printf "%s and %s contains more than 1 partition!"
-        (show vsPrev) (show vsNow)
+  => Locus -> QTy -> m (Maybe (Var, Ty, Var, Ty))
+retypePartition1 st qtNow =
+  retypePartition st qtNow >>= maybe (return Nothing) go
+  where 
+    go CastScheme{ schVsOldEmit=vsPrev , schTOldEmit=tPrev
+                 , schVsNewEmit=vsNow , schTNewEmit=tNow} =
+      case (vsPrev, vsNow) of
+        ([vPrev], [vNow]) ->
+          return $ pure (vPrev, tPrev, vNow, tNow)
+        _ ->
+          throwError @String $ printf "%s and %s contains more than 1 partition!"
+          (show vsPrev) (show vsNow)
 
 -- | Cast the type of a partition to a given qtype, modify the typing state and
 -- emit variable.
@@ -678,33 +670,32 @@ castScheme
      , Has (State TState) sig m
      , Has (Gensym Emitter) sig m
      )
-  => Locus -> QTy -> m (Locus, CastScheme)
+  => Locus -> QTy -> m (Locus, Maybe CastScheme)
 castScheme st qtNow = errTrace "`castScheme`" $ do
-  let Locus{ loc=locS, part=sResolved, qty=qtPrev, degrees=dgrs } = st
-  when (qtNow == qtPrev) $
-    throwError @String  $ printf
-     "Partition `%s` is of type `%s`. No retyping need to be done."
-     (show sResolved) (show qtNow)
-  -- Get info based on its previous type!
-  let tOldEmit = typingQEmit qtPrev
-  let rsOld = unpackPart sResolved
-  vsOldEmit <- findVisitEDs evBasis (inj <$> rsOld)
-  deleteEDs (inj <$> rsOld)
-  let tNewEmit = typingQEmit qtNow
-  -- FIXME: Cast phases
-  sSt %= (at locS ?~ (sResolved, (qtNow, dgrs)))
-  rsEDsNew <- genEDStSansPhaseByRanges qtNow $ unpackPart sResolved
-  vsNewEmit <- mapM (visitED evBasis . snd) rsEDsNew
-  return ( st { qty=qtNow }
-         , CastScheme { schVsOldEmit=vsOldEmit
-                      , schTOldEmit=tOldEmit
-                      , schVsNewEmit=vsNewEmit
-                      , schTNewEmit=tNewEmit
-                      , schQtOld=qtPrev
-                      , schQtNew=qtNow
-                      , schRsCast=unpackPart sResolved
-                      })
-
+  if qtNow == qtPrev
+    then return (st, Nothing)
+    else second Just <$> go
+  where
+    go = do
+      let tOldEmit = typingQEmit qtPrev
+      let rsOld = unpackPart sResolved
+      vsOldEmit <- findVisitEDs evBasis (inj <$> rsOld)
+      deleteEDs (inj <$> rsOld)
+      let tNewEmit = typingQEmit qtNow
+      -- FIXME: Cast phases
+      sSt %= (at locS ?~ (sResolved, (qtNow, dgrs)))
+      rsEDsNew <- genEDStSansPhaseByRanges qtNow $ unpackPart sResolved
+      vsNewEmit <- mapM (visitED evBasis . snd) rsEDsNew
+      return ( st { qty=qtNow }
+             , CastScheme { schVsOldEmit=vsOldEmit
+                          , schTOldEmit=tOldEmit
+                          , schVsNewEmit=vsNewEmit
+                          , schTNewEmit=tNewEmit
+                          , schQtOld=qtPrev
+                          , schQtNew=qtNow
+                          , schRsCast=unpackPart sResolved
+                          })
+    Locus{ loc=locS, part=sResolved, qty=qtPrev, degrees=dgrs } = st
 
 -- | The same as 'castScheme', for compatibility
 retypePartition
@@ -712,7 +703,7 @@ retypePartition
      , Has (State TState) sig m
      , Has (Gensym Emitter) sig m
      )
-  => Locus -> QTy -> m CastScheme
+  => Locus -> QTy -> m (Maybe CastScheme)
 retypePartition = (snd <$>) .: castScheme
 
 --------------------------------------------------------------------------------

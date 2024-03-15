@@ -173,7 +173,7 @@ splitAt :: { Exp' }
 guardExpr :: { GuardExp }
   : partition opt(splitAt)            { GEPartition $1 $2 }
                                                                           
-partition :: { Partition }                                                               
+partition :: { Partition }
   : manyComma(range)                  { Partition $ $1                       }
                                                                           
 range                                                                     

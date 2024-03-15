@@ -4,18 +4,15 @@
 
 module Qafny.Codegen.SplitCast where
 
-import           Control.Algebra
-import           Control.Effect.Error
-    (Error, throwError)
-import           Control.Effect.Reader
-import           Control.Effect.Trace
+
+import           Qafny.Effect
 import           Qafny.Partial
 import           Qafny.Syntax.AST
 import           Qafny.Syntax.ASTFactory
     (qComment)
 import           Qafny.Syntax.IR
 import           Qafny.Typing
-    (resolvePartition, retypePartition)
+    (resolvePartition, retypePartition, castScheme)
 import           Qafny.Utils.EmitBinding
 import           Text.Printf
     (printf)
@@ -89,6 +86,14 @@ codegenSplitThenCastEmit sS sC = do
 --------------------------------------------------------------------------------
 -- * Cast Semantics
 --------------------------------------------------------------------------------
+-- | Mutate the typing state and generate the expressions to cast
+codegenCast
+  :: GensymEmitterWithStateError sig m
+  => Locus -> QTy -> m [Stmt']
+codegenCast locus qtyInto = do
+  (locus', mayScheme) <- castScheme locus qtyInto
+  codegenCastEmitMaybe mayScheme
+
 codegenCastEmitMaybe
   :: ( Has (Error String) sig m)
   => Maybe CastScheme -> m [Stmt']
@@ -128,28 +133,27 @@ codegenCastEmit
 -- | Convert quantum type of `s` to `newTy` and emit a cast statement with a
 -- provided `op`
 castWithOp
-  :: ( Has (Error String) sig m
-     , GensymWithState sig m
-     )
+  :: GensymEmitterWithStateError sig m
   => String -> Locus -> QTy -> m [Stmt']
-castWithOp op s newTy =
-  do
-    schemeC <- retypePartition s newTy
-    let CastScheme{ schVsOldEmit=vsOldEmits , schVsNewEmit=vsNewEmit} = schemeC
-    let partitionTy = (qty s, degrees s)
-    -- assemble the emitted terms
-    return . concat $
-      [ [ qComment $ "Cast " ++ show partitionTy ++ " ==> " ++ show newTy
-        , (::=:) vNew $ EEmit (op `ECall` [EEmit $ EDafnyVar vOld])
-        ]
-      | (vOld, vNew) <- zip vsOldEmits vsNewEmit ]
+castWithOp op s newTy = do
+  maySchemeC <- retypePartition s newTy
+  case maySchemeC of
+       Nothing      -> return []
+       Just schemeC -> go schemeC
+  where
+    go CastScheme{ schVsOldEmit=vsOldEmits, schVsNewEmit=vsNewEmit} = do
+      let partitionTy = (qty s, degrees s)
+      -- assemble the emitted terms
+      return . concat $
+        [ [ qComment $ "Cast " ++ show partitionTy ++ " ==> " ++ show newTy
+          , (::=:) vNew $ EEmit (op `ECall` [EEmit $ EDafnyVar vOld])
+          ]
+        | (vOld, vNew) <- zip vsOldEmits vsNewEmit ]
 
 
 -- | Cast the given partition to EN type!
 castPartitionEN
-  :: ( Has (Error String) sig m
-     , GensymWithState sig m
-     )
+  :: GensymEmitterWithStateError sig m
   => Locus -> m [Stmt']
 castPartitionEN st@Locus{loc=locS, part=s, qty=qtS} = do
   case qtS of
@@ -169,8 +173,7 @@ castPartitionEN st@Locus{loc=locS, part=s, qty=qtS} = do
 -- modifying the existing bindings!
 --
 dupState
-  :: ( Has (Error String) sig m
-     , GensymWithState sig m
+  :: ( GensymEmitterWithStateError sig m 
      , Has (Reader IEnv) sig m
      , Has Trace sig m
      )
@@ -208,4 +211,6 @@ makeLoopRange s _ _ =
     "Partition `"
       ++ show s
       ++ "` contains more than 1 range, this should be resolved at the typing stage"
+
+
 

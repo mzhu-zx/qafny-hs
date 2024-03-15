@@ -4,7 +4,7 @@
   , TypeFamilies
   #-}
 
-module Qafny.Codegen.Lambda where
+module Qafny.Codegen.Lambda(codegenUnaryLambda, codegenLambdaEntangle) where
 
 import           Control.Algebra
     (Has)
@@ -26,6 +26,8 @@ import           Qafny.Codegen.SplitCast
     (codegenSplitThenCastEmit)
 import           Qafny.Codegen.Utils
     (putOpt)
+import           Qafny.Effect
+    (GensymEmitterWithStateError)
 import           Qafny.Syntax.AST
 import           Qafny.Syntax.ASTFactory
 import           Qafny.Syntax.IR
@@ -34,8 +36,7 @@ import           Qafny.Typing
     (promotionScheme, resolvePartition', splitThenCastScheme)
 import           Qafny.Typing.Error
 import           Qafny.Utils
-    (GensymWithState, findEmitBasesByRanges, findEmitBasisByRange,
-    gensymBinding)
+    (findEmitBasesByRanges, findEmitBasisByRange, gensymBinding)
 
 
 throwError'
@@ -50,8 +51,7 @@ throwError' = throwError @String . ("[Codegen|Lambda] " ++)
 -- When the entanglement type permits, a split is inserted.
 codegenUnaryLambda
   :: ( Has (Gensym String) sig m
-     , GensymWithState sig m
-     , Has (Error String) sig m
+     , GensymEmitterWithStateError sig m
      , Has (Reader IEnv) sig m
      , Has (Reader Bool) sig m
      , Has Trace sig m
@@ -84,7 +84,7 @@ codegenUnaryLambda rLhs rResolved locus qtLambda
   -- should only be applied to the sub-partition specified in the annotation.
   vEmit <- findEmitBasisByRange rLhs
   ((stmts ++) . (stmtsPhase ++) <$>) . putOpt $ case qtLambda of
-    TEN -> return [ vEmit ::=: callMap lamSansPhase (EVar vEmit) ]
+    TEN -> return [ vEmit ::=: callMap lamSansPhase vEmit ]
     TEN01 -> do
       -- for example, we have
       --  - rLhs x[3 .. 6]
@@ -99,7 +99,7 @@ codegenUnaryLambda rLhs rResolved locus qtLambda
         let offset = eLhsLower - eRsvLower
             (elFrom0, erFrom0) = (offset, offset + eLhsUpper-eLhsLower)
             lambda = lambdaSplit vInner elFrom0 erFrom0
-        in  [ vEmit ::=: callMap lambda (EVar vEmit) ]
+        in  [ vEmit ::=: callMap lambda vEmit ]
     TNor -> return $
       let offset = eLhsLower - eRsvLower
           (elFrom0, erFrom0) = (offset, offset + eLhsUpper-eLhsLower)
@@ -116,7 +116,7 @@ codegenUnaryLambda rLhs rResolved locus qtLambda
     -- a function to be applied to a map that manipulates a sequence of
     -- sequences.
     bodyOnly v el er f = -- v[0..el] + Map(f, v[el..er]) + v[er..]
-      sliceV v 0 el + callMap f (sliceV v el er) + sliceV v er (cardV v)
+      sliceV v 0 el + callMap f (sliceV v el er) + sliceV v er (mkCard v)
 
     -- for the EN01 case
     lambdaSplit v el er =
@@ -127,10 +127,7 @@ codegenUnaryLambda rLhs rResolved locus qtLambda
 
 -- Codegen lambda that takes multiple inputs.
 codegenLambdaEntangle
-  :: ( GensymWithState sig m
-     , Has (Error String) sig m
-     )
-  => [Range] -> Lambda -> m [Stmt']
+  :: GensymEmitterWithStateError sig m => [Range] -> Lambda -> m [Stmt']
 codegenLambdaEntangle rs (LambdaF{ bBases, eBases }) = do
   vReprs <- findEmitBasesByRanges rs
   unless (lenBbases == lenEbases && length vReprs == lenEbases) $
@@ -149,13 +146,10 @@ codegenApplyLambdaMany iVar vReprs vBinders eBodies =
   where
     vEnv = aenvWithIndex (EVar iVar) vBinders vReprs
     substWvenv = subst vEnv
-    newSeq vRepr eBody = natSeqLike (EVar vRepr) (substWvenv eBody)
+    newSeq vRepr eBody = natSeqLike vRepr (substWvenv eBody)
     newSeqs = zipWith newSeq vReprs eBodies
 
 -- Make an `AEnv` that maps each `binder` to the `index` position of `repr`.
 aenvWithIndex :: Exp' -> [Var] -> [Var] -> AEnv
 aenvWithIndex idx = zipWith go
-  where go binder repr = (binder, eAt (EVar repr) idx)
-
-natSeqLike :: Exp' -> Exp' -> Exp'
-natSeqLike liked = EEmit . EMakeSeq TNat (EEmit (ECard liked))
+  where go binder repr = (binder, repr >:@: idx)

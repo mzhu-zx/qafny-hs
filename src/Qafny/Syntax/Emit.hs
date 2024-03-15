@@ -201,6 +201,11 @@ instance DafnyPrinter (Stmt ()) where
     <!> body
 
   -- Statements that end with a SemiColon
+  build s@(SIf eg sep block) = debugOnly s $
+    indent <!> "if" <+> withParen eg <!> line <!>
+    indent <!> "  " <!> "seperates" <+> sep <!> line <!>
+    block
+
   build s = indent <> buildStmt s <> build ';'
     where
       buildStmt :: Stmt' -> Builder
@@ -236,9 +241,11 @@ instance DafnyPrinter (Exp ()) where
   build (EOp1 ONeg e1) = "-" <+> e1
   build (EOp2 op e1 e2) = buildOp2 op (build e1) (build e2)
   -- parentheses are critical to forall expressions!
-  build (EForall x eb e) = withParen $ "forall " <!> x  <!> beb eb <!>  " :: " <!> e
-    where beb (Just eb') = " | " <!> eb'
-          beb Nothing    = mempty
+  build (EForall x eb e) =
+    withParen $ "forall " <!> x  <!> beb eb <!>  " :: " <!> e
+    where
+      beb (Just eb') = " | " <!> eb'
+      beb Nothing    = mempty
   build e@EHad = debugOnly e "H"
   build e@(ESpec p qt specs) = debugOnly e $
     "{" <+> p <+> ":" <+> qt  <+> "↦" <+> byComma specs <+> "}"
@@ -293,7 +300,7 @@ instance (Show f, DafnyPrinter f) => DafnyPrinter (AmpExpF f) where
 
 
 instance DafnyPrinter EmitExp where
-  build (ESelect e1 e2) = e1 <!> "[" <!> e2 <!> "]"
+  build (e1 :@: e2) = e1 <!> "[" <!> e2 <!> "]"
   build (ESlice e1 e2 e3) = e1 <!> "[" <!> e2 <!> ".." <!> e3 <!> "]"
   build EMtSeq = build "[]"
   build (EMakeSeq ty e ee) =
@@ -323,13 +330,14 @@ instance DafnyPrinter Locus where
     l <+> "↦" <+> p <+> "::" <+> qty <+> withBracket (byComma dgrs)
 
 
-instance (Show a, Show b, DafnyPrinter a, DafnyPrinter b) => DafnyPrinter (a, b) where
+instance ( Show a, Show b
+         , DafnyPrinter a, DafnyPrinter b
+         ) => DafnyPrinter (a, b) where
   build t@(a, b) = debugOnly t $ withParen . byComma $ [build a, build b]
 
-instance (Show a, Show b, Show c,
-          DafnyPrinter a, DafnyPrinter b, DafnyPrinter c) =>
-
-         DafnyPrinter (a, b, c) where
+instance ( Show a, Show b, Show c
+         , DafnyPrinter a, DafnyPrinter b, DafnyPrinter c
+         ) => DafnyPrinter (a, b, c) where
   build t@(a, b, c) = debugOnly t $
     withParen . byComma $ [build a, build b, build c]
 
@@ -338,7 +346,9 @@ instance (Show f, DafnyPrinter f) => DafnyPrinter (QSpecF f) where
     amp <+> phase <+> "~" <+> spec
 
 
-instance (Show k, Show v, DafnyPrinter k, DafnyPrinter v) => DafnyPrinter (Map.Map k v) where
+instance ( Show k, Show v
+         , DafnyPrinter k, DafnyPrinter v
+         ) => DafnyPrinter (Map.Map k v) where
   build m' = debugOnly m $
     byLineT ((indent <>) . row <$> m)
     where
@@ -347,8 +357,8 @@ instance (Show k, Show v, DafnyPrinter k, DafnyPrinter v) => DafnyPrinter (Map.M
 
 instance DafnyPrinter MTy where
   build (MTy (Inl t)) = build t
-  build (MTy (Inr m)) = byComma (mtSrcParams m) <+> "↪" <+> byComma (mtSrcReturns m)
-
+  build (MTy (Inr m)) =
+    byComma (mtSrcParams m) <+> "↪" <+> byComma (mtSrcReturns m)
 
 -- | Warning: don't emit parentheses in `buildOp2` because `EOpChained` relies
 -- on this function not to be parenthesized

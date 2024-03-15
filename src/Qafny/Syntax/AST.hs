@@ -41,7 +41,6 @@ import           GHC.Generics          hiding
     ((:+:))
 import           Text.Printf
     (printf)
-import Qafny.Syntax.Token (Token(TMeasured))
 --------------------------------------------------------------------------------
 
 data AExp
@@ -217,7 +216,7 @@ data Exp x
 
 -- data LamdaExpF f
 --   = { bPhase :: PhaseBinder
---     , 
+--     ,
 --     }
 
 -- Amplitude expression
@@ -293,7 +292,7 @@ data EmitExp
   | EMakeSeq Ty Exp' Exp'
   | ECard (Exp ())
   | ECall Var [Exp ()]
-  | ESelect (Exp ()) (Exp ())
+  | (Exp ()) :@: (Exp ())
   | ESlice (Exp ()) (Exp ()) (Exp ())
   | EDafnyVar Var
   | EMultiLambda [Var] (Exp ())
@@ -391,9 +390,7 @@ data EmitStmt
   deriving (Show, Eq)
 
 type AST = [Toplevel ()]
-
 type LAST = [Toplevel Source]
-
 
 typeTag :: Ty -> String
 typeTag TNat     = "nat"
@@ -401,7 +398,6 @@ typeTag TInt     = "int"
 typeTag TBool    = "bool"
 typeTag (TSeq t) = "_seqL_" ++ typeTag t ++ "_R_"
 typeTag _        = "unsupported"
-
 
 --------------------------------------------------------------------------------
 -- * Partition Utils
@@ -502,8 +498,6 @@ instance Num (Exp ()) where
   abs = undefined
   signum = undefined
   fromInteger a = ENum (fromInteger a)
-
-
 
 type AEnv = [(Var, Exp ())]
 type IEnv = [(Var, NonEmpty (Exp ()))]

@@ -10,40 +10,35 @@
 module Qafny.Codegen.Method where
 
 -- eff
-import           Control.Algebra
-    (Has)
-import           Control.Effect.Error
-    (Error)
 import           Control.Effect.Lens
-import           Control.Effect.Trace
-    (Trace, trace)
 
 -- data
 import           Control.Lens
-    (at, sans, (?~), (^.), Bifunctor (bimap))
+    (Bifunctor (bimap), at, sans, (?~), (^.))
 import qualified Data.Map.Strict          as Map
 
 -- Qafny
 import           Control.Monad
-    (liftM, liftM2, join, liftM3)
+    (join, liftM, liftM2, liftM3)
 import           Data.Maybe
     (catMaybes)
 import           Effect.Gensym
     (gensym)
-import           Qafny.Syntax.IR
+import           Qafny.Effect
 import           Qafny.Syntax.AST
 import           Qafny.Syntax.ASTFactory
     (mkAssignment, mkDAssignment)
 import           Qafny.Syntax.ASTUtils
-    (phaseRefToTy, getPhaseRefMaybe)
+    (getPhaseRefMaybe, phaseRefToTy)
 import           Qafny.Syntax.EmitBinding
     (EmitData (..), Emitter (EmAnyBinding))
+import           Qafny.Syntax.IR
 import           Qafny.TypeUtils
-    (bindingsFromPtys, typingQEmit, typingPhaseEmitReprN)
+    (bindingsFromPtys, typingPhaseEmitReprN, typingQEmit)
 import           Qafny.Typing.Typing
     (collectPureBindings)
 import           Qafny.Utils.EmitBinding
-    (GensymWithState, StateMayFail, findEmitBasesByRanges, gensymBinding)
+    (findEmitBasesByRanges, gensymBinding)
 import           Qafny.Utils.Utils
     (dumpSt)
 
@@ -56,14 +51,14 @@ import           Qafny.Utils.Utils
 -- This is needed because you cannot mutate the parameter of a method.
 -- An alternative is to copy the augument into a local variable where mutation
 -- are allowed.
-genEmitSt :: GensymWithState sig m => m [Stmt']
+genEmitSt :: GensymEmitterWithState sig m => m [Stmt']
 genEmitSt = do
   eSt <- use emitSt
   emitSt %= const Map.empty
   concat <$> mapM (uncurry replicateEmitEntry) (Map.toList eSt)
 
 replicateEmitEntry
-  :: GensymWithState sig m
+  :: GensymEmitterWithState sig m
   => RangeOrLoc -> EmitData -> m [Stmt']
 replicateEmitEntry rl
   ed@EmitData{evBasis, evBasisTy, evPhaseSeqTy, evPhaseTy, evAmp} =
@@ -77,13 +72,13 @@ replicateEmitEntry rl
                         , decl $ bimap prRepr prRepr <$> refs
                         ]
   where
-    evBasisM = liftM2 gensymBinding evBasis evBasisTy       
+    evBasisM = liftM2 gensymBinding evBasis evBasisTy
     evPhaseM = replicatePhaseTy <$> evPhaseTy
     phaseRefOf = (getPhaseRefMaybe =<<)
     decl = (uncurry <$> (mkDAssignment <$> evPhaseSeqTy) <*>)
 
 replicatePhaseTy
-  :: GensymWithState sig m
+  :: GensymEmitterWithState sig m
   => PhaseTy -> m PhaseTy
 replicatePhaseTy PT0 = return PT0
 replicatePhaseTy (PTN n PhaseRef{prBase, prRepr}) =
