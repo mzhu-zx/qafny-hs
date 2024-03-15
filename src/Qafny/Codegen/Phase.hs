@@ -67,6 +67,8 @@ codegenPromotionMaybe
   => Maybe PromotionScheme -> m [Stmt']
 codegenPromotionMaybe = (concat <$>) . mapM codegenPromotion . maybeToList
 
+-- | Generate code for a given PromotionScheme 
+-- This function doesn't mutate the Emitter state. 
 codegenPromotion
   :: ( Has (Gensym Emitter) sig m
      , Has (State TState) sig m
@@ -82,6 +84,7 @@ codegenPromotion
       codegenPromote'0'1 qt rs prefs (i, n)
 
 -- | Promote a 0th-degree phase to 1st-degree phase
+-- This function doesn't mutate the Emitter state. 
 codegenPromote'0'1
   :: ( Has (Gensym Emitter) sig m
      , Has (State TState) sig m

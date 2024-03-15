@@ -182,12 +182,11 @@ analyzePhaseSpecDegree PhaseSumOmega{} = 2
 --                      ]
 
 
-updateTState
+updateLocusSt
   :: ( Has (State TState) sig m )
   => Locus -> m ()
-updateTState s@Locus{loc, part, qty, degrees} =
+updateLocusSt s@Locus{loc, part, qty, degrees} =
   sSt %= (at loc ?~ (part, (qty, degrees)))
-
 
 allocAndUpdatePhaseType
   :: ( Has (Gensym Emitter) sig m
@@ -196,7 +195,7 @@ allocAndUpdatePhaseType
      )
   => Locus -> m [PhaseTy]
 allocAndUpdatePhaseType s@Locus{loc, part=Partition{ranges}, qty, degrees} = do
-  updateTState s
+  updateLocusSt s
   mapMaybe evPhaseTy <$> genEDStUpdatePhaseFromLocus s
 
 -- | Query in the emit state the phase types of the given Locus
