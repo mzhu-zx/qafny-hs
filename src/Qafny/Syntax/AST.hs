@@ -121,8 +121,9 @@ tyReal = TEmit $ TAny "real"
 data QTy
   = TNor
   | THad
-  | TEN
-  | TEN01
+  | TEn
+  | TEn01
+  | TQft
   deriving (Show, Eq, Ord)
 
 type Var = String

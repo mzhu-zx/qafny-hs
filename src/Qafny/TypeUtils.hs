@@ -21,8 +21,8 @@ import           Qafny.Syntax.IR
 typingQEmit :: QTy -> Ty
 typingQEmit TNor  = TSeq TNat
 typingQEmit THad  = TSeq TNat
-typingQEmit TEN   = TSeq TNat
-typingQEmit TEN01 = TSeq (TSeq TNat)
+typingQEmit TEn   = TSeq TNat
+typingQEmit TEn01 = TSeq (TSeq TNat)
 {-# INLINE typingQEmit #-}
 
 -- | Type of an emitted phase variable
@@ -46,8 +46,8 @@ emitTypeFromDegree n =
 
 -- | Check if the given type is an 'EN'-like type.
 isEN :: QTy -> Bool
-isEN TEN01 = True
-isEN TEN   = True
+isEN TEn01 = True
+isEN TEn   = True
 isEN _     = False
 
 

@@ -45,7 +45,7 @@ data Token
   -- Types
   | TArrow | TTyArrow | TMeasured
   | TNat | TInt | TBool
-  | TSeq | TNor | THad | TEN | TEN01
+  | TSeq | TNor | THad | TEn | TEn01
   | TQReg
 
   -- Identifiers

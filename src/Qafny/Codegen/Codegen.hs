@@ -265,7 +265,7 @@ codegenToplevel'Method q@(QMethod vMethod bds rts rqs ens (Just block)) = runWit
 
     codegenMethodBody iEnv =
       runReader iEnv . -- | TODO: propagate parameter constraints
-      runReader TEN .  -- | resolve λ to EN on default
+      runReader TEn .  -- | resolve λ to EN on default
       runReader True .
       -- ((,) <$> genEmitSt <*>) .
       ((dumpSt "begin block") >>) .
@@ -389,9 +389,9 @@ codegenStmt' (SIf e seps b) = do
   stB'@Locus{part=sB, qty=qtB, degrees=ptysB} <-
     resolvePartitions . leftPartitions . inBlock $ b
   let annotateCastB = qComment $
-        printf "Cast Body Partition %s => %s" (show qtB) (show TEN)
+        printf "Cast Body Partition %s => %s" (show qtB) (show TEn)
   (stmtsCastB, stB) <- case qtB of
-    TEN -> return ([], stB')
+    TEn -> return ([], stB')
     _   ->
       (,) . (annotateCastB :) <$> castPartitionEN stB' <*> resolvePartition sB
   -- act based on the type of the guard
@@ -492,7 +492,7 @@ codegenStmt'Apply
 codegenStmt'Apply (s :*=: EQFT) = do
   -- ensures that bases is `EN`
   locusS <- resolvePartition s
-  (locusS, stmtCast) <- castScheme locusS TEN
+  (locusS, stmtCast) <- castScheme locusS TEn
   -- ensures that phases is in 1st degree
   when (degrees locusS /= [1]) $ throwError' "Degree not 1"
   codegenQft locusS
@@ -523,9 +523,9 @@ codegenStmt'If (SIf e _ b) = do
   -- resolve the body partition
   stB'@Locus{part=sB, qty=qtB} <- resolvePartitions . leftPartitions . inBlock $ b
   let annotateCastB = qComment $
-        printf "Cast Body Partition %s => %s" (show qtB) (show TEN)
+        printf "Cast Body Partition %s => %s" (show qtB) (show TEn)
   (stmtsCastB, stB) <- case qtB of
-    TEN -> return ([], stB')
+    TEn -> return ([], stB')
     _   -> (,) . (annotateCastB :) <$> castPartitionEN stB' <*> resolvePartition sB
   -- act based on the type of the guard
   stmts <- case qtG of
@@ -767,7 +767,7 @@ codegenFor'Body idx boundl boundr eG body stSep@(Locus{qty=qtSep}) newInvs = do
       -- to find a merge candidate of this split guard parition at the end of
       -- the loop.
 
-      -- schemeC <- retypePartition stGSplited TEN
+      -- schemeC <- retypePartition stGSplited TEn
       -- let CastScheme { schVsNewEmit=vsEmitG } = schemeC
       -- let vEmitG = head vsEmitG
       -- let cardVEmitG = EEmit . ECard . EVar $ vEmitG
@@ -784,7 +784,7 @@ codegenFor'Body idx boundl boundr eG body stSep@(Locus{qty=qtSep}) newInvs = do
              , stmtsSplitG ++ stmtsCGHad ++ stmtsMatchLoopBeginEnd
              )
 
-    TEN01 -> do
+    TEn01 -> do
       eSep <- case eG of
         GEPartition _ (Just eSep) -> return eSep
         _                         -> throwError' errNoSep
@@ -956,7 +956,7 @@ mergeHadGuardWith
      )
   => Exp' -> Locus -> Locus -> Exp' -> Exp' -> m [Stmt']
 mergeHadGuardWith eBase stG' stB cardBody cardStashed =
-  retypePartition1 stG' TEN >>= maybe (return []) go
+  retypePartition1 stG' TEn >>= maybe (return []) go
   where
     go (_, _, vGENow, tGENow) = do
       stG <- resolvePartition (part stG')
@@ -1078,14 +1078,14 @@ codegenMergeScheme = mapM $ \scheme -> do
       vEmitMain   <- findEmitBasisByRange rMain
       deleteEDs $ inj <$> [rMerged, rMain]
       case (qtMain, qtMerged) of
-        (TEN01, TNor) -> do
+        (TEn01, TNor) -> do
           -- append the merged value (ket) into each kets in the main value
           vEmitResult <- genEDStByRangeSansPhase qtMain rResult >>= visitEDBasis
           vBind <- gensym "lambda_x"
           let stmt = vEmitResult ::=: callMap ef vEmitMain
               ef   = simpleLambda vBind (EVar vBind + EVar vEmitMerged)
           return (stmt, vEmitMain)
-        (TEN, THad) -> do
+        (TEn, THad) -> do
           let (Range _ lBound rBound) = rMain
           let stmtAdd = addENHad1 vEmitMain (reduce (rBound - lBound))
           return (stmtAdd, vEmitMain)
@@ -1099,9 +1099,9 @@ codegenMergeScheme = mapM $ \scheme -> do
           return (qComment "TNor has nothing to be merged!", v1)
         THad ->
           throwError' $ printf "This type (%s) cannot be handled: (%s)" (show qt) (show r)
-        _ | qt `elem` [ TEN01, TEN ] ->
-          -- TEN01 is emitted as seq<seq<nat>> representing Sum . Tensor,
-          -- TEN   is emitted as seq<nat>      representing Sum . Tensor,
+        _ | qt `elem` [ TEn01, TEn ] ->
+          -- TEn01 is emitted as seq<seq<nat>> representing Sum . Tensor,
+          -- TEn   is emitted as seq<nat>      representing Sum . Tensor,
           -- It suffices to simply concat them
           pure $ (merge3 v1 v1 v2, v1)
         _ -> throwError' "This pattern shoule be complete!"
@@ -1282,7 +1282,7 @@ codegenSpecExp vrs p specs ptys = putOpt $
     specPerRange _ e  =
       errIncompatibleSpec e
 
-    specPerPartition TEN (SESpecEN idx (Intv l r) eValues) pspec = do
+    specPerPartition TEn (SESpecEN idx (Intv l r) eValues) pspec = do
       checkListCorr vrs eValues
       -- In x[? .. ?] where l and r bound the indicies of basis-kets
       -- @
@@ -1301,7 +1301,7 @@ codegenSpecExp vrs p specs ptys = putOpt $
         , eV /= EWildcard ]
 
     specPerPartition
-      TEN01
+      TEn01
       (SESpecEN01 idxSum (Intv lSum rSum) idxTen (Intv lTen rTen) eValues)
       pspec
        = do

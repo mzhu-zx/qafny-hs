@@ -84,8 +84,8 @@ codegenUnaryLambda rLhs rResolved locus qtLambda
   -- should only be applied to the sub-partition specified in the annotation.
   vEmit <- findEmitBasisByRange rLhs
   ((stmts ++) . (stmtsPhase ++) <$>) . putOpt $ case qtLambda of
-    TEN -> return [ vEmit ::=: callMap lamSansPhase vEmit ]
-    TEN01 -> do
+    TEn -> return [ vEmit ::=: callMap lamSansPhase vEmit ]
+    TEn01 -> do
       -- for example, we have
       --  - rLhs x[3 .. 6]
       --  - rRsv x[2 .. 8]

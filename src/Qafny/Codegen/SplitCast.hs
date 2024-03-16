@@ -50,7 +50,7 @@ codegenSplitEmit
                  } =
   -- trace ("codegenSplitEmit: " ++ show ss) >>
   case qty of
-    t | t `elem` [ TNor, THad, TEN01 ] -> do
+    t | t `elem` [ TNor, THad, TEn01 ] -> do
       let offset e = reduce $ EOp2 OSub e left
       let stmtsSplit =
             [ [ (vEmitNew ::=:) $
@@ -121,10 +121,10 @@ codegenCastEmit
     -- | Consume /from/ and /to/ types and return a function that consumes a
     -- range and emit a specialized cast operator based on the property of the
     -- range passed in
-    mkOp TNor TEN   = return $ const "CastNorEN"
-    mkOp TNor TEN01 = return $ const "CastNorEN01"
+    mkOp TNor TEn   = return $ const "CastNorEN"
+    mkOp TNor TEn01 = return $ const "CastNorEN01"
     mkOp TNor THad  = return $ const "CastNorHad"
-    mkOp THad TEN01 = return $ \r -> case sizeOfRangeP r of
+    mkOp THad TEn01 = return $ \r -> case sizeOfRangeP r of
       Just 1 -> "CastHadEN01'1"
       _      -> "CastHadEN01"
     mkOp _    _     = throwError err
@@ -157,12 +157,12 @@ castPartitionEN
   => Locus -> m [Stmt']
 castPartitionEN st@Locus{loc=locS, part=s, qty=qtS} = do
   case qtS of
-    TNor -> castWithOp "CastNorEN" st TEN
-    THad -> castWithOp "CastHadEN" st TEN
-    TEN -> throwError' $
+    TNor -> castWithOp "CastNorEN" st TEn
+    THad -> castWithOp "CastHadEN" st TEn
+    TEn -> throwError' $
       printf "Partition `%s` is already of EN type." (show st)
-    TEN01 -> throwError' $
-      printf "Casting %s to TEN is expensive therefore not advised!" (show qtS)
+    TEn01 -> throwError' $
+      printf "Casting %s to TEn is expensive therefore not advised!" (show qtS)
 
 -- | Duplicate the data, i.e. sequences to be emitted, by generating statements
 -- that duplicates the data as well as the correspondence between the range

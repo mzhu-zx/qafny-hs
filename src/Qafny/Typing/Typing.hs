@@ -372,7 +372,7 @@ splitScheme' s@(Locus{loc, part, qty, degrees}) rSplitTo@(Range to rstL rstR) = 
       let sMain' = s{part=pMain, degrees=dgrsMain} -- the part that's split _from_
       case rsRem of
         [] -> case qty of
-          t | t `elem` [ TEN, TEN01 ] ->
+          t | t `elem` [ TEn, TEn01 ] ->
               throwError'' errSplitEN
           _ ->
             -- only split in partition but not in a range,
@@ -626,10 +626,10 @@ sub = (==)
 -- | QSubtyping
 --------------------------------------------------------------------------------
 subQ :: QTy -> QTy -> Bool
-subQ _    TEN   = True
+subQ _    TEn   = True
 subQ THad THad  = True
-subQ THad TEN01 = True
-subQ TNor TEN01 = True
+subQ THad TEn01 = True
+subQ TNor TEn01 = True
 subQ TNor TNor  = True
 subQ _     _    = False
 
@@ -762,7 +762,7 @@ mergeMatchedTState
       (qt2, _) <- getQPTy ts2 r
       when (qt1 /= qt2) $ throwError' "How can they be different?"
       pure $ case qt1 of
-        _ | qt1 `elem` [ TEN, TEN01 ] -> Just . MEqual $
+        _ | qt1 `elem` [ TEn, TEn01 ] -> Just . MEqual $
             EqualStrategy
             { esRange = r
             , esQTy = qt1
@@ -854,7 +854,7 @@ mergeLociHadEN
   stA@Locus{loc=locAux , part=sAux@(Partition rsAux)  , qty=qtAux , degrees=ptysAux} =
   do
     -- Sanity Check
-    unless (qtMain == qtAux && qtAux == TEN) $
+    unless (qtMain == qtAux && qtAux == TEn) $
       throwError @String $ printf "%s and %s have different Q types!"
         (show stM) (show stA)
 
@@ -866,7 +866,7 @@ mergeLociHadEN
                   let loc' = if loc == locAux then locMain else loc])
     sSt %=
       (`Map.withoutKeys` Set.singleton locAux) . -- GC aux's loc
-      (at locMain ?~ (newPartition, (TEN, ptysMain))) -- update main's state
+      (at locMain ?~ (newPartition, (TEn, ptysMain))) -- update main's state
     return ()
 
 --------------------------------------------------------------------------------
@@ -1101,7 +1101,7 @@ mergeCandidateHad st@(Locus{part, qty=THad, degrees}) = do
     _    -> throwError' $ ambiguousCandidates matched
   where
     [r] = ranges part
-    matchMergeable (p'@(Partition rs), (TEN, ptysEN)) = do
+    matchMergeable (p'@(Partition rs), (TEn, ptysEN)) = do
       rsAdjacent <- lookupAdjacentRange rs r
       pure $ case rsAdjacent of
         [] -> Nothing
