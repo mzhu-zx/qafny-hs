@@ -151,9 +151,9 @@ codegenQft locus@Locus{loc, part=Partition{ranges}} = do
   return $ codegenQftPure vPrRepr vBasisRepr vIdxK vIdxI (mkCard vBasisRepr)
   
 
--- | Given a 1st degree phase repr 'vPhase' and an EN typed base repr,
--- Generate statement to promote 1st degree phase to 2nd degree and perform
--- QFT operation.
+-- | Given a 1st degree phase repr 'vPhase' and an En typed base repr,
+-- Mutate the phase representation of the En base and generate a new sequence of
+-- basis kets for the tailing range.
 --
 -- The semantics is listed in [proposal/phase-amplitude].
 codegenQftPure :: Var -> Var -> Var -> Var -> Exp' -> [Stmt']
