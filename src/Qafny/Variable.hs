@@ -56,12 +56,9 @@ instance Variable Range where
 instance Variable (Binding ()) where
   variable (Binding s t) = variable (s, t)
 
-instance Variable PhaseTy where
-  variable PT0       = "phase_0_"
-  variable (PTN n _) = variablePhaseN n
-
-variablePhaseN :: Int -> String
-variablePhaseN n = printf "phase_%d_" n
+-- instance Variable PhaseTy where
+--   variable PT0       = "phase_0_"
+--   variable (PTN n _) = variablePhaseN n
 
 instance Variable QTy where
   variable = variable . typingQEmit
@@ -90,3 +87,6 @@ instance Variable Emitter where
   variable (EmPhaseBase b) = variable (b, TNat)
   variable (EmAnyBinding v t) = variable (v, t)
   variable EmAmplitude = "amplitude"
+
+variablePhaseN :: Int -> String
+variablePhaseN = printf "phase_%d_"

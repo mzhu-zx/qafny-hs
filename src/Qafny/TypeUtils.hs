@@ -9,9 +9,7 @@ import           Control.Lens
     (over)
 import           Control.Lens.Tuple
 import           Qafny.Syntax.AST
-    (Binding (..), PhaseRef (..), PhaseTy (..), QTy (..), Ty (..))
-import           Qafny.Syntax.ASTUtils
-    (getPhaseRefN)
+    (Binding (..), PhaseRef (..), QTy (..), Ty (..))
 import           Qafny.Syntax.IR
     (Locus (Locus, degrees), STuple (..))
 
@@ -55,9 +53,9 @@ isEN _     = False
 modifyPty :: ([Int] -> [Int]) -> Locus -> Locus
 modifyPty f st@Locus{degrees} = st{degrees=f degrees}
 
-bindingsFromPtys :: [PhaseTy] -> [Binding ()]
-bindingsFromPtys ptys = concat
-  [ [Binding vRepr ty, Binding vBase TNat]
-  | (n, PhaseRef {prRepr=vRepr, prBase=vBase}) <- getPhaseRefN ptys
-  , let ty = typingPhaseEmitReprN n
-  ]
+-- bindingsFromPtys :: [PhaseTy] -> [Binding ()]
+-- bindingsFromPtys ptys = concat
+--   [ [Binding vRepr ty, Binding vBase TNat]
+--   | (n, PhaseRef {prRepr=vRepr, prBase=vBase}) <- getPhaseRefN ptys
+--   , let ty = typingPhaseEmitReprN n
+--   ]

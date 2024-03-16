@@ -154,3 +154,4 @@ data JoinStrategy = JoinStrategy
   , jsQtMerged :: QTy
   }
   deriving Show
+

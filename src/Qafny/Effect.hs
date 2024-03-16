@@ -8,6 +8,7 @@ module Qafny.Effect
   , module Control.Algebra
   , module Effect.Gensym
   , GensymEmitterWithState, GensymEmitterWithStateError, StateMayFail
+  , HasResolution
   ) where
 
 -- | Re-export useful effects to avoid cluttered imports in other modules
@@ -22,6 +23,7 @@ import           Control.Effect.State
 import           Control.Effect.Trace
 import           Effect.Gensym
     (Gensym, gensym)
+import           Qafny.Syntax.AST
 import           Qafny.Syntax.EmitBinding
 import           Qafny.Syntax.IR
 
@@ -34,3 +36,6 @@ type GensymEmitterWithStateError sig m =
 
 type StateMayFail sig m =
   (Has (Error String) sig m , Has (State TState) sig m)
+
+type HasResolution sig m =
+  (StateMayFail sig m, Has (Reader IEnv) sig m, Has Trace sig m)

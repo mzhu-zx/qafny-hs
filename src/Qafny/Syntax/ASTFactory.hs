@@ -3,6 +3,7 @@ module Qafny.Syntax.ASTFactory where
 import           Qafny.Partial
     (reduce)
 import           Qafny.Syntax.AST
+import Data.Text (count)
 
 
 -- | AstInjection makes ast construction easier.
@@ -40,12 +41,8 @@ wild :: Var
 wild =  "_"
 
 -- | An Oracle term that always returns a constant.
-constLambda :: Exp' -> Exp'
-constLambda = simpleLambda wild
-
-{-# DEPRECATED constExp "Use constLambda instead" #-}
-constExp :: Exp' -> Exp'
-constExp = constLambda
+constLambda :: (AstInjection a Exp') => a -> Exp'
+constLambda = simpleLambda wild . injAst
 
 qComment :: String -> Stmt'
 qComment = SDafny . ("// " ++)
@@ -124,6 +121,23 @@ lambdaUnphase :: Lambda -> Exp'
 lambdaUnphase l = ELambda
   l{ bPhase = PhaseWildCard, ePhase = Nothing }
 
-natSeqLike :: (AstInjection a Exp') => a -> Exp' -> Exp'
-natSeqLike liked = EEmit . EMakeSeq TNat (EEmit (ECard (injAst liked)))
+tySn :: Ty
+tySn = TSeq TNat
 
+tySsn :: Ty
+tySsn = TSeq (TSeq TNat)
+
+natSeqLike :: (AstInjection a Exp') => a -> Exp' -> Exp'
+natSeqLike = seqLike TNat
+
+seqLike :: (AstInjection a Exp') => Ty -> a -> Exp' -> Exp'
+seqLike ty liked = EEmit . EMakeSeq ty (EEmit (ECard (injAst liked)))
+
+-- | Construct a sequence 
+mkSeqConst :: (AstInjection a Exp', AstInjection b Exp') => Ty -> a -> b -> Exp'
+mkSeqConst ty cnt content =
+  injAst $ EMakeSeq ty (injAst cnt) (constLambda content)
+
+
+mkPow2 :: (AstInjection a Exp') => a -> Exp'
+mkPow2 e = injAst $ ECall "Pow2" [injAst e]

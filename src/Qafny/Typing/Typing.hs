@@ -21,16 +21,8 @@ import           Control.Carrier.Reader
     (runReader)
 import           Control.Carrier.State.Lazy
     (execState)
-import           Control.Effect.Catch
-import           Control.Effect.Error
-    (Error, throwError)
-import           Control.Effect.Lens
 import           Control.Effect.NonDet
-import           Control.Effect.Reader
-import           Control.Effect.State
-    (State, get, modify)
-import           Effect.Gensym
-    (Gensym)
+import           Qafny.Effect
 
 -- Qafny
 import           Qafny.Error
@@ -54,7 +46,6 @@ import           Qafny.Utils.EmitBinding
 -- Utils
 import           Control.Carrier.State.Lazy
     (evalState, runState)
-import           Control.Effect.Trace
 import           Control.Lens
     (at, (%~), (?~), (^.))
 import           Control.Monad
@@ -138,12 +129,7 @@ resolvePartition
 resolvePartition = (fst <$>) . resolvePartition'
 
 resolvePartition'
-  :: ( Has (State TState) sig m
-     , Has (Error String) sig m
-     , Has (Reader IEnv) sig m
-     , Has Trace sig m
-     )
-  => Partition -> m (Locus, [(Range, Range)])
+  :: HasResolution sig m => Partition -> m (Locus, [(Range, Range)])
 resolvePartition' se' = do
   -- resolve the canonical range names
   rsResolved <- rs `forM` resolveRange
@@ -640,6 +626,7 @@ checkSubtypeQ t1 t2 =
   unless (subQ t1 t2) $
   throwError $
   "Type mismatch: `" ++ show t1 ++ "` is not a subtype of `" ++ show t2 ++ "`"
+
 -------------------------------------------------------------------------------
 -- | Type Manipulation
 --------------------------------------------------------------------------------
@@ -651,7 +638,7 @@ retypePartition1
   => Locus -> QTy -> m (Maybe (Var, Ty, Var, Ty))
 retypePartition1 st qtNow =
   retypePartition st qtNow >>= maybe (return Nothing) go
-  where 
+  where
     go CastScheme{ schVsOldEmit=vsPrev , schTOldEmit=tPrev
                  , schVsNewEmit=vsNow , schTNewEmit=tNow} =
       case (vsPrev, vsNow) of
@@ -926,7 +913,6 @@ analyzeMethodType (QMethod v bds rts rqs ens _) =
 typeCheckEachParameter
   :: ( Has (Error String) sig m'
      , Has (State (Map.Map Var Range)) sig m'
-     , Has (State TState) sig m'
      , Has (Reader IEnv) sig m'
      , Has (Reader TEnv) sig m'
      )

@@ -27,8 +27,6 @@ import           Qafny.TypeUtils
 import           Qafny.Utils
 
 -- Utils
-import           Control.Lens
-    (at, (?~))
 import           Control.Monad
     (when)
 import           Data.List
@@ -37,12 +35,11 @@ import           Data.Maybe
     (catMaybes, mapMaybe)
 import           Data.Sum
     (Injection (inj))
-import           Qafny.Syntax.ASTUtils
-    (getPhaseRef)
 import           Qafny.Syntax.Emit
     (showEmitI)
 import           Text.Printf
     (printf)
+import Qafny.Typing.Locus (updateLocusSt)
 
 throwError'
   :: ( Has (Error String) sig m )
@@ -182,18 +179,13 @@ analyzePhaseSpecDegree PhaseSumOmega{} = 2
 --                      ]
 
 
-updateLocusSt
-  :: ( Has (State TState) sig m )
-  => Locus -> m ()
-updateLocusSt s@Locus{loc, part, qty, degrees} =
-  sSt %= (at loc ?~ (part, (qty, degrees)))
 
 allocAndUpdatePhaseType
   :: ( Has (Gensym Emitter) sig m
      , Has (State TState) sig m
      , Has (Error String) sig m
      )
-  => Locus -> m [PhaseTy]
+  => Locus -> m [PhaseRef]
 allocAndUpdatePhaseType s@Locus{loc, part=Partition{ranges}, qty, degrees} = do
   updateLocusSt s
   mapMaybe evPhaseTy <$> genEDStUpdatePhaseFromLocus s
@@ -212,3 +204,9 @@ queryPhaseType Locus{loc, part=Partition{ranges}, qty, degrees} =
             catMaybes <$> sequence [ evPhaseTy <$> findED (inj r)
                                    | (r, dgr) <- zip ranges degrees
                                    ]
+
+-- * Degree
+
+-- | Produce a "degrees" for an En locus
+enDegree :: Int -> [Int]
+enDegree = return

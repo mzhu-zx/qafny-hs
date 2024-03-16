@@ -17,8 +17,10 @@ module Qafny.Utils.EmitBinding
     -- * Gensyms w/o State
   , genEDByRange
   , genEDByRangeSansPhase
+    -- * Wrappers for Emitter 
+  , genPhaseTyByDegree
     -- * Query
-  , findED
+  , findED, findEDs
   , visitED, visitEDs, visitEDBasis, visitEDsBasis
   , findVisitED, findVisitEDs
   , findVisitEDsBasis
@@ -33,7 +35,7 @@ where
 import           Control.Lens
     (at, sans, (?~), (^.))
 import           Control.Monad
-    (liftM2, zipWithM, (>=>))
+    (liftM2, zipWithM, (>=>), forM)
 import           Data.Functor
     ((<&>))
 import qualified Data.Map.Strict          as Map
@@ -69,13 +71,13 @@ gensymBinding v t = gensym (EmAnyBinding v t)
 genPhaseTyByDegree
   :: ( Has (Gensym Emitter) sig m
      )
-  => Int -> RangeOrLoc -> m (Maybe PhaseTy, Maybe Ty)
-genPhaseTyByDegree 0 _ = return (Just PT0, Nothing)
+  => Int -> RangeOrLoc -> m (Maybe PhaseRef, Maybe Ty)
+genPhaseTyByDegree 0 _ = return (Nothing, Nothing)
 genPhaseTyByDegree n r
   | n < 0 = return (Nothing, Nothing)
-  | otherwise =
-    (, emitTypeFromDegree n) . Just . PTN n <$>
-    liftM2 mkPhaseRef (gensym (EmPhaseBase r)) (gensym (EmPhaseSeq r n))
+  | otherwise = do
+      pr <- liftM2 PhaseRef (gensym (EmPhaseBase r)) (gensym (EmPhaseSeq r n))
+      return (Just pr, Just (typingPhaseEmitReprN n))
 
 
 -- | Generate a /complete/ 'EmitData' of a Range and manage it within the 'emitSt'
@@ -89,11 +91,11 @@ genEDByRange :: (Has (Gensym Emitter) sig m) => QTy -> Int -> Range -> m EmitDat
 genEDByRange qt i r = do
   vB  <- gensym $ EmBaseSeq r qt
   (vmP, tyP) <- genPhaseTyByDegree i (inj r)
-  let ed =  EmitData { evPhaseTy = vmP
+  let ed =  EmitData { evPhaseRef   = vmP
                      , evPhaseSeqTy = tyP
-                     , evBasis = Just vB
-                     , evBasisTy = Just $ typingQEmit qt
-                     , evAmp   = Nothing
+                     , evBasis      = Just vB
+                     , evBasisTy    = Just $ typingQEmit qt
+                     , evAmp        = Nothing
                      }
   return ed
 
@@ -121,25 +123,25 @@ genEDStByLoc
 genEDStByLoc l iLoc qt ris = do
   rAndEDs <- sequence [ (r,) <$> genEDStByRange qt i r | (r, i) <- ris ]
   (vMP, tyP) <- genPhaseTyByDegree iLoc (inj l)
-  let edL = mtEmitData { evPhaseTy = vMP, evPhaseSeqTy = tyP }
+  let edL = mtEmitData { evPhaseRef = vMP, evPhaseSeqTy = tyP }
   emitSt %= (at (inj l) ?~ edL)
   return ( edL , rAndEDs )
 
 
--- | Generate a /complete/ 'EmitData' of a Partition from its Locus
+-- | Generate an `EmitData` of a Partition from a Locus. 
 -- In particular, generate degree and phases based on its qt
-
 genEDStFromLocus
   :: ( GensymEmitterWithState sig m
      , Has (Error String) sig m
      )
-  => Loc -> [Range] -> QTy -> [Int] -> m (EmitData, [(Range, EmitData)])
-genEDStFromLocus l rs qt is = do
-  (il, ir) <- if isEN qt
+  => Locus -> m (EmitData, [(Range, EmitData)])
+genEDStFromLocus Locus{loc=l, part=Partition{ranges}, qty, degrees=is} = do
+  (il, ir) <- if isEN qty
     then (, repeat (-1)) <$> onlyOne throwError is
-    else (-1, is)  <$ checkListCorr is rs
-  genEDStByLoc l il qt $ zip rs ir
+    else (-1, is)  <$ checkListCorr is ranges
+  genEDStByLoc l il qty $ zip ranges ir
 
+-- | Update existing `EmitData` based on degree information from a Locus.
 genEDStUpdatePhaseFromLocus
   :: ( GensymEmitterWithState sig m
      , Has (Error String) sig m
@@ -185,13 +187,13 @@ appendEDSt rl ed = do
   emitSt %= Map.adjust (<> ed) rl
   findED rl
 
--- | Update an existing `EmitData` by generating a phase from the given degree.
+-- | Update an existing `EmitData` by generating a phase from a given degree.
 genEDStUpdatePhase
   :: GensymEmitterWithStateError sig m
   => Int -> RangeOrLoc -> m EmitData
 genEDStUpdatePhase i rl  = errTrace "`genEDStUpdatePhase`" $ do
-  (evPhaseTy, evPhaseSeqTy)  <- genPhaseTyByDegree i rl
-  appendEDSt rl (mtEmitData {evPhaseTy, evPhaseSeqTy})
+  (evPhaseRef, evPhaseSeqTy)  <- genPhaseTyByDegree i rl
+  appendEDSt rl (mtEmitData {evPhaseRef, evPhaseSeqTy})
 
 -- ** Getters
 findED :: StateMayFail sig m => RangeOrLoc -> m EmitData
@@ -201,6 +203,10 @@ findED rl = do
   where
     complain st = throwError @String $
       printf "%s cannot be found in emitSt!\n%s" (show rl) (show st)
+
+findEDs :: StateMayFail sig m => [RangeOrLoc] -> m [EmitData]
+findEDs = mapM findED
+
 
 -- | Find the EmitData and visit it with an accessor
 visitED :: Has (Error String) sig m => (EmitData -> Maybe a) -> EmitData -> m a

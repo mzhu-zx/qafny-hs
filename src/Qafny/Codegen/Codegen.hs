@@ -76,7 +76,7 @@ import           Qafny.Typing
     resolvePartition, resolvePartition', resolvePartitions, retypePartition1,
     specPartitionQTys, splitScheme, splitSchemePartition, splitThenCastScheme,
     tStateFromPartitionQTys, typingExp, typingGuard, typingPartition,
-    typingPartitionQTy)
+    typingPartitionQTy, resolveRange)
 
 import           Data.Sum
     (Injection (inj))
@@ -87,7 +87,7 @@ import           Qafny.Codegen.Lambda
 import           Qafny.Codegen.Method
     (codegenMethodParams, genEmitSt)
 import           Qafny.Codegen.Phase
-    (codegenQft)
+    (codegenQft, codegenApplyQft)
 import           Qafny.Codegen.SplitCast      hiding
     (throwError')
 import           Qafny.Typing.Error
@@ -488,15 +488,7 @@ codegenStmt'Apply
       "Ranges given on the LHS of the application contains some incomplete range(s).\n%s"
       (showEmit0 $ byLineT rMap)
 
-
-codegenStmt'Apply (s :*=: EQFT) = do
-  -- ensures that bases is `EN`
-  locusS <- resolvePartition s
-  (locusS, stmtCast) <- castScheme locusS TEn
-  -- ensures that phases is in 1st degree
-  when (degrees locusS /= [1]) $ throwError' "Degree not 1"
-  codegenQft locusS
-
+codegenStmt'Apply (s :*=: EQFT) = codegenApplyQft s
 codegenStmt'Apply _ = throwError' "What could possibly go wrong?"
 
 --------------------------------------------------------------------------------

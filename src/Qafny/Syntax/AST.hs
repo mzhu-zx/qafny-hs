@@ -68,17 +68,17 @@ data PhaseRef = PhaseRef
   }
   deriving (Show, Eq, Ord)
 
-mkPhaseRef :: Var -> Var -> PhaseRef
-mkPhaseRef prBase prRepr = PhaseRef { prBase, prRepr }
+-- mkPhaseRef :: Var -> Var -> PhaseRef
+-- mkPhaseRef prBase prRepr = PhaseRef { prBase, prRepr }
 
--- | PhaseTy associated with corresponding emitted vars
-data PhaseTy
-  = PT0
-  | PTN Int PhaseRef
-  deriving (Show, Eq, Ord)
+-- -- | PhaseTy associated with corresponding emitted vars
+-- data PhaseTy
+--   = PT0
+--   | PTN Int PhaseRef
+--   deriving (Show, Eq, Ord)
 
-phaseTyN :: Int -> Var -> Var -> PhaseTy
-phaseTyN n vBase vRepr = PTN n $ PhaseRef { prBase=vBase, prRepr=vRepr }
+-- phaseTyN :: Int -> Var -> Var -> PhaseTy
+-- phaseTyN n vBase vRepr = PTN n $ PhaseRef { prBase=vBase, prRepr=vRepr }
 
 data Ty
   = TNat
