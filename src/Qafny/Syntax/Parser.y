@@ -49,9 +49,9 @@ dafny                 { ( _, L.TDafny $$  ) }
 "repr"                { ( _, L.TRepr      ) }
 "measure"             { ( _, L.TMeasure   ) }
 "measured"            { ( _, L.TMeasured  ) }
-"en"                  { ( _, L.TEN        ) }
+"en"                  { ( _, L.TEn        ) }
 "qreg"                { ( _, L.TQReg      ) }
-"en01"                { ( _, L.TEN01      ) }
+"en01"                { ( _, L.TEn01      ) }
 "var"                 { ( _, L.TVar       ) }
 "if"                  { ( _, L.TIf        ) }
 
@@ -142,8 +142,8 @@ ty
 qty :: { QTy }
   : "nor"                             { TNor                            }
   | "had"                             { THad                            }
-  | "en"                              { TEN                             }
-  | "en01"                            { TEN01                           }
+  | "en"                              { TEn                             }
+  | "en01"                            { TEn01                           }
                                                                 
 block                                                                     
   : '{' stmts '}'                     { Block $2                             }

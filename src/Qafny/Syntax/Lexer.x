@@ -46,8 +46,8 @@ token :-
   nor              { emit $  TNor                }
   not              { emit $  TNot                }
   had              { emit $  THad                }
-  en               { emit $  TEN                 }
-  en01             { emit $  TEN01               }
+  en               { emit $  TEn                 }
+  en01             { emit $  TEn01               }
   qreg             { emit $  TQReg               }
   var              { emit $  TVar                }
   if               { emit $  TIf                 }
