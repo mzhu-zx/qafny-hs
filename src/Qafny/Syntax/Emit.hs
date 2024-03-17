@@ -305,7 +305,7 @@ instance DafnyPrinter EmitExp where
   build EMtSeq = build "[]"
   build (EMakeSeq ty e ee) =
     "seq<" <!> ty <!> ">" <!> withParen (e <!> ", " <!> ee)
-  build (EmafnyVar s) = build s
+  build (EDafnyVar s) = build s
   build (EOpChained e eos) =
     foldl (\el (op, er) -> buildOp2 op el (build er)) (build e) eos
   build (ECard e) = "|" <!> e <!> build "|"
