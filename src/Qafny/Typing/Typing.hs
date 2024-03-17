@@ -183,7 +183,7 @@ removeTStateByLocus
 removeTStateByLocus st@(Locus{loc, part=p, qty}) = do
   sSt %= flip Map.withoutKeys (Set.singleton loc)
   xSt %= Map.map (filter ((/= loc) . snd))
-  deleteEDPartition loc (unpackPart p)
+  deleteEmPartition loc (unpackPart p)
 
 -- | Query all ranges related to the given range.
 -- Return a list of tuple standing for
@@ -327,7 +327,7 @@ splitScheme' s@(Locus{loc, part, qty, degrees}) rSplitTo@(Range to rstL rstR) = 
       pMain  = Partition rsMain
       pAux   = Partition rsAux
   -- generate
-      -- ptysRest = uncurry evPhaseTy <$> zip dgrsRest edsRest
+      -- ptysRest = uncurry evPhaseRef <$> zip dgrsRest edsRest
       -- ptysMain = ptysRem ++ ptysRest
   let  dgrsMain = (dgrOrigin <$ rsRem) ++ dgrsRest
   case rsMain of
@@ -369,18 +369,18 @@ splitScheme' s@(Locus{loc, part, qty, degrees}) rSplitTo@(Range to rstL rstR) = 
           (vEmitR, vSyms, rPhReprs) <- case qty of
             t | t `elem` [ TNor, THad ] -> do
               -- locate the original range
-              vEmitR <- findVisitED evBasis (inj rOrigin)
+              vEmitR <- findVisitEm evBasis (inj rOrigin)
               -- delete it from the record
-              deleteEDs [inj rOrigin]
+              deleteEms [inj rOrigin]
               -- gensym for each split ranges
-              rsEDs <- genEDStSansPhaseByRanges qty (rSplitTo : rsRem)
-              vSyms <- mapM (visitED evBasis . snd) rsEDs
+              rsEms <- genEmStSansPhaseByRanges qty (rSplitTo : rsRem)
+              vSyms <- mapM (visitEm evBasis . snd) rsEms
               --
-              -- FIXME: cobble "genEDStUpdatePhase" with "genEDStSansPhaseByRanges"
+              -- FIXME: cobble "genEmStUpdatePhase" with "genEmStSansPhaseByRanges"
               ~eds@(edSplit : edsRem) <-
-                forM (rSplitTo : rsRem) (genEDStUpdatePhase dgrOrigin . inj)
-              edsRest <- forM rsRest (findED . inj)
-              let (ptySplitTo: ptysRem) = evPhaseTy <$> eds
+                forM (rSplitTo : rsRem) (genEmStUpdatePhase dgrOrigin . inj)
+              edsRest <- forM rsRest (findEm . inj)
+              let (ptySplitTo: ptysRem) = evPhaseRef <$> eds
               --
               return (vEmitR, vSyms, (ptySplitTo : ptysRem))
             _    -> throwError'' $ errUnsupprtedTy ++ "\n" ++ infoSS
@@ -664,15 +664,15 @@ castScheme st qtNow = errTrace "`castScheme`" $ do
     else second Just <$> go
   where
     go = do
-      let tOldEmit = typingQEmit qtPrev
+      let tOldEmit = tyKetByQTy qtPrev
       let rsOld = unpackPart sResolved
-      vsOldEmit <- findVisitEDs evBasis (inj <$> rsOld)
-      deleteEDs (inj <$> rsOld)
-      let tNewEmit = typingQEmit qtNow
+      vsOldEmit <- findVisitEms evBasis (inj <$> rsOld)
+      deleteEms (inj <$> rsOld)
+      let tNewEmit = tyKetByQTy qtNow
       -- FIXME: Cast phases
       sSt %= (at locS ?~ (sResolved, (qtNow, dgrs)))
-      rsEDsNew <- genEDStSansPhaseByRanges qtNow $ unpackPart sResolved
-      vsNewEmit <- mapM (visitED evBasis . snd) rsEDsNew
+      rsEmsNew <- genEmStSansPhaseByRanges qtNow $ unpackPart sResolved
+      vsNewEmit <- mapM (visitEm evBasis . snd) rsEmsNew
       return ( st { qty=qtNow }
              , CastScheme { schVsOldEmit=vsOldEmit
                           , schTOldEmit=tOldEmit
@@ -715,7 +715,7 @@ matchEmitStatesVars es1 es2 =
   sequence [ (r,) <$> liftM2 (,) (byBasis ed1) (byBasis ed2)
            | (r, (ed1, ed2)) <- reds ]
   where
-    byBasis = visitED evBasis
+    byBasis = visitEm evBasis
     reds = matchEmitStates es1 es2
 
 
@@ -997,7 +997,7 @@ resolveMethodApplicationArgs es
           st <- resolvePartition part
           hdlSCError $ splitThenCastScheme st q r
         _ -> (, Nothing, Nothing) <$> typingPartitionQTy part q
-      (sAndMaySC,) <$> (findVisitEDs evBasis (inj <$> unpackPart part) <&> fmap EVar)
+      (sAndMaySC,) <$> (findVisitEms evBasis (inj <$> unpackPart part) <&> fmap EVar)
 
 
 
@@ -1015,7 +1015,7 @@ resolveMethodApplicationRets envArgs
              , mtReceiver=receiver
              } = do
   trace "* resolveMethodApplicationRets"
-  qBindings :: [Var] <- concat <$> forM psRet ((fst <$>) . extendTState'Degree)
+  qBindings :: [Var] <- concat <$> forM psRet ((fst <$>) . extendMetaState'Degree)
   -- TODO: also outputs pure variables here
   -- Sanity check for now:
   let pureArgs = collectPureBindings retParams
@@ -1154,45 +1154,46 @@ tStateFromPartitionQTys
      )
   => [(Partition, QTy, [Int])] -> m TState
 tStateFromPartitionQTys pqts = execState initTState $ do
-  forM_ pqts extendTState'Degree
+  forM_ pqts extendMetaState'Degree
 
 -- | Extend the typing state with a partition and its type, generate emit
 -- symbols for every range in the partition and return all emitted symbols in
 -- the same order as those ranges.
-extendTState
+extendMetaState
   :: ( Has (Gensym Emitter) sig m
      , Has (Gensym Var) sig m
      , Has (State TState) sig m
      , Has (Error String) sig m
      , Has Trace sig m
      )
-  => Partition -> QTy -> [Int] -> m ([Var], [PhaseTy])
-extendTState p@Partition{ranges} qt dgrs = do
-  trace "* extendTState"
+  => Partition -> QTy -> [Int] -> m ([Var], [Maybe (PhaseRef, Ty)])
+extendMetaState p@Partition{ranges} qt dgrs = do
+  trace "* extendMetaState"
   sLoc <- gensymLoc "requires"
   sSt %= (at sLoc ?~ (p, (qt, dgrs)))
   let xMap = [ (v, [(r, sLoc)]) | r@(Range v _ _) <- ranges ]
-  (edL, rEd) <- genEDStFromLocus sLoc ranges qt dgrs
+  let sLocus = Locus{loc=sLoc, qty=qt, part=p, degrees=dgrs}
+  (edL, rEd) <- genEmStFromLocus sLocus
   let eds = snd <$> rEd
-  -- bdsEmit <- genEDStByRangesSansPhase qt (unpackPart p)
+  -- bdsEmit <- genEmStByRangesSansPhase qt (unpackPart p)
   -- ptys <- allocPhaseType (Locus (sLoc, p, (qt, dgrs)))
-  vsEmit <- visitEDs evBasis eds
+  vsEmit <- visitEms evBasis eds
   -- FIXME: redesign dgrs in Locus so that len(dgrs)==1+len(ranges)
-  let ptys = mapMaybe evPhaseTy (edL : eds)
+  let ptys = selectPhase <$> (edL : eds)
   trace "* Die?"
   xSt %= Map.unionWith (++) (Map.fromListWith (++) xMap)
   return (vsEmit, ptys)
 
-extendTState'Degree
+extendMetaState'Degree
   :: ( Has (Gensym Emitter) sig m
      , Has (Gensym Var) sig m
      , Has (State TState) sig m
      , Has (Error String) sig m
      , Has Trace sig m
    )
-  => (Partition, QTy, [Int]) -> m ([Var], [PhaseTy])
-extendTState'Degree (p, qt, ds) =
-  extendTState p qt ds
+  => (Partition, QTy, [Int]) -> m ([Var], [Maybe (PhaseRef, Ty)])
+extendMetaState'Degree (p, qt, ds) =
+  extendMetaState p qt ds
 
 
 -- * Lattice and Ordering Operators lifted to IEnv

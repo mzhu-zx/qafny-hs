@@ -12,7 +12,7 @@ import           Qafny.Effect
     (StateMayFail)
 import           Qafny.Syntax.AST
 import           Qafny.TypeUtils
-    (typingQEmit)
+    (tyKetByQTy)
 import           Qafny.Utils.EmitBinding
 
 
@@ -21,5 +21,5 @@ findEmitBindingsFromPartition
   :: StateMayFail sig m
   => Partition -> QTy -> m [Binding']
 findEmitBindingsFromPartition Partition{ranges} qt = do
-  vqEmits <- ((, typingQEmit qt) <$>) <$> findEmitBasesByRanges ranges
+  vqEmits <- ((, tyKetByQTy qt) <$>) <$> findEmitBasesByRanges ranges
   return (uncurry Binding <$> vqEmits)

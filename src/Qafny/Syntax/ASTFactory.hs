@@ -91,8 +91,10 @@ infixl >:@:
        => a -> b -> Exp'
 (>:@:) e1 e2 = injAst (reduce (injAst e1) :@: reduce (injAst e2))
 
-eEq :: Exp' -> Exp' -> Exp'
-eEq = EOp2 OEq
+infix 4 `eEq`
+eEq :: (AstInjection a Exp', AstInjection b Exp')
+    => a -> b -> Exp'
+eEq a b = EOp2 OEq (injAst a) (injAst b)
 
 sliceV :: Var -> Exp' -> Exp' -> Exp'
 sliceV x l r = EEmit (ESlice (EVar x) (reduce l) (reduce r))

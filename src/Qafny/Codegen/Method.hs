@@ -19,7 +19,7 @@ import qualified Data.Map.Strict          as Map
 
 -- Qafny
 import           Control.Monad
-    (join, liftM, liftM2, liftM3)
+    (join, liftM, liftM2, liftM3, zipWithM)
 import           Data.Maybe
     (catMaybes)
 import           Effect.Gensym
@@ -28,13 +28,11 @@ import           Qafny.Effect
 import           Qafny.Syntax.AST
 import           Qafny.Syntax.ASTFactory
     (mkAssignment, mkDAssignment)
-import           Qafny.Syntax.ASTUtils
-    (getPhaseRefMaybe, phaseRefToTy)
 import           Qafny.Syntax.EmitBinding
     (EmitData (..), Emitter (EmAnyBinding))
 import           Qafny.Syntax.IR
 import           Qafny.TypeUtils
-    (bindingsFromPtys, typingPhaseEmitReprN, typingQEmit)
+    (typingPhaseEmitReprN, tyKetByQTy)
 import           Qafny.Typing.Typing
     (collectPureBindings)
 import           Qafny.Utils.EmitBinding
@@ -61,38 +59,37 @@ replicateEmitEntry
   :: GensymEmitterWithState sig m
   => RangeOrLoc -> EmitData -> m [Stmt']
 replicateEmitEntry rl
-  ed@EmitData{evBasis, evBasisTy, evPhaseSeqTy, evPhaseTy, evAmp} =
-  do evBasis'   <- sequence evBasisM
-     evPhaseTy' <- sequence evPhaseM
-     let refs = liftM2 (,) (phaseRefOf evPhaseTy') (phaseRefOf evPhaseTy)
+  ed@EmitData{evBasis, evBasisTy, evPhaseSeqTy, evPhaseRef, evAmp} =
+  do evBasis'    <- sequence evBasisM
+     evPhaseRef' <- sequence evPhaseRefM
+     let refs = liftM2 (,) evPhaseRef' evPhaseRef
      -- let evPhase' = uncurry mkPhaseRef <$> prVars
-     emitSt %= (at rl ?~ ed{evBasis=evBasis', evPhaseTy=evPhaseTy'})
-     return $ catMaybes [ liftM3 mkDAssignment evBasisTy evBasis' evBasis
-                        , uncurry (mkDAssignment TNat) . bimap prBase prBase <$> refs
-                        , decl $ bimap prRepr prRepr <$> refs
-                        ]
+     emitSt %= (at rl ?~ ed{evBasis=evBasis', evPhaseRef=evPhaseRef'})
+     return $ catMaybes
+       [ liftM3 mkDAssignment evBasisTy evBasis' evBasis
+       , uncurry (mkDAssignment TNat) . bimap prBase prBase <$> refs
+       , decl $ bimap prRepr prRepr <$> refs
+       ]
   where
-    evBasisM = liftM2 gensymBinding evBasis evBasisTy
-    evPhaseM = replicatePhaseTy <$> evPhaseTy
-    phaseRefOf = (getPhaseRefMaybe =<<)
+    evBasisM    = liftM2 gensymBinding evBasis evBasisTy
+    evPhaseRefM = liftM2 replicatePhase evPhaseSeqTy evPhaseRef
     decl = (uncurry <$> (mkDAssignment <$> evPhaseSeqTy) <*>)
 
-replicatePhaseTy
-  :: GensymEmitterWithState sig m
-  => PhaseTy -> m PhaseTy
-replicatePhaseTy PT0 = return PT0
-replicatePhaseTy (PTN n PhaseRef{prBase, prRepr}) =
-  PTN n <$> liftM2 mkPhaseRef prBase' prRepr'
+replicatePhase
+  :: Has (Gensym Emitter) sig m
+  => Ty -> PhaseRef -> m PhaseRef
+replicatePhase tyRepr PhaseRef{prBase, prRepr} =
+  liftM2 PhaseRef prBase' prRepr'
   where
     prBase' = gensymBinding prBase TNat
-    prRepr' = gensymBinding prRepr (typingPhaseEmitReprN n)
+    prRepr' = gensymBinding prRepr tyRepr
 
 -- | Generate method parameters from the method signature
 codegenMethodParams
   :: ( StateMayFail sig m
      , Has Trace sig m
      )
-  => MethodType -> [PhaseTy] -> m [Binding']
+  => MethodType -> [(PhaseRef, Ty)] -> m [Binding']
 codegenMethodParams
   MethodType{ mtSrcParams=srcParams , mtInstantiate=instantiator}
   ptysResolved
@@ -101,12 +98,18 @@ codegenMethodParams
   let pureVars = collectPureBindings srcParams
       qVars = [ (v, Range v 0 card) | MTyQuantum v card <- srcParams ]
       inst = instantiator $ Map.fromList qVars
-      pVars = bindingsFromPtys ptysResolved
+      pVars = uncurry codegenPhaseBinding `concatMap` ptysResolved
   trace $ "QVARS: " ++ show qVars
   trace $ "INSTANCE: " ++ show inst
   trace $ "PVars" ++ show pVars
   vqEmits <- concat <$> sequence
-    [ ((, typingQEmit qt) <$>) <$> findEmitBasesByRanges ranges
+    [ ((, tyKetByQTy qt) <$>) <$> findEmitBasesByRanges ranges
     | (Partition{ranges}, qt, _) <- inst ]
   dumpSt "MethodParams"
   pure $ pureVars ++ (uncurry Binding <$> vqEmits) ++ pVars
+
+
+codegenPhaseBinding :: PhaseRef -> Ty -> [Binding']
+codegenPhaseBinding PhaseRef{prBase, prRepr} ty =
+  [ Binding prBase TNat , Binding prRepr ty ]
+  

@@ -11,6 +11,7 @@ import           Control.Applicative
 import qualified Data.Map.Strict       as Map
 import           Data.Sum
 import           Qafny.Syntax.AST
+import Control.Monad (liftM2)
 -- import           Qafny.Syntax.ASTUtils
 --     (getPhaseRefMaybe)
 -- * EmitBinding related functions
@@ -35,8 +36,10 @@ mtEmitData = EmitData { evPhaseRef   = Nothing
                       , evPhaseSeqTy = Nothing
                       }
 
--- evPhase :: EmitData -> Maybe PhaseRef
--- evPhase ed = getPhaseRefMaybe =<< evPhaseTy ed
+
+selectPhase :: EmitData -> Maybe (PhaseRef, Ty)
+selectPhase EmitData{evPhaseRef, evPhaseSeqTy} =
+  liftM2 (,) evPhaseRef evPhaseSeqTy
 
 -- Merge two EmitData pairwise and prefer the 'Just'-fields or the latter one if
 -- both are fields 'Just'

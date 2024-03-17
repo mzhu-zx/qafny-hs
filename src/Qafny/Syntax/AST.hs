@@ -208,7 +208,7 @@ data Exp x
   | EOp1 Op1 (XRec x (Exp x))
   | EOp2 Op2 (XRec x (Exp x)) (XRec x (Exp x))
   | EForall (Binding x) (Maybe (XRec x (Exp x))) (XRec x (Exp x))
-  | EDafny String
+  | Emafny String
   | EEmit EmitExp
   | EPartition Partition
   | ESpec Partition QTy [QSpecF (XRec x (Exp x))]
@@ -295,7 +295,7 @@ data EmitExp
   | ECall Var [Exp ()]
   | (Exp ()) :@: (Exp ())
   | ESlice (Exp ()) (Exp ()) (Exp ())
-  | EDafnyVar Var
+  | EmafnyVar Var
   | EMultiLambda [Var] (Exp ())
   | EOpChained (Exp ()) [(Op2, Exp ())]
   deriving  (Show, Eq, Ord-- , Data, Typeable
@@ -446,7 +446,7 @@ data ExpF f
   | EOp1F Op1 f
   | EOp2F Op2 f f
   | EForallF (Binding ()) (Maybe f) f
-  | EDafnyF String
+  | EmafnyF String
   | EEmitF EmitExp
   | EPartitionF Partition
   | ESpecF Partition QTy [QSpecF f]

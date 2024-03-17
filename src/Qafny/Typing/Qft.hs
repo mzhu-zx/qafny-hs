@@ -8,7 +8,7 @@ import           Qafny.Effect
 import           Qafny.Syntax.AST
 import           Qafny.Syntax.IR
 import           Qafny.Typing.Locus
-    (updateLocusSt)
+    (updateMetaStByLocus)
 import           Qafny.Typing.Phase
     (enDegree)
 
@@ -23,7 +23,7 @@ typingQft
 typingQft rApplied locus = do
   let newLocusMaybe = locusAfterQftPure rApplied locus
   newLocus <- maybe (throwError' "Internal error!") return newLocusMaybe
-  updateLocusSt newLocus
+  updateMetaStByLocus newLocus
   return newLocus
 
 -- | Calculate the locus after applying Qft to it.

@@ -23,7 +23,7 @@ import           Data.Functor
 import           Data.List
     (nub, uncons)
 import           Data.Maybe
-    (fromMaybe, maybeToList, fromJust)
+    (fromJust, fromMaybe, maybeToList)
 
 import           Data.Sum
     (Injection (inj))
@@ -31,15 +31,15 @@ import           Data.Sum
 import           Qafny.Effect
 import           Qafny.Syntax.AST
 import           Qafny.Syntax.ASTFactory
-import           Qafny.Syntax.ASTUtils
-    (getPhaseRefN)
 import           Qafny.Syntax.Emit
     (showEmit0)
 import           Qafny.Syntax.EmitBinding
+import           Qafny.Syntax.EmitBinding
+    (EmitData (evPhaseSeqTy))
 import           Qafny.Syntax.IR
 import           Qafny.TypeUtils
 import           Qafny.Typing
-    (Promotion (..), PromotionScheme (..), castScheme, queryPhaseType,
+    (Promotion (..), PromotionScheme (..), castScheme, queryPhaseRef,
     resolvePartition')
 import           Qafny.Typing.Qft
     (typingQft)
@@ -48,7 +48,6 @@ import           Qafny.Utils.Utils
     (onlyOne)
 import           Text.Printf
     (printf)
-import Qafny.Syntax.EmitBinding (EmitData(evPhaseSeqTy))
 
 
 
@@ -95,7 +94,7 @@ codegenPromote'0'1
      )
   => QTy -> [Range] -> [PhaseRef] -> (Exp', Exp') -> m [Stmt']
 codegenPromote'0'1 qt rs prefs (i, n) = do
-  vRs <- findVisitEDs evBasis (inj <$> rs)
+  vRs <- findVisitEms evBasis (inj <$> rs)
   let eCardVRs = mkCard <$> vRs
       -- use 0 here because `EMakeSeq` add an extra layer of `seq`
       ty = typingPhaseEmitReprN 0
@@ -116,13 +115,13 @@ codegenPhaseLambda
      , Has (Error String) sig m
      )
   => Locus -> PhaseBinder -> PhaseExp -> m [Stmt']
-codegenPhaseLambda st pb pe = do
-  (dgrs, prefs) <- queryPhaseType st <&> unzip . getPhaseRefN
-  dgrSt <- onlyOne throwError' $ nub dgrs
+codegenPhaseLambda st@Locus{degrees} pb pe = do
+  prefs <- queryPhaseRef st
+  dgrSt <- onlyOne throwError' $ nub degrees
   concat <$> forM prefs (go dgrSt pb pe)
   where
     go 1 (PhaseOmega bi bBase) (PhaseOmega ei eBase)
-      PhaseRef { prRepr=vRepr, prBase=vBase} =
+      (Just (PhaseRef { prRepr=vRepr, prBase=vBase})) =
       let substBase = subst [(bBase, EVar vBase)] in
         return [ vRepr ::=: callMap (simpleLambda bi (substBase ei)) vRepr
                , vBase ::=: subst [(bBase, EVar vBase)] eBase
@@ -166,40 +165,39 @@ codegenQft
   :: GensymEmitterWithStateError sig m
   => Locus -> Locus -> m [Stmt']
 codegenQft locusEn locusQft = do
-  edLocus <- findED iloc      -- for amp+phase purpose
+  edLocus <- findEm iloc      -- for amp+phase purpose
   (edRApplied, edRsRest) <-   -- for kets purpose
-    ensuresNonEmptyEDs <$> findEDs (inj <$> ranges)
+    ensuresNonEmptyEms <$> findEms (inj <$> ranges)
   (vIdxK, vIdxI) <-            -- indices
     liftM2 (,) (gensymBinding "k" TNat) (gensymBinding "i" TNat)
 
-  vKetApplied <- visitEDBasis edRApplied
-  vsKetRest   <- visitEDsBasis edRsRest
+  vKetApplied <- visitEmBasis edRApplied
+  vsKetRest   <- visitEmsBasis edRsRest
+  -- find phase variables from the En-typed Locus
+  PhaseRef{prRepr=vpEn, prBase=vbEn} <- visitEm evPhaseRef edLocus
 
-  (pRefMaybe, pReprTyMaybe) <- genPhaseTyByDegree qftDegree iloc
-  
-  pty <- findVisitED evPhaseTy (inj loc)
-  (vPrBase, vPrRepr) <-
-    case pty of
-      PTN 1 PhaseRef{prBase, prRepr} -> return (prBase, prRepr)
-      _ -> throwError' "It should have been promoted to 1."
+  -- update phase ed
+  edLocus' <- genEmStUpdatePhase qftDegree iloc
+  -- find phase variables from generated phases
+  PhaseRef{prRepr=vpFresh, prBase=vbFresh} <- visitEm evPhaseRef edLocus'
 
-  
+  vsKetFresh <-
+    if qty locusEn == qty locusQft
+    then return vsKetRest
+    else genEmStUpdateKets (qty locusQft) ranges
 
-  let edLocus' = edLocus { evPhaseTy=ptyMaybe, evPhaseSeqTy=pReprTyMaybe }
-
-  let PhaseRef{prBase=vprBase, prRepr=vPhaseFresh} = fromJust ptyMaybe
-      
   return $ codegenQftPure
-    (vPhase1, vPhaseFresh) vKetApplied
+    (vpEn, vpFresh) vKetApplied
     (vsKetRest, vsKetFresh) vIdxK vIdxI nQft
+    (vbEn, vbFresh)
   where
     Locus {loc, part=Partition{ranges}, degrees=qftDegrees} = locusQft
     iloc = inj loc              -- inject to RangeOrLoc
     qftDegree = head qftDegrees -- safe to ignore the rest
-    nQft =                      -- compute Qft 
+    nQft =                      -- compute Qft
       let Range _ rl rr = head ranges
-      in mkPow2(rr - rl)      
-    ensuresNonEmptyEDs eds = fromMaybe (error "unreachable") $ uncons eds
+      in mkPow2(rr - rl)
+    ensuresNonEmptyEms eds = fromMaybe (error "unreachable") $ uncons eds
 
 
 -- | Given a 1st degree phase repr 'vPhase' and an En typed base repr,
@@ -214,10 +212,19 @@ codegenQftPure
   -> Var            -- bind for the Qft ket "k"
   -> Var            -- bind for the inner En index "i"
   -> Exp'           -- Size of Qft
+  -> (Var, Var) -- old and new variable for the phase base
   -> [Stmt']
-codegenQftPure (vPhase1, vPhaseFresh) vbApplied (vsbRest, vsbRestFresh)
-  vIdxK vIdxI eSizeK =
-  [ SEmit $ lhs :*:=: rhs ]
+codegenQftPure
+  (vPhase1, vPhaseFresh)
+  vbApplied
+  (vsbRest, vsbRestFresh)
+  vIdxK vIdxI eSizeK
+  (vpBase1, vpBaseFresh) =
+  [ SEmit $ lhs :*:=: rhs
+  , SEmit $ [vpBaseFresh] :*:=: [eNewBase]
+  , SAssert $ vpBase1 `eEq` eNewBase 
+  ]
+  -- TODO: suppress the dynamic check and compute the gcd.
   where
     lhs = [vPhaseFresh, vbApplied] ++ vsbRestFresh
     rhs = [eNewPhase  , eNewBase ] ++ ebRestLiftByK

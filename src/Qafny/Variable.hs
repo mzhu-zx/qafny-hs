@@ -9,7 +9,7 @@ module Qafny.Variable where
 import           Data.Sum
 import           Qafny.Syntax.AST
 import           Qafny.Syntax.EmitBinding
-import           Qafny.TypeUtils  (typingQEmit)
+import           Qafny.TypeUtils  (tyKetByQTy)
 import           Text.Printf      (printf)
 
 class Variable s where
@@ -61,7 +61,7 @@ instance Variable (Binding ()) where
 --   variable (PTN n _) = variablePhaseN n
 
 instance Variable QTy where
-  variable = variable . typingQEmit
+  variable = variable . tyKetByQTy
 
 instance (Variable a, Variable b) => Variable (a :+: b) where
   variable (Inl l) = variable l

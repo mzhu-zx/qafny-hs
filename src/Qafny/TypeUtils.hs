@@ -10,18 +10,20 @@ import           Control.Lens
 import           Control.Lens.Tuple
 import           Qafny.Syntax.AST
     (Binding (..), PhaseRef (..), QTy (..), Ty (..))
+import           Qafny.Syntax.ASTFactory
 import           Qafny.Syntax.IR
     (Locus (Locus, degrees), STuple (..))
 
 
 
 -- | Type of the emitted value corresponding to its original quantum type.
-typingQEmit :: QTy -> Ty
-typingQEmit TNor  = TSeq TNat
-typingQEmit THad  = TSeq TNat
-typingQEmit TEn   = TSeq TNat
-typingQEmit TEn01 = TSeq (TSeq TNat)
-{-# INLINE typingQEmit #-}
+tyKetByQTy :: QTy -> Ty
+tyKetByQTy TNor  = tySn
+tyKetByQTy THad  = tySn
+tyKetByQTy TEn   = tySn
+tyKetByQTy TEn01 = tySsn
+tyKetByQTy TQft  = tySsn
+{-# INLINE tyKetByQTy #-}
 
 -- | Type of an emitted phase variable
 -- typingPhaseEmit :: PhaseTy -> Maybe (Ty, Ty)

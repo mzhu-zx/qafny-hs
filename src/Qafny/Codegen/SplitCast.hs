@@ -114,7 +114,7 @@ codegenCastEmit
   op <- mkOp qtOld qtNew
   return . concat $
       [ [ qComment $ "Cast " ++ show qtOld ++ " ==> " ++ show qtNew
-        , (::=:) vNew $ EEmit (op rCast  `ECall` [EEmit $ EDafnyVar vOld])
+        , (::=:) vNew $ EEmit (op rCast  `ECall` [EEmit $ EmafnyVar vOld])
         ]
       | (vOld, vNew, rCast) <- zip3 vsOldEmits vsNewEmit rsCast ]
   where
@@ -146,7 +146,7 @@ castWithOp op s newTy = do
       -- assemble the emitted terms
       return . concat $
         [ [ qComment $ "Cast " ++ show partitionTy ++ " ==> " ++ show newTy
-          , (::=:) vNew $ EEmit (op `ECall` [EEmit $ EDafnyVar vOld])
+          , (::=:) vNew $ EEmit (op `ECall` [EEmit $ EmafnyVar vOld])
           ]
         | (vOld, vNew) <- zip vsOldEmits vsNewEmit ]
 
@@ -183,7 +183,7 @@ dupState s' = do
   let rs = ranges s
   -- generate a set of fresh emit variables as the stashed partition
   -- do not manipulate the `emitSt` here
-  vsEmitFresh <- genEDByRangeSansPhase qtS `mapM` rs >>= visitEDsBasis
+  vsEmitFresh <- genEmByRangeSansPhase qtS `mapM` rs >>= visitEmsBasis
   -- the only place where state is used!
   vsEmitPrev  <- findEmitBasesByRanges rs
   let comm = qComment "Duplicate"

@@ -28,7 +28,7 @@ import           Qafny.Utils
 
 -- Utils
 import           Control.Monad
-    (when)
+    (liftM2, when)
 import           Data.List
     (nub, singleton)
 import           Data.Maybe
@@ -37,9 +37,10 @@ import           Data.Sum
     (Injection (inj))
 import           Qafny.Syntax.Emit
     (showEmitI)
+import           Qafny.Typing.Locus
+    (updateMetaStByLocus)
 import           Text.Printf
     (printf)
-import Qafny.Typing.Locus (updateLocusSt)
 
 throwError'
   :: ( Has (Error String) sig m )
@@ -105,9 +106,8 @@ promotionScheme st@Locus{loc, part, qty, degrees=dgrsSt} pb pe = do
       let fstSt = modifyPty (1 <$) st
       ptys <- allocAndUpdatePhaseType fstSt
       dumpSt "After promotion"
-      let prefs = getPhaseRef <$> ptys
       return . Just $ PromotionScheme
-        { psPrefs = prefs
+        { psPrefs   = catMaybes ptys -- no way there's a Nothing
         , psDgrPrev = 0
         , psDgrCurr = 1
         , psPromotion = Promote'0'1 (i, n) rs qty
@@ -171,10 +171,10 @@ analyzePhaseSpecDegree PhaseSumOmega{} = 2
 --   if isEN qt
 --     then
 --     do dgr <- onlyOne throwError' dgrs
---        ed  <- genEDStUpdatePhase dgr  (inj loc)
+--        ed  <- genEmStUpdatePhase dgr  (inj loc)
 --        return [evPhaseTy dgr ed]
---     else do checkListCorr dgrs rs
---             sequence [ evPhaseTy dgr <$> genEDStUpdatePhase dgr (inj r)
+--     else do haveSameLength dgrs rs
+--             sequence [ evPhaseTy dgr <$> genEmStUpdatePhase dgr (inj r)
 --                      | (r, dgr) <- zip rs dgrs
 --                      ]
 
@@ -185,25 +185,38 @@ allocAndUpdatePhaseType
      , Has (State TState) sig m
      , Has (Error String) sig m
      )
-  => Locus -> m [PhaseRef]
+  => Locus -> m [Maybe PhaseRef]
 allocAndUpdatePhaseType s@Locus{loc, part=Partition{ranges}, qty, degrees} = do
-  updateLocusSt s
-  mapMaybe evPhaseTy <$> genEDStUpdatePhaseFromLocus s
+  updateMetaStByLocus s
+  (evPhaseRef <$>) <$> genEmStUpdatePhaseFromLocus s
 
 -- | Query in the emit state the phase types of the given Locus
-queryPhaseType
+queryPhase
   :: ( Has (State TState) sig m
      , Has (Error String) sig m
      )
-  => Locus -> m [PhaseTy]
-queryPhaseType Locus{loc, part=Partition{ranges}, qty, degrees} =
-  if isEN qty
-    then do dgr <- onlyOne throwError' degrees
-            catMaybes . singleton . evPhaseTy <$> findED (inj loc)
-    else do checkListCorr ranges degrees
-            catMaybes <$> sequence [ evPhaseTy <$> findED (inj r)
-                                   | (r, dgr) <- zip ranges degrees
-                                   ]
+  => Locus -> m [Maybe (PhaseRef, Ty)]
+queryPhase Locus{loc, part=Partition{ranges}, qty, degrees}
+  | isEN qty = do
+      dgr <- onlyOne throwError' degrees
+      singleton . selectPhase <$> findEm (inj loc)
+  | otherwise = do
+      haveSameLength ranges degrees
+      sequence [ selectPhase <$> findEm (inj r) | r <- ranges ]
+
+-- | Query in the emit state the phase types of the given Locus
+queryPhaseRef
+  :: ( Has (State TState) sig m
+     , Has (Error String) sig m
+     )
+  => Locus -> m [Maybe PhaseRef]
+queryPhaseRef Locus{loc, part=Partition{ranges}, qty, degrees}
+  | isEN qty = do
+      dgr <- onlyOne throwError' degrees
+      singleton . evPhaseRef <$> findEm (inj loc)
+  | otherwise = do
+      haveSameLength ranges degrees
+      sequence [ evPhaseRef <$> findEm (inj r) | r <- ranges ]
 
 -- * Degree
 

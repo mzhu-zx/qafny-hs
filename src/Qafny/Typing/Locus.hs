@@ -6,8 +6,8 @@ import           Qafny.Effect
 import           Qafny.Syntax.IR
 
 
-updateLocusSt
+updateMetaStByLocus
   :: ( Has (State TState) sig m )
   => Locus -> m ()
-updateLocusSt s@Locus{loc, part, qty, degrees} =
+updateMetaStByLocus s@Locus{loc, part, qty, degrees} =
   sSt %= (at loc ?~ (part, (qty, degrees)))

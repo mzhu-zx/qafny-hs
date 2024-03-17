@@ -142,13 +142,13 @@ getMethodType v = do
         Inr mty -> pure mty
     _             -> asks (^. kEnv) >>= throwError'' . show . UnknownVariableError v
 
-checkListCorr
+haveSameLength
   :: ( Has (Error String) sig m
      , Show a
      , Show b
      )
   => [a] -> [b] -> m ()
-checkListCorr vsEmit eValues =
+haveSameLength vsEmit eValues =
   unless (length vsEmit == length eValues) $
     throwError @String $ printf
       "the number of elements doesn't agree with each other: %s %s"
