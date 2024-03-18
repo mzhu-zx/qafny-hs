@@ -14,6 +14,7 @@ import           Qafny.Syntax.ParserUtils
 import           Qafny.Syntax.AST
 import           Control.Monad
 import           Data.Sum
+import           Data.Maybe
 }
 
 %name runParser
@@ -44,8 +45,8 @@ dafny                 { ( _, L.TDafny $$  ) }
 "nor"                 { ( _, L.TNor       ) }
 "had"                 { ( _, L.THad       ) }
 "H"                   { ( _, L.THApp      ) }
-"QFT"                 { ( _, L.TQFT       ) }
-"RQFT"                { ( _, L.TRQFT      ) }
+"Qft"                 { ( _, L.TQFT       ) }
+"iQft"                { ( _, L.TRQFT      ) }
 "repr"                { ( _, L.TRepr      ) }
 "measure"             { ( _, L.TMeasure   ) }
 "measured"            { ( _, L.TMeasured  ) }
@@ -90,7 +91,7 @@ id                    { ( _, L.TId $$     ) }
 '.'                   { ( _, L.TDot       ) }
 ';'                   { ( _, L.TSemi      ) }
 "=="                  { ( _, L.TEq        ) }
-"->"                  { ( _, L.TTyArrow   ) }
+'->'                  { ( _, L.TTyArrow   ) }
 "=>"                  { ( _, L.TArrow     ) }
 ">="                  { ( _, L.TGe        ) }
 "<="                  { ( _, L.TLe        ) }
@@ -98,6 +99,9 @@ id                    { ( _, L.TId $$     ) }
 "*="                  { ( _, L.TApply     ) }
 ".."                  { ( _, L.TDots      ) }
 '~'                   { ( _, L.TTilde     ) }
+
+%expect 0
+%right '->' 
 
 %%
 AST
@@ -108,10 +112,12 @@ toplevels
                                                                           
 toplevel  :: { Toplevel' }
   :  dafny                            { inj (QDafny $1) }
-  | "method" id '(' bindings ')' "returns" '(' bindings ')' conds opt(block)                           
-    {%  ((\(rs, es) -> inj (QMethod $2 $4 $8 rs es $11)) `fmap` (requireEnsures $10)) }
-  | "method" id '(' bindings ')' conds opt(block)                                                  
-    {%  ((\(rs, es) -> inj (QMethod $2 $4 [] rs es $7)) `fmap` (requireEnsures $6)) }
+  | "method" id parens(bindings) returns conds opt(block)                           
+    {%  ((\(rs, es) -> inj (QMethod $2 $3 $4 rs es $6)) `fmap` (requireEnsures $5)) }
+
+returns :: { [Binding'] }
+  : {- empty -}                       { [] }
+  | "returns" '(' bindings ')'        { $3 }
 
 conds :: { [ Conds ] }
   : many(cond)                        { $1                                   }
@@ -124,20 +130,26 @@ cond :: { Conds }
 
                                                                           
 bindings
-  : manyComma(binding)                     { $1 }
+  : manyComma(binding)                { $1 }
 
 binding                                                                   
   : id ':' ty                         { Binding $1 $3                        }
                                                                           
-ty                                                                        
-  : "nat"                             { TNat                                 }
-  | "int"                             { TInt                                 }
-  | "measured"                        { TMeasured                            }
-  | "bool"                            { TBool                                }
-  | "seq" '<' ty '>'                  { TSeq $3                              }
-  | "qreg" '[' digits ']'             { TQReg (ANat $3)                      }
-  | "qreg" '[' id ']'                 { TQReg (AVar $3)                      }
-  | mayTuple(ty) "->" ty              { TArrow $1 $3                         }
+ty :: { Ty }  
+  : baseTy                            { $1             }
+  | baseTy '->' ty                    { TArrow [$1] $3 }
+  | tuple(ty) '->' ty   %shift        { TArrow $1   $3 }
+
+baseTy
+  : "nat"                             { TNat              }
+  | "int"                             { TInt              }
+  | "measured"                        { TMeasured         }
+  | "bool"                            { TBool             }
+  | "seq" '<' ty '>'                  { TSeq $3           }
+  | "qreg" '[' digits ']'             { TQReg (ANat $3)   }
+  | "qreg" '[' id ']'                 { TQReg (AVar $3)   }
+--  | parens(ty)                        { $1                }
+-- so far, don't allow higher order functions
           
 qty :: { QTy }
   : "nor"                             { TNor                            }
@@ -164,7 +176,7 @@ stmt :: { Stmt' }
     {% do sep <- separatesOnly $5; return $ SIf $3 sep $6                    }
   | "for" id "in" '[' expr ".." expr ']' "with" guardExpr conds block
     {% do (invs, sep) <- invariantSeperates $11; return $ SFor $2 $5 $7 $10 invs sep $12 }
-  | id tuple(expr) ';'                { SCall $1 $2 }
+  | id tuple(argExpr) ';'                { SCall $1 $2 }
 
 
 splitAt :: { Exp' }
@@ -174,10 +186,10 @@ guardExpr :: { GuardExp }
   : partition opt(splitAt)            { GEPartition $1 $2 }
                                                                           
 partition :: { Partition }
-  : manyComma(range)                  { Partition $ $1                       }
+  : manyComma(range)                  { Partition $ $1 }
                                                                           
 range                                                                     
-  : id '[' expr ".." expr ']'         { Range $1 $3 $5                       }
+  : id '[' expr ".." expr ']'         { Range $1 $3 $5 }
                                                                 
 spec ::   { Exp' }
   : '{' partition ':'  qty "↦" tuple(qspec) '}'
@@ -190,10 +202,8 @@ qspec :: { QSpec }
 
 
 qspec_ ::  { (AmpExp, PhaseExp, SpecExp) }
-  : "⊗" id '.' ampExp pspec expr
-                                      { ($4, $5, SESpecNor $2 $6)            }
-  | "⊗" ampExp pspec expr
-                                      { ($2, $3, SESpecNor "_" $4)           }
+  : "⊗" opt(id) '.' ampExp pspec expr
+                                      { ($4, $5, SESpecNor (fromMaybe "_" $2) $6) }
   | "Σ" id "∈" '[' expr ".." expr ']' '.' ampExp pspec tuple(expr)
                                       { ($10, $11, SESpecEN $2 (Intv $5 $7) $12)  }
   | "Σ" id "∈" '[' expr ".." expr ']' '.'             {- 9  -}
@@ -202,6 +212,7 @@ qspec_ ::  { (AmpExp, PhaseExp, SpecExp) }
     tuple(expr)
                                       { ($10, $11, SESpecEN01 $2 (Intv $5 $7) $13 (Intv $16 $18) $21) }
   | '_'                               { (ADefault, PhaseZ, SEWildcard) }
+
 
 ampExp :: { AmpExp }
   : {- empty -}                            { ADefault         }
@@ -230,10 +241,8 @@ tuple(p)
   : '(' manyComma(p) ')'              { $2 }
 
 expr                                                                      
-  : atomic                            { $1                     }
-  | '_'                               { EWildcard              }
+  : '_'                               { EWildcard              }
   | spec                              { $1                     }
-  | partition                         { EPartition $1          }
   | qops                              { $1                     }
   | "measure" partition               { EMeasure $2            }
   | "not" atomic                      { EOp1 ONot $2           }
@@ -242,8 +251,13 @@ expr
   | logicOrExp                        { $1                     }
   | lamExpr                           { $1                     }
 
+argExpr
+  : expr                              { $1            }
+  | braces(partition)                 { EPartition $1 }
+
+
 lamExpr :: { Exp' }
-  : "λ" lamBinder "=>" opt(pspec) tuple(expr) 
+  : "λ" lamBinder "=>" pspec tuple(expr) 
     { let (bPhase, bBases) = $2
       in ELambda (LambdaF { bPhase, bBases, ePhase = $4, eBases = $5 })
     }
@@ -254,8 +268,8 @@ lamBinder :: { (PhaseBinder, [Var]) }
 
 qops
   : "H"                               { EHad                   }
-  | "QFT"                             { EQFT                   }
-  | "RQFT"                            { ERQFT                  }
+  | "Qft"                             { EQft False             }
+  | "iQft"                            { EQft True              }
 
 logicOrExp :: { Exp' } 
   : logicAndExp "||" logicOrExp       { EOp2 OOr $1 $3         }
@@ -265,17 +279,18 @@ logicAndExp :: { Exp' }
   : cmpExpr "&&" logicAndExp          { EOp2 OAnd $1 $3        }
   | cmpExpr                           { $1 }
 
-cmpPartial
- : cmp arithExpr  { ($1, $2) }
-
 cmpExpr :: { Exp' }
  : arithExpr many(cmpPartial)         { unchainExps $1 $2  }
+
+cmpPartial
+ : cmp arithExpr  { ($1, $2) }
 
 cmp :: { Op2 }
  : '>'                      { OGt }
  | '<'                      { OLt }
  | ">="                     { OGe }
  | "<="                     { OLe }
+ | "=="                     { OEq }
 
 arithExpr :: { Exp' }
  : atomic arith arithExpr   { EOp2 $2 $1 $3 }
@@ -289,14 +304,17 @@ arith :: { Op2 }
 
 atomic                                                                      
   : digits                            { ENum $1                }
+  | id tuple(expr)                    { EApp $1 $2             }
   | id                                { EVar $1                }
   | '(' expr ')'                      { $2                     }
-  | id tuple(expr)                    { EApp $1 $2             }
 
 
 -- | Combinators
 parens(p)
   : '(' p ')'                         { $2 }
+
+braces(p)
+  : '{' p '}'                         { $2 }
 
 many(p)                                                                  
   : many_(p)                          { reverse $1 }
@@ -305,13 +323,15 @@ many_(p)
   : {- empty -}                       { []      }
   | many_(p) p                        { $2 : $1 }
 
+-- prefer to match the longest comma-sep list
 manyComma(p)                                                                  
-  : manyComma_(p)                     { reverse $1 }
+  : manyComma_(p)        %shift       { reverse $1 }
+  | {- empty -}                       { []         }
                                                                           
 manyComma_(p)
-  : {- empty -}                       { []      }
+  : manyComma_(p) ',' p               { $3 : $1 }
   | p                                 { [$1]    }
-  | manyComma_(p) ',' p               { $3 : $1 }
+
     
 opt(p)
   : {- empty -}                       { Nothing }

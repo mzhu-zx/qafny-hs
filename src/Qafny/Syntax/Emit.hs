@@ -259,7 +259,7 @@ instance DafnyPrinter (Exp ()) where
 instance (Show f, DafnyPrinter f) => DafnyPrinter (LambdaF f) where
   build e@(LambdaF{ bPhase, bBases, ePhase, eBases }) =
     case (bPhase, ePhase) of
-      (PhaseWildCard, Nothing) ->
+      (PhaseWildCard, PhaseWildCard) ->
         tupleLike bBases <+> "=>" <+> tupleLike eBases
       (_, _) -> debugOnly e $
         bPhase <+> "~" <+> tupleLike bBases <+>

@@ -200,8 +200,7 @@ data Exp x
   | EVar Var
   | EWildcard
   | EHad
-  | EQFT
-  | ERQFT
+  | EQft Bool
   | EMeasure Partition
   | EBool Bool
   | EApp Var [XRec x (Exp x)]
@@ -316,7 +315,14 @@ deriving instance (Ord (XRec x (Stmt x))) => Ord (Block x)
 
 
 -- TODO: refactor into record
-data QMethod x = QMethod Var (Bindings x) [(XRec x (Binding x))] [(XRec x (Exp x))] [(XRec x (Exp x))] (Maybe (Block x))
+data QMethod x
+  = QMethod { qmName     :: Var
+            , qmInputs   :: Bindings x
+            , qmOutputs  :: Bindings x
+            , qmRequires :: [XRec x (Exp x)]
+            , qmEnsures  :: [XRec x (Exp x)]
+            , qmBody     :: Maybe (Block x)
+            }
 
 deriving instance Show (QMethod ())
 deriving instance Show (QMethod Source)
@@ -438,8 +444,7 @@ data ExpF f
   | EVarF Var
   | EWildcardF
   | EHadF
-  | EQFTF
-  | ERQFTF
+  | EQftF Bool
   | EMeasureF Partition
   | EBoolF Bool
   | EAppF Var [f]
@@ -463,7 +468,7 @@ instance Corecursive (Exp ())
 data LambdaF f
   = LambdaF { bPhase :: PhaseBinder
             , bBases :: [Var]
-            , ePhase :: Maybe PhaseExp
+            , ePhase :: PhaseExp
             , eBases :: [f]
             }
   deriving (Functor, Foldable, Traversable)

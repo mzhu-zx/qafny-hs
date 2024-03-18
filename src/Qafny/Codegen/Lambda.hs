@@ -68,13 +68,11 @@ codegenUnaryLambda rLhs rResolved locus qtLambda
   dbgAssertConsistency rLhs stS
 
   -- handle promotions in phases
-  stmtsPhase <- case ePhase of
-    Just pexp -> do
-      promoteMaybe <- promotionScheme stS bPhase pexp
-      case promoteMaybe of
-        Just promote -> codegenPromotion promote
-        Nothing      -> codegenPhaseLambda stS bPhase pexp
-    Nothing   -> pure []
+  stmtsPhase <- do
+    promoteMaybe <- promotionScheme stS bPhase ePhase
+    case promoteMaybe of
+      Just promote -> codegenPromotion promote
+      Nothing      -> codegenPhaseLambda stS bPhase ePhase
 
   -- after promotion, the locus queried before must be staled
   -- dbgAssertConsistency rLhs stS

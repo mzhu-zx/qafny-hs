@@ -488,7 +488,7 @@ codegenStmt'Apply
       "Ranges given on the LHS of the application contains some incomplete range(s).\n%s"
       (showEmit0 $ byLineT rMap)
 
-codegenStmt'Apply (s :*=: EQFT) = codegenApplyQft s
+codegenStmt'Apply (s :*=: (EQft b)) = codegenApplyQft s
 codegenStmt'Apply _ = throwError' "What could possibly go wrong?"
 
 --------------------------------------------------------------------------------
