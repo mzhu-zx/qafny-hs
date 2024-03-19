@@ -1,0 +1,143 @@
+#+TITLE: Phaseful Hadamard Type
+#+LATEX_HEADER_EXTRA: \input{~/template/semantics}
+
+* Introduction
+
+Hadamard type is used to represent all quantum states with superposition yet
+without entanglement, i.e.,
+# 
+\[
+\ket{\phi_n} =
+ \prod^{n}_{i = 0} \prs{\alpha_i
+ \prs{ \ket{0} + \omega^{k_i}_{N}\ket{1}}}.
+\]
+# 
+\[
+\ket{\phi_n} =
+ \prod^{n}_{i = 0} \prs{\frac{1}{\sqrt{2^n}}
+ \prs{\ket{0} + \omega^{k_i}_{N}\ket{1}}}.
+\]
+# 
+Since amplitudes and kets are known for the given shape of states, only phases
+needs to be recorded.
+#
+=(nat<seq>, nat)= is sufficient as a representation of a =Had=-typed quantum
+state.
+#
+The type is purely /phaseful/.
+# 
+
+* Phase Kickback
+#
+We may define *phase kickback* as a special semantics for the phaseful Hadamard
+type.
+#
+Given a common phase kickback setting,
+\[
+U_f \prs{\frac{1}{\sqrt{2}} \ket{\phi_n} \otimes { \prs{\ket{0}-\ket{1}}}}
+= \frac{1}{\sqrt{2}} \ket{\phi_n} \otimes {{\prs{-1}}^{f(x)} \prs{\ket{0}-\ket{1}}}
+\]
+where
+\(f(x, y) = (x, y + f(x))\).
+#
+In our language, this operation is a special case that interacts an =En= state
+with a /single-qubit/ =Had= state.
+#
+The general strategy would be coverting the =Had= state to =En=, taking the
+cartesian product with the existing =En= state and applying \(f\) over the
+entangled state as an entity.
+#
+This results in a convoluted representation of phase kickback:
+# 
+#+begin_export latex
+\begin{align}
+  & \sum_{x \in \phi_n} \frac{1}{\sqrt{2}} \ket{x}\ket{0 + f(x)}
+    - \sum_{x \in \phi_n} \frac{1}{\sqrt{2}} \ket{x}\ket{1 + f(x)}
+  \\
+  = 
+  & \brs{
+    \begin{aligned}
+      f(x) = 0 \Rightarrow &
+                              \sum_{x \in \phi_n} \frac{1}{\sqrt{2}} \ket{x}\ket{0}
+                              - \sum_{x \in \phi_n} \frac{1}{\sqrt{2}} \ket{x}\ket{1} \\
+      f(x) = 1 \Rightarrow &
+                              \sum_{x \in \phi_n} \frac{1}{\sqrt{2}} \ket{x}\ket{1}
+                              - \sum_{x \in \phi_n} \frac{1}{\sqrt{2}} \ket{x}\ket{0} \\
+    \end{aligned}
+    }nn
+  \\
+  =
+  & \brs{
+    \begin{aligned}
+      f(x) = 0 \Rightarrow &
+                              \sum_{x \in \phi_n} \frac{1}{\sqrt{2}} {(-1)}^{f(x)} \ket{x}\ket{0}
+                              - \sum_{x \in \phi_n} \frac{1}{\sqrt{2}} {(-1)}^{f(x)} \ket{x}\ket{1} \\
+      f(x) = 1 \Rightarrow &
+                              - \sum_{x \in \phi_n} \frac{1}{\sqrt{2}} {(-1)}^{f(x)} \ket{x}\ket{1}
+                              + \sum_{x \in \phi_n} \frac{1}{\sqrt{2}} {(-1)}^{f(x)} \ket{x}\ket{0} \\
+    \end{aligned}
+    }
+  \\
+  \equiv
+  & \sum_{x \in \phi_n} \frac{1}{\sqrt{2}} {(-1)}^{f(x)} \ket{x}\ket{0}
+    - \sum_{x \in \phi_n} \frac{1}{\sqrt{2}} {(-1)}^{f(x)} \ket{x}\ket{1}
+\end{align}
+#+end_export
+# 
+This is undesireble because
+1. it requires the equality modulo permutation to prove (4), and
+2. proofs by cases over the codomain of \(f(x)\) are needed to bridge the
+   relation between kets and phases.
+   
+* A Phaseful Approach
+# 
+An alternative approach is to axoimatize the phase kickback phenonmenon using
+the fact that =Had= type itself is phaseful: if an oracle operator application
+involves a =Had= range/locus, its effect over kets should be treated phasefully.
+# 
+Given effect \(f(x, y) = (x, y + f(x))\), this is translated using phase
+calculus only.
+#+begin_export latex
+\[
+  \sum_{x \in \phi_n} \frac{1}{\sqrt{2}} {\omega_{2}^{f(x)}} \ket{x}\ket{0}
+  +
+  \sum_{x \in \phi_n} \frac{1}{\sqrt{2}} {\omega_{2}^{1-f(x)}} \ket{x}\ket{1}
+\]
+#+end_export
+#
+Generalizing to arbitrary =Had= type, we have
+#+begin_export latex
+\[
+  \sum_{x \in \phi_n} \frac{1}{\sqrt{2}} {\omega_{N}^{k(0+f(x))}} \ket{x}\ket{0}
+  +
+  \sum_{x \in \phi_n} \frac{1}{\sqrt{2}} {\omega_{N}^{k(1-f(x))}} \ket{x}\ket{1}.
+\]
+#+end_export
+#
+For \(\ket{+}\), take \(k = 0\), and the oracle operator is equivalent to
+identity.
+# 
+
+# 
+=Had= type requires the \(\ket{0}\) term to have the phase shift \(1\).
+#
+It is tempting to add a global phase shift to cancel this to keep =Had= an =En=
+locus seperate.
+#
+However, this is incorrect  because the shift added is /local/ and dependent of
+\(x\):
+# 
+#+begin_export latex
+\[
+  \sum_{x \in \phi_n}
+  \colorbox{red!20!white}{\({\omega_{N}^{k(0+f(x))}}\)}
+  \frac{1}{\sqrt{2}}
+  \prs{\ket{x}\ket{0} + {\omega_{N}^{k(1-2f(x))}} \ket{x}\ket{1}}.
+\]
+#+end_export
+#
+Therefore, the oracle still entangles =En= and =Had= as others do, although the
+effect is purely phaseful.
+
+* Generalization: \(n\)-qubit =Had= States
+TODO
