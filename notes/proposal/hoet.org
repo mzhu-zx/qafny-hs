@@ -14,11 +14,11 @@ is equivalent to
   & \mapsto
     \frac{1}{\sqrt{N}}
     \sum_{i \in S}\sum_{k = 0}^{N - 1}
-    \alpha_i\omega(p_i + x_i k, N) \ket{y_i}\ket{k}
+    \alpha_i\omega(p_i + x_i k, N) \ket{k}\ket{y_i}
   \\
   & =
     \frac{1}{\sqrt{N}}
-    \sum_{k = 0}^{N - 1} \prs{\alpha_i\sum_{i \in S} \omega(p_i + x_i k, N)\ket{y_i}} \ket{k}
+    \sum_{k = 0}^{N - 1} \ket{k}\prs{\alpha_i\sum_{i \in S} \omega(p_i + x_i k, N)\ket{y_i}} 
 \end{align*}
 #+end_export
 # 
