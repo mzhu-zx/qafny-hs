@@ -6,11 +6,17 @@
 
 module Qafny.Variable where
 
+{-
+   Format variable names from its internal representation.
+-}
+
 import           Data.Sum
 import           Qafny.Syntax.AST
 import           Qafny.Syntax.EmitBinding
-import           Qafny.TypeUtils  (tyKetByQTy)
-import           Text.Printf      (printf)
+import           Qafny.TypeUtils
+    (tyKetByQTy)
+import           Text.Printf
+    (printf)
 
 class Variable s where
   variable :: s -> String
@@ -82,11 +88,11 @@ instance (Variable a, Variable b) => Variable (a, b) where
     else variable a ++ "__" ++ variable b
 
 instance Variable Emitter where
-  variable (EmBaseSeq r qt) = variable (r, qt)
-  variable (EmPhaseSeq b i) = variable (b, variablePhaseN i)
-  variable (EmPhaseBase b) = variable (b, TNat)
+  variable (EmBaseSeq r qt)   = variable (r, qt)
+  variable (EmPhaseSeq b i)   = variable (b, variablePhaseN i)
+  variable (EmPhaseBase b)    = variable (b, "phase_base")
   variable (EmAnyBinding v t) = variable (v, t)
-  variable EmAmplitude = "amplitude"
+  variable (EmAmplitude v qt) = variable (v, qt)
 
 variablePhaseN :: Int -> String
 variablePhaseN = printf "phase_%d_"

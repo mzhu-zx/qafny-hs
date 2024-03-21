@@ -17,14 +17,15 @@ import Control.Monad (liftM2)
 -- * EmitBinding related functions
 
 -- | 'EmitData' stores emit variables (a.k.a. data variables) that's supposed to
--- be mapped to either a 'Loc' or a 'Range'
+-- be mapped from either a 'Loc' or a 'Range'
 --
 data EmitData = EmitData
   { evPhaseRef   :: Maybe PhaseRef   -- ^ the reference of the phase
   , evPhaseSeqTy :: Maybe Ty         -- ^ the type of phase representation
   , evBasis      :: Maybe Var        -- ^ the variable for its kets
-  , evBasisTy    :: Maybe Ty         -- ^ the type of the ket repre
+  , evBasisTy    :: Maybe Ty         -- ^ the type of the ket repr
   , evAmp        :: Maybe Var        -- ^ the variable for its amplitude
+  , evAmpTy      :: Maybe Ty         -- ^ the type of the amplitude repr
   }
   deriving (Eq, Ord, Show)
 
@@ -34,6 +35,7 @@ mtEmitData = EmitData { evPhaseRef   = Nothing
                       , evAmp        = Nothing
                       , evBasisTy    = Nothing
                       , evPhaseSeqTy = Nothing
+                      , evAmpTy      = Nothing
                       }
 
 
@@ -48,6 +50,7 @@ instance Semigroup EmitData where
     { evPhaseRef   = evPhaseRef ed2   <|> evPhaseRef ed1
     , evBasis      = evBasis ed2      <|> evBasis ed1
     , evAmp        = evAmp ed2        <|> evAmp ed1
+    , evAmpTy      = evAmpTy ed2        <|> evAmpTy ed1
     , evPhaseSeqTy = evPhaseSeqTy ed2 <|> evPhaseSeqTy ed1
     , evBasisTy    = evBasisTy ed2    <|> evBasisTy ed1
     }
@@ -79,6 +82,6 @@ data Emitter
   | EmPhaseSeq (Range :+: Loc) Int   -- ^ Phase Seq per range/loc with degree
   | EmPhaseBase (Range :+: Loc)      -- ^ Phase Base per range/loc with degree
   -- TODO: I may need to add a Phase Index here
-  | EmAmplitude                      -- ^ Amplitude?
+  | EmAmplitude Loc QTy              -- ^ Amplitude?
   | EmAnyBinding Var Ty              -- ^ Anything like a binding
   deriving (Show)

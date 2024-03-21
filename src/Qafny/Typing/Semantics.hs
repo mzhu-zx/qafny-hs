@@ -1,6 +1,8 @@
 module Qafny.Typing.Semantics where
 
 import           Qafny.Syntax.AST
+import           Qafny.Syntax.ASTFactory
+    (tySn, tySsn)
 
 -- * "Semantics of Entanglement Types"
 
@@ -9,7 +11,7 @@ data TyComp
   | T0 Ty
 
 class TyInjection a where
-  tyInj :: a -> Maybe TyComp 
+  tyInj :: a -> Maybe TyComp
 
 instance TyInjection Ty where
   tyInj = pure . T0
@@ -19,32 +21,38 @@ instance TyInjection [Ty] where
 
 
 data TySem
-  = TySem { tsKets  :: Maybe TyComp
-          , tsPhase :: Maybe TyComp
-          , tsInner :: Maybe TySem
+  = TySem { tsKets      :: Maybe TyComp
+          , tsPhase     :: Maybe TyComp
+          , tsInner     :: Maybe TySem
+          , tsAmplitude :: Maybe Ty
           }
 
 interp :: QTy -> TySem
-interp qty = TySem {tsKets, tsPhase, tsInner}
+interp qty = TySem {tsKets, tsPhase, tsInner, tsAmplitude}
   where
-    (tsKets, tsPhase, tsInner) = case qty of
-      TNor -> ( tyInj (TSeq TNat)
+    (tsKets, tsPhase, tsInner, tsAmplitude) = case qty of
+      TNor -> ( tyInj tySn
+              , Nothing
               , Nothing
               , Nothing
               )
       THad -> ( Nothing
-              , tyInj (TSeq TNat)
+              , tyInj tySn
+              , Nothing
               , Nothing
               )
-      TEn  -> ( tyInj [TSeq TNat]
-              , tyInj $ TSeq TNat
+      TEn  -> ( tyInj [tySn]
+              , tyInj tySn
               , Nothing
+              , Just tySn
               )
-      TEn01-> ( tyInj [TSeq (TSeq TNat)]
-              , tyInj $ TSeq TNat
+      TEn01-> ( tyInj [tySsn]
+              , tyInj tySn
               , Nothing
+              , Just tySn
               )
-      TQft -> ( tyInj [TSeq TNat]
+      TQft -> ( tyInj [tySn]
               , Nothing
-              , pure $ interp TEn
+              , pure $ interp TEn -- FIXME: seq<...> <$>
+              , Just tySn
               )

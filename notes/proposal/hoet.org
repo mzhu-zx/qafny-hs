@@ -13,8 +13,12 @@ is equivalent to
   \sum_{i \in S} \alpha_i \omega(p_i, N) \ket{x_i}\ket{y_i}
   & \mapsto
     \frac{1}{\sqrt{N}}
-    \sum_{i \in S}\sum_{k = 0}^{N - 1}
-    \alpha_i\omega(p_i + x_i k, N) \ket{k}\ket{y_i}
+    \sum_{i \in S}
+    \prs{
+    \sum_{k = 0}^{N - 1}
+    \alpha_i\omega(p_i + x_i k, N) \ket{k}
+    }
+    \ket{y_i}
   \\
   & =
     \frac{1}{\sqrt{N}}
