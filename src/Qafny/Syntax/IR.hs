@@ -110,22 +110,20 @@ initTState = TState
   }
 
 data SplitScheme = SplitScheme
-  { schROrigin     :: Range    -- | the original range
-  , schRTo         :: Range    -- | the range splitted _to_
-  , schRsRem       :: [Range]  -- | the remainder range
-  , schQty         :: QTy      -- | entanglement types
-  , schSMain       :: Locus    -- | the partition that was splitted _from_
-  , schVEmitOrigin :: Var      -- | the emit variable of the original range
-  , schVsEmitAll   :: [Var]    -- | the emit variables of new ranges
+  { schROrigin     :: Range       -- | the original range
+  , schRTo         :: Range       -- | the range splitted _to_
+  , schRsRem       :: [Range]     -- | the remainder range
+  , schQty         :: QTy         -- | entanglement types
+  , schSMain       :: Locus       -- | the partition that was splitted _from_
+  , schVEmitOrigin :: (Var, Ty)   -- | the emit var & type of the original range
+  , schVsEmitAll   :: [(Var, Ty)] -- | the emit vars & types of new ranges
   -- , schVsEmitPhaseAll :: [Maybe Var] -- | the emit variables of new phases
   }
   deriving Show
 
 data CastScheme = CastScheme
-  { schVsOldEmit :: [Var]
-  , schTOldEmit  :: Ty
-  , schVsNewEmit :: [Var]
-  , schTNewEmit  :: Ty
+  { schVsOldEmit :: [(Var, Ty)]
+  , schVsNewEmit :: [(Var, Ty)]
   , schQtOld     :: QTy
   , schQtNew     :: QTy
   , schRsCast    :: [Range] -- | casted ranges
@@ -139,10 +137,10 @@ data MergeScheme
   deriving Show
 
 data EqualStrategy = EqualStrategy
-  { esRange :: Range -- ^ range
-  , esQTy   :: QTy   -- ^ QTy of the corresponding range
-  , esVMain :: Var   -- ^ the var to stay
-  , esVAux  :: Var   -- ^ the var to be absorbed
+  { esRange :: Range     -- ^ range
+  , esQTy   :: QTy       -- ^ QTy of the corresponding range
+  , esVMain :: (Var, Ty) -- ^ the var to stay
+  , esVAux  :: (Var, Ty) -- ^ the var to be absorbed
   }
   deriving Show
 

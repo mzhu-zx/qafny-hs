@@ -34,8 +34,6 @@ import           Qafny.Syntax.ASTFactory
 import           Qafny.Syntax.Emit
     (showEmit0)
 import           Qafny.Syntax.EmitBinding
-import           Qafny.Syntax.EmitBinding
-    (EmitData (evPhaseSeqTy))
 import           Qafny.Syntax.IR
 import           Qafny.TypeUtils
 import           Qafny.Typing
@@ -94,7 +92,7 @@ codegenPromote'0'1
      )
   => QTy -> [Range] -> [PhaseRef] -> (Exp', Exp') -> m [Stmt']
 codegenPromote'0'1 qt rs prefs (i, n) = do
-  vRs <- findVisitEms evBasis (inj <$> rs)
+  vRs <- fsts <$> findVisitEms evBasis (inj <$> rs)
   let eCardVRs = mkCard <$> vRs
       -- use 0 here because `EMakeSeq` add an extra layer of `seq`
       ty = typingPhaseEmitReprN 0
@@ -121,7 +119,7 @@ codegenPhaseLambda st@Locus{degrees} pb pe = do
   concat <$> forM prefs (go dgrSt pb pe)
   where
     go 1 (PhaseOmega bi bBase) (PhaseOmega ei eBase)
-      (Just (PhaseRef { prRepr=vRepr, prBase=vBase})) =
+      (Just (PhaseRef { prRepr=vRepr, prBase=vBase}, tyPhase)) =
       let substBase = subst [(bBase, EVar vBase)] in
         return [ vRepr ::=: callMap (simpleLambda bi (substBase ei)) vRepr
                , vBase ::=: subst [(bBase, EVar vBase)] eBase
@@ -168,18 +166,19 @@ codegenQft locusEn locusQft = do
   edLocus <- findEm iloc      -- for amp+phase purpose
   (edRApplied, edRsRest) <-   -- for kets purpose
     ensuresNonEmptyEms <$> findEms (inj <$> ranges)
-  (vIdxK, vIdxI) <-            -- indices
+  ((vIdxK, _), (vIdxI, _)) <-            -- indices
     liftM2 (,) (gensymBinding "k" TNat) (gensymBinding "i" TNat)
 
-  vKetApplied <- visitEmBasis edRApplied
-  vsKetRest   <- visitEmsBasis edRsRest
+  vKetApplied <- fst <$> visitEmBasis edRApplied
+  vsKetRest   <- (fst <$>) <$> visitEmsBasis edRsRest
   -- find phase variables from the En-typed Locus
-  PhaseRef{prRepr=vpEn, prBase=vbEn} <- visitEm evPhaseRef edLocus
+  (PhaseRef{prRepr=vpEn, prBase=vbEn}, tpEn) <- visitEm evPhaseRef edLocus
 
   -- update phase ed
   edLocus' <- genEmStUpdatePhase qftDegree iloc
   -- find phase variables from generated phases
-  PhaseRef{prRepr=vpFresh, prBase=vbFresh} <- visitEm evPhaseRef edLocus'
+  (PhaseRef{prRepr=vpFresh, prBase=vbFresh}, tpFresh) <-
+    visitEm evPhaseRef edLocus'
 
   vsKetFresh <-
     if qty locusEn == qty locusQft

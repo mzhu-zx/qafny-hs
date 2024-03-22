@@ -5,24 +5,28 @@ module Qafny.TypeUtils where
 
 -- | Pure utility functions related to types
 
-import           Control.Lens
-    (over)
-import           Control.Lens.Tuple
 import           Qafny.Syntax.AST
-    (Binding (..), PhaseRef (..), QTy (..), Ty (..))
+    (QTy (..), Ty (..))
 import           Qafny.Syntax.ASTFactory
 import           Qafny.Syntax.IR
-    (Locus (Locus, degrees), STuple (..))
+    (Locus (Locus, degrees))
 
 
+ampTy :: QTy -> Maybe Ty
+ampTy TNor  = Nothing
+ampTy THad  = Nothing
+ampTy TEn   = Just tySr
+ampTy TEn01 = Just tySr
+ampTy TQft  = Just tySr
+{-# INLINE ampTy #-}
 
 -- | Type of the emitted value corresponding to its original quantum type.
-tyKetByQTy :: QTy -> Ty
-tyKetByQTy TNor  = tySn
-tyKetByQTy THad  = tySn
-tyKetByQTy TEn   = tySn
-tyKetByQTy TEn01 = tySsn
-tyKetByQTy TQft  = tySsn
+tyKetByQTy :: QTy -> Maybe Ty
+tyKetByQTy TNor  = Just tySn
+tyKetByQTy THad  = Nothing
+tyKetByQTy TEn   = Just tySn
+tyKetByQTy TEn01 = Just tySsn
+tyKetByQTy TQft  = Just tySsn
 {-# INLINE tyKetByQTy #-}
 
 -- | Type of an emitted phase variable

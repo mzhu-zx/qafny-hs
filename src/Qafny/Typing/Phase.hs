@@ -105,9 +105,10 @@ promotionScheme st@Locus{loc, part, qty, degrees=dgrsSt} pb pe = do
     promote'0'1 (PhaseOmega i n) = do
       let fstSt = modifyPty (1 <$) st
       ptys <- allocAndUpdatePhaseType fstSt
+      let prefs = (fst <$>) <$> ptys
       dumpSt "After promotion"
       return . Just $ PromotionScheme
-        { psPrefs   = catMaybes ptys -- no way there's a Nothing
+        { psPrefs   = catMaybes prefs -- no way there's a Nothing
         , psDgrPrev = 0
         , psDgrCurr = 1
         , psPromotion = Promote'0'1 (i, n) rs qty
@@ -185,7 +186,7 @@ allocAndUpdatePhaseType
      , Has (State TState) sig m
      , Has (Error String) sig m
      )
-  => Locus -> m [Maybe PhaseRef]
+  => Locus -> m [Maybe (PhaseRef, Ty)]
 allocAndUpdatePhaseType s@Locus{loc, part=Partition{ranges}, qty, degrees} = do
   updateMetaStByLocus s
   (evPhaseRef <$>) <$> genEmStUpdatePhaseFromLocus s
@@ -209,7 +210,7 @@ queryPhaseRef
   :: ( Has (State TState) sig m
      , Has (Error String) sig m
      )
-  => Locus -> m [Maybe PhaseRef]
+  => Locus -> m [Maybe (PhaseRef, Ty)]
 queryPhaseRef Locus{loc, part=Partition{ranges}, qty, degrees}
   | isEN qty = do
       dgr <- onlyOne throwError' degrees

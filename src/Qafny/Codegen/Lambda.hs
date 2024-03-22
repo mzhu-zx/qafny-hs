@@ -36,7 +36,7 @@ import           Qafny.Typing
     (promotionScheme, resolvePartition', splitThenCastScheme)
 import           Qafny.Typing.Error
 import           Qafny.Utils
-    (findEmitBasesByRanges, findEmitBasisByRange, gensymBinding)
+    (findEmitBasesByRanges, findEmitBasisByRange, gensymBinding, fsts)
 
 
 throwError'
@@ -80,7 +80,7 @@ codegenUnaryLambda rLhs rResolved locus qtLambda
 
   -- | It's important not to use the fully resolved `s` here because the OP
   -- should only be applied to the sub-partition specified in the annotation.
-  vEmit <- findEmitBasisByRange rLhs
+  (vEmit, _) <- findEmitBasisByRange rLhs
   ((stmts ++) . (stmtsPhase ++) <$>) . putOpt $ case qtLambda of
     TEn -> return [ vEmit ::=: callMap lamSansPhase vEmit ]
     TEn01 -> do
@@ -92,7 +92,7 @@ codegenUnaryLambda rLhs rResolved locus qtLambda
       --  - elFrom0 = offset
       --  - erFrom0 = eLhsUpper-eLhsLower + offset
       --            = 6 - 3 + 1 = 4
-      vInner <- gensymBinding "i" TNat
+      (vInner, _) <- gensymBinding "i" TNat
       return $
         let offset = eLhsLower - eRsvLower
             (elFrom0, erFrom0) = (offset, offset + eLhsUpper-eLhsLower)
@@ -127,10 +127,10 @@ codegenUnaryLambda rLhs rResolved locus qtLambda
 codegenLambdaEntangle
   :: GensymEmitterWithStateError sig m => [Range] -> Lambda -> m [Stmt']
 codegenLambdaEntangle rs (LambdaF{ bBases, eBases }) = do
-  vReprs <- findEmitBasesByRanges rs
+  vReprs <- fsts <$> findEmitBasesByRanges rs
   unless (lenBbases == lenEbases && length vReprs == lenEbases) $
     throwError errInconsistentLength
-  iVar <- gensymBinding "i" TNat
+  (iVar, _) <- gensymBinding "i" TNat
   return $ codegenApplyLambdaMany iVar vReprs bBases eBases
   where
     lenBbases = length bBases

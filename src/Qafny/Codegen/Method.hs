@@ -14,31 +14,28 @@ import           Control.Effect.Lens
 
 -- data
 import           Control.Lens
-    (Bifunctor (bimap), at, sans, (?~), (^.))
+    (at, (?~))
 import qualified Data.Map.Strict          as Map
 
 -- Qafny
 import           Control.Monad
-    (join, liftM, liftM2, liftM3, zipWithM)
-import           Data.Maybe
-    (catMaybes)
-import           Effect.Gensym
-    (gensym)
+    (liftM2)
+import           Data.Functor
 import           Qafny.Effect
 import           Qafny.Syntax.AST
 import           Qafny.Syntax.ASTFactory
-    (mkAssignment, mkDAssignment)
+    (mkDeclAssign)
 import           Qafny.Syntax.EmitBinding
-    (EmitData (..), Emitter (EmAnyBinding))
 import           Qafny.Syntax.IR
 import           Qafny.TypeUtils
-    (typingPhaseEmitReprN, tyKetByQTy)
+    (tyKetByQTy)
 import           Qafny.Typing.Typing
     (collectPureBindings)
 import           Qafny.Utils.EmitBinding
     (findEmitBasesByRanges, gensymBinding)
 import           Qafny.Utils.Utils
     (dumpSt)
+import Data.Foldable (Foldable(toList))
 
 -- * Method related definitions
 
@@ -59,30 +56,33 @@ replicateEmitEntry
   :: GensymEmitterWithState sig m
   => RangeOrLoc -> EmitData -> m [Stmt']
 replicateEmitEntry rl
-  ed@EmitData{evBasis, evBasisTy, evPhaseSeqTy, evPhaseRef, evAmp} =
-  do evBasis'    <- sequence evBasisM
-     evPhaseRef' <- sequence evPhaseRefM
+  ed@EmitData{evBasis, evPhaseRef, evAmp} =
+  do evBasis'    <- evBasisM
+     evPhaseRef' <- evPhaseRefM
      let refs = liftM2 (,) evPhaseRef' evPhaseRef
      -- let evPhase' = uncurry mkPhaseRef <$> prVars
      emitSt %= (at rl ?~ ed{evBasis=evBasis', evPhaseRef=evPhaseRef'})
-     return $ catMaybes
-       [ liftM3 mkDAssignment evBasisTy evBasis' evBasis
-       , uncurry (mkDAssignment TNat) . bimap prBase prBase <$> refs
-       , decl $ bimap prRepr prRepr <$> refs
-       ]
+     return $
+       toList (liftM2 (uncurry mkDeclAssign) evBasis' (evBasis <&> fst))
+       ++ concat (toList (refs <&> replicatePhases))
+
   where
-    evBasisM    = liftM2 gensymBinding evBasis evBasisTy
-    evPhaseRefM = liftM2 replicatePhase evPhaseSeqTy evPhaseRef
-    decl = (uncurry <$> (mkDAssignment <$> evPhaseSeqTy) <*>)
+    evBasisM    = mapM (uncurry gensymBinding) evBasis
+    evPhaseRefM = mapM (uncurry replicatePhase) evPhaseRef
+    replicatePhases ((p1, ty1), (p2, ty2)) =
+      [ mkDeclAssign (prBase p1) TNat (prBase p2)
+      , mkDeclAssign (prRepr p1) ty1 (prRepr p2)
+      ]
 
 replicatePhase
   :: Has (Gensym Emitter) sig m
-  => Ty -> PhaseRef -> m PhaseRef
-replicatePhase tyRepr PhaseRef{prBase, prRepr} =
-  liftM2 PhaseRef prBase' prRepr'
+  => PhaseRef -> Ty -> m (PhaseRef, Ty)
+replicatePhase PhaseRef{prBase, prRepr} tyRepr =
+  liftM2 go prBaseM prReprM
   where
-    prBase' = gensymBinding prBase TNat
-    prRepr' = gensymBinding prRepr tyRepr
+    go prBase'' prRepr'' = (PhaseRef prBase'' prRepr'', tyRepr)
+    prBaseM = fst <$> gensymBinding prBase TNat
+    prReprM = fst <$> gensymBinding prRepr tyRepr
 
 -- | Generate method parameters from the method signature
 codegenMethodParams
@@ -103,7 +103,7 @@ codegenMethodParams
   trace $ "INSTANCE: " ++ show inst
   trace $ "PVars" ++ show pVars
   vqEmits <- concat <$> sequence
-    [ ((, tyKetByQTy qt) <$>) <$> findEmitBasesByRanges ranges
+    [ findEmitBasesByRanges ranges
     | (Partition{ranges}, qt, _) <- inst ]
   dumpSt "MethodParams"
   pure $ pureVars ++ (uncurry Binding <$> vqEmits) ++ pVars

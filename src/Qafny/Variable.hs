@@ -14,7 +14,7 @@ import           Data.Sum
 import           Qafny.Syntax.AST
 import           Qafny.Syntax.EmitBinding
 import           Qafny.TypeUtils
-    (tyKetByQTy)
+    (tyKetByQTy, ampTy)
 import           Text.Printf
     (printf)
 
@@ -66,8 +66,8 @@ instance Variable (Binding ()) where
 --   variable PT0       = "phase_0_"
 --   variable (PTN n _) = variablePhaseN n
 
-instance Variable QTy where
-  variable = variable . tyKetByQTy
+-- instance Variable QTy where
+--   variable = variable . tyKetByQTy
 
 instance (Variable a, Variable b) => Variable (a :+: b) where
   variable (Inl l) = variable l
@@ -88,11 +88,18 @@ instance (Variable a, Variable b) => Variable (a, b) where
     else variable a ++ "__" ++ variable b
 
 instance Variable Emitter where
-  variable (EmBaseSeq r qt)   = variable (r, qt)
+  variable (EmBaseSeq r qt)   = case tyKetByQTy qt of
+    Just t -> variable (r, t)
+    _      -> error $ printf
+      "internal error: %s doesn't have a ket representation."
   variable (EmPhaseSeq b i)   = variable (b, variablePhaseN i)
   variable (EmPhaseBase b)    = variable (b, "phase_base")
   variable (EmAnyBinding v t) = variable (v, t)
-  variable (EmAmplitude v qt) = variable (v, qt)
+  variable (EmAmplitude v qt) = case ampTy qt of
+    Just t -> variable (r, t)
+    _      -> error $ printf
+      "internal error: %s doesn't have a ket representation."
 
 variablePhaseN :: Int -> String
 variablePhaseN = printf "phase_%d_"
+

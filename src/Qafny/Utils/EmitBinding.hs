@@ -18,8 +18,6 @@ module Qafny.Utils.EmitBinding
     -- * Gensyms w/o State
   , genEmByRange
   , genEmByRangeSansPhase
-    -- * Wrappers for Emitter
-  , genPhaseTyByDegree
     -- * Query
   , findEm, findEms
   , visitEm, visitEms, visitEmBasis, visitEmsBasis
@@ -30,13 +28,15 @@ module Qafny.Utils.EmitBinding
   , deleteEm, deleteEms, deleteEmPartition
     -- * Update
   , appendEmSt
+    -- * Helper
+  , fsts
   )
 where
 
 import           Control.Lens
     (at, sans, (?~), (^.))
 import           Control.Monad
-    (forM, liftM2, zipWithM, (>=>), void, forM_, zipWithM_)
+    (liftM2, zipWithM, zipWithM_, (>=>))
 import           Data.Functor
     ((<&>))
 import qualified Data.Map.Strict          as Map
@@ -52,7 +52,7 @@ import           Qafny.Syntax.EmitBinding
 import           Qafny.Syntax.IR
     (Locus (..), RangeOrLoc, TState, emitSt)
 import           Qafny.TypeUtils
-    (emitTypeFromDegree, isEN, tyKetByQTy, typingPhaseEmitReprN)
+    (ampTy, isEN, tyKetByQTy, typingPhaseEmitReprN)
 import           Qafny.Utils.Utils
     (errTrace, haveSameLength, onlyOne)
 
@@ -66,8 +66,10 @@ import           Qafny.Utils.Utils
 -- $doc
 --------------------------------------------------------------------------------
 
-gensymBinding :: (Has (Gensym Emitter) sig m) => Var -> Ty -> m Var
-gensymBinding v t = gensym (EmAnyBinding v t)
+-- ** Basics
+
+gensymBinding :: (Has (Gensym Emitter) sig m) => Var -> Ty -> m (Var, Ty)
+gensymBinding v t = (,t) <$> gensym (EmAnyBinding v t) 
 
 genKetsByQTy :: Has (Gensym Emitter) sig m => QTy -> [Range] -> m ([Var], Ty)
 genKetsByQTy qty ranges =
@@ -76,17 +78,31 @@ genKetsByQTy qty ranges =
     genV r = gensym (EmBaseSeq r qty)
     tyKets = tyKetByQTy qty
 
+genKet :: Has (Gensym Emitter) sig m => QTy -> Range -> m (Var, Ty)
+genKet qty range =
+  (, tyKets) <$> genV range
+  where
+    genV r = gensym (EmBaseSeq r qty)
+    tyKets = tyKetByQTy qty
 
-genPhaseTyByDegree
+genPhase
   :: Has (Gensym Emitter) sig m
-  => Int -> RangeOrLoc -> m (Maybe PhaseRef, Maybe Ty)
-genPhaseTyByDegree 0 _ = return (Nothing, Nothing)
-genPhaseTyByDegree n r
-  | n < 0 = return (Nothing, Nothing)
+  => Int -> RangeOrLoc -> m (Maybe (PhaseRef, Ty))
+genPhase 0 _ = return Nothing
+genPhase n r
+  | n < 0 = return Nothing
   | otherwise = do
       pr <- liftM2 PhaseRef (gensym (EmPhaseBase r)) (gensym (EmPhaseSeq r n))
-      return (Just pr, Just (typingPhaseEmitReprN n))
+      return $ Just (pr, typingPhaseEmitReprN n)
 
+genAmp :: Has (Gensym Emitter) sig m
+       => QTy -> Loc -> m (Maybe (Var, Ty))
+genAmp qty l =
+  mapM go $ ampTy qty
+  where
+    go ty = gensym (EmAmplitude l qty) <&> (, ty)
+
+-- ** Basics but Stateful
 
 -- | Generate a /complete/ 'EmitData' of a Range and manage it within the 'emitSt'
 genEmStByRange ::  GensymEmitterWithState sig m => QTy -> Int -> Range -> m EmitData
@@ -97,12 +113,10 @@ genEmStByRange qt i r = do
 
 genEmByRange :: (Has (Gensym Emitter) sig m) => QTy -> Int -> Range -> m EmitData
 genEmByRange qt i r = do
-  vB  <- gensym $ EmBaseSeq r qt
-  (vmP, tyP) <- genPhaseTyByDegree i (inj r)
-  let ed =  EmitData { evPhaseRef   = vmP
-                     , evPhaseSeqTy = tyP
+  vB  <- genKet qt r
+  p <- genPhase i (inj r)
+  let ed =  EmitData { evPhaseRef   = p
                      , evBasis      = Just vB
-                     , evBasisTy    = Just $ tyKetByQTy qt
                      , evAmp        = Nothing
                      }
   return ed
@@ -130,8 +144,8 @@ genEmStByLoc
   => Loc -> Int -> QTy -> [(Range, Int)] -> m (EmitData, [(Range, EmitData)])
 genEmStByLoc l iLoc qt ris = do
   rAndEms <- sequence [ (r,) <$> genEmStByRange qt i r | (r, i) <- ris ]
-  (vMP, tyP) <- genPhaseTyByDegree iLoc (inj l)
-  let edL = mtEmitData { evPhaseRef = vMP, evPhaseSeqTy = tyP }
+  p <- genPhase iLoc (inj l)
+  let edL = mtEmitData { evPhaseRef = p }
   emitSt %= (at (inj l) ?~ edL)
   return ( edL , rAndEms )
 
@@ -200,19 +214,18 @@ genEmStUpdatePhase
   :: GensymEmitterWithStateError sig m
   => Int -> RangeOrLoc -> m EmitData
 genEmStUpdatePhase i rl  = errTrace "`genEmStUpdatePhase`" $ do
-  (evPhaseRef, evPhaseSeqTy)  <- genPhaseTyByDegree i rl
-  appendEmSt rl (mtEmitData {evPhaseRef, evPhaseSeqTy})
+  evPhaseRef  <- genPhase i rl
+  appendEmSt rl (mtEmitData {evPhaseRef})
 
 genEmStUpdateKets
   :: GensymEmitterWithStateError sig m
   => QTy -> [Range] -> m [Var]
 genEmStUpdateKets qty ranges = do
   (vs, ty) <- genKetsByQTy qty ranges
-  let evBasisTy = Just ty
-  zipWithM_ (\r evBasis -> appendEmSt (inj r) (mtEmitData{evBasis, evBasisTy}))
-    ranges (Just <$> vs)
+  zipWithM_ (\r evBasis -> appendEmSt (inj r) (mtEmitData{evBasis}))
+    ranges (Just <$> map (, ty) vs)
   return vs
-  
+
 
 -- ** Getters
 findEm :: StateMayFail sig m => RangeOrLoc -> m EmitData
@@ -253,25 +266,25 @@ findVisitEms f = errTrace "findVisitEms" .
 
 
 -- *** Shorthands
-visitEmBasis :: Has (Error String) sig m => EmitData -> m Var
+visitEmBasis :: Has (Error String) sig m => EmitData -> m (Var, Ty)
 visitEmBasis = visitEm evBasis
 
-visitEmsBasis :: Has (Error String) sig m => [EmitData] -> m [Var]
+visitEmsBasis :: Has (Error String) sig m => [EmitData] -> m [(Var, Ty)]
 visitEmsBasis = mapM visitEmBasis
 
 findVisitEmsBasis
   :: StateMayFail sig m
-  => [RangeOrLoc] -> m [Var]
+  => [RangeOrLoc] -> m [(Var, Ty)]
 findVisitEmsBasis = findVisitEms evBasis
 
 findEmitBasisByRange
   :: StateMayFail sig m
-  => Range -> m Var
+  => Range -> m (Var, Ty)
 findEmitBasisByRange = findVisitEm evBasis . inj
 
 findEmitBasesByRanges
   :: StateMayFail sig m
-  => [Range] -> m [Var]
+  => [Range] -> m [(Var, Ty)]
 findEmitBasesByRanges = findVisitEms evBasis . (inj <$>)
 
 
@@ -285,3 +298,7 @@ deleteEms s = emitSt %= (`Map.withoutKeys` Set.fromList s)
 deleteEmPartition :: (Has (State TState) sig m) => Loc -> [Range] -> m ()
 deleteEmPartition l rs =
   deleteEms (inj l : (inj <$> rs))
+
+-- ** Helpers
+fsts :: [(a, b)] -> [a]
+fsts = (fst <$>)

@@ -7,26 +7,38 @@
 module Qafny.Utils.Utils where
 
 --
-import           Control.Effect.Error  (Error, throwError, catchError)
+import           Control.Effect.Error
+    (Error, catchError, throwError)
 import           Control.Effect.Lens
 import           Control.Effect.Reader
 import           Control.Effect.State
 import           Control.Effect.Trace
-import           Control.Lens          (at, (?~), (^.))
-import           Control.Monad         (forM, unless)
+import           Control.Lens
+    (at, (?~), (^.))
+import           Control.Monad
+    (forM, join, unless)
 
+import           Data.Bifunctor
 import           Data.Sum
-import           Text.Printf           (printf, PrintfType)
+import           Text.Printf
+    (PrintfType, printf)
 
 --
-import           Effect.Gensym         (Gensym, gensym)
+import           Effect.Gensym
+    (Gensym, gensym)
 
 --
-import           Qafny.Syntax.IR             (TEnv, TState, emitSt, kEnv, sSt)
-import           Qafny.Error           (QError (UnknownVariableError))
+import           Control.Applicative
+    (Applicative (liftA2))
+import           Qafny.Error
+    (QError (UnknownVariableError))
 import           Qafny.Syntax.AST
-import           Qafny.Syntax.Emit     (showEmitI)
-import           Qafny.Variable        (Variable (variable))
+import           Qafny.Syntax.Emit
+    (showEmitI)
+import           Qafny.Syntax.IR
+    (TEnv, TState, emitSt, kEnv, sSt)
+import           Qafny.Variable
+    (Variable (variable))
 
 
 --------------------------------------------------------------------------------
@@ -72,6 +84,12 @@ gensymLoc
   :: ( Has (Gensym String) sig m )
   => String -> m Loc
 gensymLoc = (Loc <$>) . gensym . variable . Loc
+
+both :: Bifunctor f => (a -> b) -> f a a -> f b b
+both = join bimap
+
+bothM :: Applicative m => (a -> m b) -> (a, a) -> m (b, b)
+bothM f (a, b) = liftA2 (,) (f a) (f b)
 
 --------------------------------------------------------------------------------
 -- * Gensym Utils

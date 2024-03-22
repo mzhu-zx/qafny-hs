@@ -35,7 +35,7 @@ import           Qafny.Gensym
 import           Control.Lens
     (at, non, (%~), (?~), (^.))
 import           Control.Monad
-    (MonadPlus (mzero), forM, forM_, unless, when, liftM2)
+    (MonadPlus (mzero), forM, forM_, liftM2, unless, when)
 
 import           Data.Bifunctor
 import           Data.Functor
@@ -44,7 +44,7 @@ import           Data.List.NonEmpty
     (NonEmpty (..))
 import qualified Data.Map.Strict              as Map
 import           Data.Maybe
-    (mapMaybe, catMaybes)
+    (catMaybes, mapMaybe)
 import qualified Data.Sum                     as Sum
 import           Text.Printf
     (printf)
@@ -68,15 +68,15 @@ import           Qafny.TypeUtils
     (emitTypeFromDegree, isEN, tyKetByQTy)
 import           Qafny.Typing
     (allocAndUpdatePhaseType, analyzePhaseSpecDegree, appkEnvWithBds,
-    castScheme, checkSubtype, checkSubtypeQ, checkTypeEq, collectConstraints,
-    collectMethodTypes, collectPureBindings, extendMetaState, matchEmitStatesVars,
+    checkSubtype, checkSubtypeQ, collectConstraints, collectMethodTypes,
+    collectPureBindings, extendMetaState, matchEmitStatesVars,
     matchStateCorrLoop, mergeCandidateHad, mergeLociHadEN, mergeMatchedTState,
-    mergeScheme, promotionScheme, queryPhaseRef, queryPhase, removeTStateByLocus,
+    mergeScheme, queryPhase, queryPhaseRef, removeTStateByLocus,
     resolveMethodApplicationArgs, resolveMethodApplicationRets,
     resolvePartition, resolvePartition', resolvePartitions, retypePartition1,
     specPartitionQTys, splitScheme, splitSchemePartition, splitThenCastScheme,
     tStateFromPartitionQTys, typingExp, typingGuard, typingPartition,
-    typingPartitionQTy, resolveRange)
+    typingPartitionQTy)
 
 import           Data.Sum
     (Injection (inj))
@@ -87,7 +87,7 @@ import           Qafny.Codegen.Lambda
 import           Qafny.Codegen.Method
     (codegenMethodParams, genEmitSt)
 import           Qafny.Codegen.Phase
-    (codegenQft, codegenApplyQft)
+    (codegenApplyQft)
 import           Qafny.Codegen.SplitCast      hiding
     (throwError')
 import           Qafny.Typing.Error
@@ -97,7 +97,8 @@ import           Qafny.Utils.EmitBinding
 import           Qafny.Utils.TraceF
     (Traceable (tracef))
 import           Qafny.Utils.Utils
-    (haveSameLength, dumpSt, fst2, gensymLoc, getMethodType, onlyOne, uncurry3)
+    (both, dumpSt, fst2, gensymLoc, getMethodType, haveSameLength, onlyOne,
+    uncurry3, bothM)
 
 first3 :: (a -> d) -> (a, b, c) -> (d, b, c)
 first3 f (a, b, c) = (f a, b, c)
@@ -268,7 +269,7 @@ codegenToplevel'Method q@(QMethod vMethod bds rts rqs ens (Just block)) = runWit
       runReader TEn .  -- | resolve λ to EN on default
       runReader True .
       -- ((,) <$> genEmitSt <*>) .
-      ((dumpSt "begin block") >>) .
+      (dumpSt "begin block" >>) .
       codegenBlock
 
     -- | Compile the foward declaration of all variables produced in compiling
@@ -414,7 +415,8 @@ codegenStmt' (SCall x eargs) = do
   stmtsSC <- forM rSts codegenStupleSplitCast
   forM_ rSts $ removeTStateByLocus . fst3
   rets <- resolveMethodApplicationRets envArgs mty
-  pure $ concat stmtsSC ++ [SEmit (rets :*:=: [EEmit (ECall x resolvedArgs)])]
+  pure $ concat stmtsSC ++
+    [SEmit (fsts rets :*:=: [EEmit (ECall x resolvedArgs)])]
   where
     fst3 (a, _, _) = a
     codegenStupleSplitCast (_, mS, mC) =
@@ -549,9 +551,9 @@ codegenStmt'If'Had stG stB' b = do
   -- 2. codegen the body
   stmtB <- SEmit . SBlock <$> codegenBlock b
   -- TODO: left vs right merge strategy
-  (cardMain', cardStash') <- cardStatesCorr corr
-  ~[(stmtCard, cardMain), (stmtStash, cardStash)] <-
-    forM [cardMain', cardStash'] saveCard
+  (cardMain', cardStash') <- codegenEnReprCard2 corr
+  ((stmtCard, cardMain), (stmtStash, cardStash)) <-
+    bothM saveCard (cardMain', cardStash')
   -- 3. merge duplicated body partitions and merge the body with the guard
   stB <- resolvePartition sB
   stmtsG <- mergeHadGuard stG stB cardMain cardStash
@@ -600,7 +602,7 @@ codegenStmt'For (SFor idx boundl boundr eG invs (Just seps) body) = do
     -- get @TState >>= trace . ("staetLoop (subst):\n" ++) . show
     pure stmtsBody
 
-  return $ concat stmtsPreGuard ++ stmtsBody
+  return $ stmtsPreGuard ++ stmtsBody
   where
     -- IEnv for loop constraints
     substEnv = [(idx, boundl :| [boundr - 1])]
@@ -629,7 +631,8 @@ codegenStmt'For (SFor idx boundl boundr eG invs (Just seps) body) = do
       stmtsPreGuard <- invPQtsPre `forM` \(sInv, qtInv, _) -> case sInv of
         Partition [rInv] -> do
           stInv <- resolvePartition sInv
-          (sInvSplit, maySplit, mayCast) <- hdlSCError $ splitThenCastScheme stInv qtInv rInv
+          (sInvSplit, maySplit, mayCast) <- hdlSCError $
+            splitThenCastScheme stInv qtInv rInv
           codegenSplitThenCastEmit maySplit mayCast
         _                ->
           -- Q: What is a reasonable split if there are 2 ranges? Would this have
@@ -664,8 +667,11 @@ codegenStmt'For (SFor idx boundl boundr eG invs (Just seps) body) = do
       -- trace $ printf "statePreLoop: %s\nstateLoop: %s"  (show statePreLoop) (show stateLoop)
 
       -- | pass preLoop variables to loop ones
-      stmtsEquiv <- (uncurry mkAssignment <$>) <$> matchStateCorrLoop statePreLoop stateLoop [(idx, boundl)]
-      return (stmtsPreGuard ++ [stmtsEquiv], statePreLoop, stateLoop)
+      matchedVarTys <- matchStateCorrLoop statePreLoop stateLoop [(idx, boundl)]
+      let stmtsEquiv = (\(e1, e2) -> mkAssignment (fst e1) (fst e2))
+            <$> matchedVarTys
+
+      return (concat stmtsPreGuard ++ stmtsEquiv, statePreLoop, stateLoop)
 
     -- update the typing state by plugging the right bound into the index
     -- parameter
@@ -785,8 +791,9 @@ codegenFor'Body idx boundl boundr eG body stSep@(Locus{qty=qtSep}) newInvs = do
       vsEmitG <- findEmitBasesByRanges $ unpackPart sG
       redFalseG <- genEmStByRangesSansPhase qtG (ranges sG)
       vsEmitGFalse <- mapM (visitEmBasis . snd) redFalseG
-      let stmtsSaveFalse = uncurry (stmtAssignSlice (ENum 0) eSep) <$> zip vsEmitGFalse vsEmitG
-      let stmtsFocusTrue = stmtAssignSelfRest eSep <$> vsEmitG
+      let stmtsSaveFalse = uncurry (stmtAssignSlice (ENum 0) eSep)
+            <$> zip (fsts vsEmitGFalse) (fsts vsEmitG)
+      let stmtsFocusTrue = stmtAssignSelfRest eSep <$> fsts vsEmitG
 
       -- save the current emit symbol table for
       stateIterBegin <- get @TState
@@ -867,13 +874,16 @@ codegenFor'Body idx boundl boundr eG body stSep@(Locus{qty=qtSep}) newInvs = do
       -- Use collected partitions and merge it with the absorbed typing state.
       emitStEnd <- (^. emitSt) <$> get @TState
       corrBeginEnd <- matchEmitStatesVars emitStBegin emitStEnd
+      let matchedVarsBE = both fst . snd <$> corrBeginEnd
       -- I don't remember the purpose of this line, purely sanity check?
-      pure $ uncurry mkAssignment . snd <$> corrBeginEnd
+      pure $ uncurry mkAssignment <$> matchedVarsBE
 
 
     errNoSep = "Insufficient knowledge to perform a separation for a EN01 partition "
-    stmtAssignSlice el er idTo idFrom = (::=:) idTo (sliceV idFrom el er)
-    stmtAssignSelfRest eBegin idSelf = stmtAssignSlice eBegin (EEmit . ECard . EVar $ idSelf) idSelf idSelf
+    stmtAssignSlice el er idTo idFrom = idTo ::=: sliceV idFrom el er
+    stmtAssignSelfRest eBegin idSelf =
+      stmtAssignSlice eBegin (EEmit . ECard . EVar $ idSelf) idSelf idSelf
+
 
 -- | Code Generation of a `For` statement with a Had partition
 codegenStmt'For'Had
@@ -984,24 +994,24 @@ hadGuardMergeExp vEmit tEmit cardMain cardStash eBase =
 
 
 
--- Emit two expressions representing the number of kets in two states in
+-- | Emit two expressions representing the number of kets in two states in
 -- correspondence
-cardStatesCorr
+codegenEnReprCard2
   :: ( Has (Error String) sig m )
-  => [(Var, Var)]
+  => [((Var, Ty), (Var, Ty))]
   -> m (Exp', Exp')
-cardStatesCorr ((vStash ,vMain) : _) =
+codegenEnReprCard2 (((vStash, _) ,(vMain, _)) : _) =
   return ( EEmit . ECard . EVar $ vStash
          , EEmit . ECard . EVar $ vMain)
-cardStatesCorr a =
+codegenEnReprCard2 a =
   throwError "State cardinality of an empty correspondence is undefined!"
 
 
 -- Merge the two partitions in correspondence
-mergeEmitted :: [(Var, Var)] -> [Var] -> [Stmt']
+mergeEmitted :: [((Var, Ty), (Var, Ty))] -> [Var] -> [Stmt']
 mergeEmitted corr excluded =
   [ vMain ::=: EOp2 OAdd (EVar vStash) (EVar vMain)
-  | (vMain, vStash) <- corr
+  | ((vMain, _), (vStash, _)) <- corr
   , vMain `notElem` excluded ]
 
 
@@ -1018,11 +1028,11 @@ codegenAlloc v e@(EOp2 ONor e1 e2) t@(TQReg _) = do
   let eEmit = EEmit $ EMakeSeq TNat e1 $ constLambda e2
   let rV = Range v (ENum 0) e1
       sV = partition1 rV
-  vEmit <- genEmStByRangeSansPhase TNor rV >>= visitEmBasis
+  (vEmit, _) <- genEmStByRangeSansPhase TNor rV >>= visitEmBasis
   loc <- gensymLoc v
   xSt %= (at v . non [] %~ ((rV, loc) :))
   sSt %= (at loc ?~ (sV, (TNor, [0])))
-  return $ (::=:) vEmit eEmit
+  return $ vEmit ::=: eEmit
 codegenAlloc v e@(EOp2 ONor _ _) _ =
   throwError "Internal: Attempt to create a Nor partition that's not of nor type"
 codegenAlloc v e _ = return $ (::=:) v e
@@ -1066,13 +1076,13 @@ codegenMergeScheme = mapM $ \scheme -> do
     MJoin JoinStrategy { jsQtMain=qtMain, jsQtMerged=qtMerged
                        , jsRResult=rResult, jsRMerged=rMerged, jsRMain=rMain
                        } -> do
-      vEmitMerged <- findEmitBasisByRange rMerged
-      vEmitMain   <- findEmitBasisByRange rMain
+      (vEmitMerged, _) <- findEmitBasisByRange rMerged
+      (vEmitMain, _)   <- findEmitBasisByRange rMain
       deleteEms $ inj <$> [rMerged, rMain]
       case (qtMain, qtMerged) of
         (TEn01, TNor) -> do
           -- append the merged value (ket) into each kets in the main value
-          vEmitResult <- genEmStByRangeSansPhase qtMain rResult >>= visitEmBasis
+          (vEmitResult, _) <- genEmStByRangeSansPhase qtMain rResult >>= visitEmBasis
           vBind <- gensym "lambda_x"
           let stmt = vEmitResult ::=: callMap ef vEmitMain
               ef   = simpleLambda vBind (EVar vBind + EVar vEmitMerged)
@@ -1083,7 +1093,7 @@ codegenMergeScheme = mapM $ \scheme -> do
           return (stmtAdd, vEmitMain)
         _             -> throwError' $ printf "No idea about %s to %s conversion."
     MEqual EqualStrategy { esRange = r, esQTy = qt
-                         , esVMain = v1, esVAux = v2 } -> do
+                         , esVMain = (v1, _), esVAux = (v2, _) } -> do
       -- This is all about "unsplit".
       case qt of
         TNor ->
@@ -1095,7 +1105,7 @@ codegenMergeScheme = mapM $ \scheme -> do
           -- TEn01 is emitted as seq<seq<nat>> representing Sum . Tensor,
           -- TEn   is emitted as seq<nat>      representing Sum . Tensor,
           -- It suffices to simply concat them
-          pure $ (merge3 v1 v1 v2, v1)
+          pure (merge3 v1 v1 v2, v1)
         _ -> throwError' "This pattern shoule be complete!"
   where
     merge3 vS vRF vRT = vS ::=: (EVar vRF + EVar vRT)
@@ -1112,7 +1122,7 @@ codegenRangeRepr
      , Has (Reader IEnv) sig m
      , Has Trace sig m
      )
-  => Range -> m Var
+  => Range -> m (Var, Ty)
 codegenRangeRepr r =
   resolvePartition (Partition [r]) >> findEmitBasisByRange r
 
@@ -1139,7 +1149,7 @@ codegenRequires rqs = do
         let dgrs = pspec <&> analyzePhaseSpecDegree
         (vsEmit, ptys) <- extendMetaState s qt dgrs
         es <- runReader True $
-          codegenSpecExp (zip vsEmit (unpackPart s)) qt espec ((fst <$>) <$> ptys)
+          codegenSpecExp (zip vsEmit (unpackPart s)) qt espec ptys
         return (es, catMaybes ptys)
       _ -> return ([rq], [])
 
@@ -1174,8 +1184,8 @@ codegenMethodReturns MethodType{ mtSrcReturns=srcReturns
       deleteEms (inj<$> ranges p)
       newVars <- genEmStByRangesSansPhase' qt (ranges p) >>= visitEmsBasis
       let emitTy = tyKetByQTy qt
-      pure $ zipWith (pairAndBind emitTy) newVars prevVars
-    pairEachRef PhaseRef{prRepr=vNew} (PhaseRef{prRepr=vOld}, ty) =
+      pure $ zipWith (pairAndBind emitTy) (fsts newVars) prevVars
+    pairEachRef (PhaseRef{prRepr=vNew}, _) (PhaseRef{prRepr=vOld}, ty) =
       pairAndBind ty vNew vOld
     pairAndBind emitTy nv pv = (mkAssignment nv pv, (`Binding` emitTy) nv)
 
@@ -1223,7 +1233,7 @@ codegenAssertion' e = return [e]
 -- partition type; with which, generate expressions (predicates)
 codegenSpecExp
   :: ( Has (Error String) sig m, Has (Reader Bool) sig m )
-  => [(Var, Range)] -> QTy -> [QSpec] -> [Maybe PhaseRef] -> m [Exp']
+  => [((Var, Ty), Range)] -> QTy -> [QSpec] -> [Maybe (PhaseRef, Ty)] -> m [Exp']
 codegenSpecExp vrs p specs ptys = putOpt $
   if isEN p
   then do
@@ -1233,7 +1243,7 @@ codegenSpecExp vrs p specs ptys = putOpt $
   else do
       -- For `nor` and `had`, one specification is given one per range
     haveSameLength vrs specs
-    concat <$> mapM (specPerRange' p) (zip3 vrs specs ptys)
+    concat <$> mapM (specPerRange' p) (zip3 (first fst <$> vrs) specs ptys)
   where
     specPerRange' ty (vr, qspec, pty) =
       specPerRange ty (vr, (spec qspec, phase qspec), pty)
@@ -1287,7 +1297,7 @@ codegenSpecExp vrs p specs ptys = putOpt $
       return $ ePSpec ++ concat
         [ [ eSize `eEq` ECard (EVar vE)
           , quantifier (const (EOp2 OEq (eSelect vE) eV)) ]
-        | ((vE, _), eV) <- zip vrs eValues
+        | (((vE, _), _), eV) <- zip vrs eValues
         , eV /= EWildcard ]
 
     specPerPartition
@@ -1309,7 +1319,7 @@ codegenSpecExp vrs p specs ptys = putOpt $
           eForallSum = EForall (natB idxSum) eBoundSum . ($ idxSum)
       ePSpec <- codegenPhaseSpec eForallSum eSizeSum pty pspec
       return . (ePSpec ++) . concat $ do
-        ((vE, Range _ el er), eV) <- bimap (second reduce) reduce <$> zip vrs eValues
+        (((vE, _), Range _ el er), eV) <- bimap (second reduce) reduce<$> zip vrs eValues
         when (eV == EWildcard) mzero
         let cardSum = eSizeSum `eEq` ECard (EVar vE)
         let rTen' = reduce (er - el)
@@ -1337,18 +1347,18 @@ codegenSpecExp vrs p specs ptys = putOpt $
 codegenPhaseSpec
   :: ( Has (Error String) sig m
      )
-  => ((Var -> Exp') -> Exp') -> Exp' -> Maybe PhaseRef ->  PhaseExp -> m [Exp']
+  => ((Var -> Exp') -> Exp') -> Exp' -> Maybe (PhaseRef, Ty) ->  PhaseExp -> m [Exp']
 codegenPhaseSpec _ _ Nothing pe =
   if | pe `elem` [ PhaseZ, PhaseWildCard ] -> return []
      | otherwise ->
        throwError' $ printf "%s is not a zeroth degree predicate." (show pe)
-codegenPhaseSpec quantifier eSize (Just ref) (PhaseOmega eK eN) =
+codegenPhaseSpec quantifier eSize (Just (ref, _)) (PhaseOmega eK eN) =
   let assertN = EOp2 OEq eN (EVar (prBase ref))
       assertK idx = EOp2 OEq eK (prRepr ref >:@: idx)
       assertKCard = EOp2 OEq eSize (mkCard (prRepr ref))
   in return [assertN, assertKCard, quantifier assertK ]
 
-codegenPhaseSpec quantifier eSize (Just ref) (PhaseSumOmega (Range v l r) eK eN) =
+codegenPhaseSpec quantifier eSize (Just (ref, _)) (PhaseSumOmega (Range v l r) eK eN) =
   let assertN = EOp2 OEq eN (EVar (prBase ref))
       pLength = r - l
       -- FIXME: emit the length of the 2nd-degree range and get the inner
@@ -1357,7 +1367,7 @@ codegenPhaseSpec quantifier eSize (Just ref) (PhaseSumOmega (Range v l r) eK eN)
                     (EOp2 OEq eK (prRepr ref >:@: v >:@: idx))
   in return [assertN, quantifier assertK]
 codegenPhaseSpec _ _ _ e =
-  throwError' $ printf "Invalid %s phase." (show e) 
+  throwError' $ printf "Invalid %s phase." (show e)
 
 
 

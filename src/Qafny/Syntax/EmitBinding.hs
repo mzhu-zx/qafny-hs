@@ -8,10 +8,11 @@ module Qafny.Syntax.EmitBinding where
 
 import           Control.Applicative
     (Alternative (..))
-import qualified Data.Map.Strict       as Map
+import           Control.Monad
+    (liftM2)
+import qualified Data.Map.Strict     as Map
 import           Data.Sum
 import           Qafny.Syntax.AST
-import Control.Monad (liftM2)
 -- import           Qafny.Syntax.ASTUtils
 --     (getPhaseRefMaybe)
 -- * EmitBinding related functions
@@ -20,12 +21,9 @@ import Control.Monad (liftM2)
 -- be mapped from either a 'Loc' or a 'Range'
 --
 data EmitData = EmitData
-  { evPhaseRef   :: Maybe PhaseRef   -- ^ the reference of the phase
-  , evPhaseSeqTy :: Maybe Ty         -- ^ the type of phase representation
-  , evBasis      :: Maybe Var        -- ^ the variable for its kets
-  , evBasisTy    :: Maybe Ty         -- ^ the type of the ket repr
-  , evAmp        :: Maybe Var        -- ^ the variable for its amplitude
-  , evAmpTy      :: Maybe Ty         -- ^ the type of the amplitude repr
+  { evPhaseRef :: Maybe (PhaseRef, Ty)   -- ^ the ref & type of the phase
+  , evBasis    :: Maybe (Var, Ty)        -- ^ the var & type of its kets
+  , evAmp      :: Maybe (Var, Ty)        -- ^ the var & type of its amplitude
   }
   deriving (Eq, Ord, Show)
 
@@ -33,15 +31,11 @@ mtEmitData :: EmitData
 mtEmitData = EmitData { evPhaseRef   = Nothing
                       , evBasis      = Nothing
                       , evAmp        = Nothing
-                      , evBasisTy    = Nothing
-                      , evPhaseSeqTy = Nothing
-                      , evAmpTy      = Nothing
                       }
 
 
 selectPhase :: EmitData -> Maybe (PhaseRef, Ty)
-selectPhase EmitData{evPhaseRef, evPhaseSeqTy} =
-  liftM2 (,) evPhaseRef evPhaseSeqTy
+selectPhase = evPhaseRef
 
 -- Merge two EmitData pairwise and prefer the 'Just'-fields or the latter one if
 -- both are fields 'Just'
@@ -50,9 +44,6 @@ instance Semigroup EmitData where
     { evPhaseRef   = evPhaseRef ed2   <|> evPhaseRef ed1
     , evBasis      = evBasis ed2      <|> evBasis ed1
     , evAmp        = evAmp ed2        <|> evAmp ed1
-    , evAmpTy      = evAmpTy ed2        <|> evAmpTy ed1
-    , evPhaseSeqTy = evPhaseSeqTy ed2 <|> evPhaseSeqTy ed1
-    , evBasisTy    = evBasisTy ed2    <|> evBasisTy ed1
     }
 
 

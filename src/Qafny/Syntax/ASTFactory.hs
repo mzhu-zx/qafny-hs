@@ -114,14 +114,17 @@ mkCard = injAst . ECard . injAst
 mkAssignment ::  Var -> Var -> Stmt'
 mkAssignment v1 v2 = v1 ::=: EVar v2
 
-mkDAssignment :: Ty -> Var -> Var -> Stmt'
-mkDAssignment t v1 v2 = SVar (Binding v1 t) (Just (EVar v2))
+mkDeclAssign :: Var -> Ty -> Var -> Stmt'
+mkDeclAssign v1 t v2 = SVar (Binding v1 t) (Just (EVar v2))
 
 
 -- Erase phase arguments in a lambda term
 lambdaUnphase :: Lambda -> Exp'
 lambdaUnphase l = ELambda
   l{ bPhase = PhaseWildCard, ePhase = PhaseWildCard }
+
+tySr :: Ty
+tySr = TSeq tyReal
 
 tySn :: Ty
 tySn = TSeq TNat

@@ -45,7 +45,7 @@ codegenSplitEmit
                  , schROrigin=rOrigin@(Range x left _)
                  , schRTo=rTo
                  , schRsRem=rsRem
-                 , schVEmitOrigin=vEmitOrigin
+                 , schVEmitOrigin=(vEmitOrigin, tyEmitOrigin)
                  , schVsEmitAll=vEmitAll
                  } =
   -- trace ("codegenSplitEmit: " ++ show ss) >>
@@ -60,7 +60,7 @@ codegenSplitEmit
                           (EEmit (ESlice (EVar vEmitOrigin) (offset el) (offset er)))
                           (EEmit (ESlice (EVar vEmitNew) 0 (reduce (er - el)))))
               ]
-            | (vEmitNew, Range _ el er) <- zip (schVsEmitAll ss) (rTo : rsRem) ]
+            | ((vEmitNew, tyEmitNew), Range _ el er) <- zip (schVsEmitAll ss) (rTo : rsRem) ]
       return . concat $ stmtsSplit
     _    ->
       throwError @String $ printf "Splitting a %s partition is unsupported." (show qty)
@@ -116,7 +116,7 @@ codegenCastEmit
       [ [ qComment $ "Cast " ++ show qtOld ++ " ==> " ++ show qtNew
         , (::=:) vNew $ EEmit (op rCast  `ECall` [EEmit $ EDafnyVar vOld])
         ]
-      | (vOld, vNew, rCast) <- zip3 vsOldEmits vsNewEmit rsCast ]
+      | ((vOld, tyOld), (vNew, tyNew), rCast) <- zip3 vsOldEmits vsNewEmit rsCast ]
   where
     -- | Consume /from/ and /to/ types and return a function that consumes a
     -- range and emit a specialized cast operator based on the property of the
@@ -148,7 +148,7 @@ castWithOp op s newTy = do
         [ [ qComment $ "Cast " ++ show partitionTy ++ " ==> " ++ show newTy
           , (::=:) vNew $ EEmit (op `ECall` [EEmit $ EDafnyVar vOld])
           ]
-        | (vOld, vNew) <- zip vsOldEmits vsNewEmit ]
+        | ((vOld, _), (vNew, _)) <- zip vsOldEmits vsNewEmit ]
 
 
 -- | Cast the given partition to EN type!
@@ -163,6 +163,8 @@ castPartitionEN st@Locus{loc=locS, part=s, qty=qtS} = do
       printf "Partition `%s` is already of EN type." (show st)
     TEn01 -> throwError' $
       printf "Casting %s to TEn is expensive therefore not advised!" (show qtS)
+    TQft -> throwError' $
+      printf "It is impossible to cast into Qft type."
 
 -- | Duplicate the data, i.e. sequences to be emitted, by generating statements
 -- that duplicates the data as well as the correspondence between the range
@@ -177,7 +179,7 @@ dupState
      , Has (Reader IEnv) sig m
      , Has Trace sig m
      )
-  => Partition -> m ([Stmt'], [(Var, Var)])
+  => Partition -> m ([Stmt'], [((Var, Ty), (Var, Ty))])
 dupState s' = do
   Locus{loc=locS, part=s, qty=qtS, degrees=ptys} <- resolvePartition s'
   let rs = ranges s
@@ -188,7 +190,7 @@ dupState s' = do
   vsEmitPrev  <- findEmitBasesByRanges rs
   let comm = qComment "Duplicate"
   let stmts = [ (::=:) vEmitFresh (EVar vEmitPrev)
-              | (vEmitFresh, vEmitPrev) <- zip vsEmitFresh vsEmitPrev ]
+              | ((vEmitFresh, _), (vEmitPrev, _)) <- zip vsEmitFresh vsEmitPrev ]
   return (comm : stmts, zip vsEmitPrev vsEmitFresh)
 
 -- | Assemble a partition collected from the guard with bounds and emit a

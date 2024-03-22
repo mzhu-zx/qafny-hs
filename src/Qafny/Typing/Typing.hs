@@ -467,8 +467,6 @@ getRangeSplits s@(Locus{loc, part=p, qty, degrees}) rSplitTo@(Range to rstL rstR
         }
   where
     removeNth n l = let (a, b) = splitAt n l in a ++ tail b
-    nRange = length . unpackPart $ p
-    -- infoSS :: String = printf "[checkScheme] from (%s) to (%s)" (show s) (show rSplitTo)
     errBotRx = printf "The range %s contains no qubit!" $ show rSplitTo
     errImproperRx = printf
       "The range %s is not a part of the partition %s!" (show rSplitTo) (show s)
@@ -639,10 +637,10 @@ retypePartition1
 retypePartition1 st qtNow =
   retypePartition st qtNow >>= maybe (return Nothing) go
   where
-    go CastScheme{ schVsOldEmit=vsPrev , schTOldEmit=tPrev
-                 , schVsNewEmit=vsNow , schTNewEmit=tNow} =
+    go CastScheme{ schVsOldEmit=vsPrev
+                 , schVsNewEmit=vsNow} =
       case (vsPrev, vsNow) of
-        ([vPrev], [vNow]) ->
+        ([(vPrev, tPrev)], [(vNow, tNow)]) ->
           return $ pure (vPrev, tPrev, vNow, tNow)
         _ ->
           throwError @String $ printf "%s and %s contains more than 1 partition!"
@@ -675,9 +673,7 @@ castScheme st qtNow = errTrace "`castScheme`" $ do
       vsNewEmit <- mapM (visitEm evBasis . snd) rsEmsNew
       return ( st { qty=qtNow }
              , CastScheme { schVsOldEmit=vsOldEmit
-                          , schTOldEmit=tOldEmit
                           , schVsNewEmit=vsNewEmit
-                          , schTNewEmit=tNewEmit
                           , schQtOld=qtPrev
                           , schQtNew=qtNow
                           , schRsCast=unpackPart sResolved
@@ -710,7 +706,7 @@ matchEmitStates es1 es2 =
 
 matchEmitStatesVars
   :: Has (Error String) sig m
-  => EmitState -> EmitState -> m [(Range, (Var, Var))]
+  => EmitState -> EmitState -> m [(Range, ((Var, Ty), (Var, Ty)))]
 matchEmitStatesVars es1 es2 =
   sequence [ (r,) <$> liftM2 (,) (byBasis ed1) (byBasis ed2)
            | (r, (ed1, ed2)) <- reds ]
@@ -724,7 +720,7 @@ matchEmitStatesVars es1 es2 =
 -- 'tsLoop' is for the state during iteration.
 matchStateCorrLoop
   :: Has (Error String) sig m
-  => TState -> TState -> AEnv -> m [(Var, Var)]
+  => TState -> TState -> AEnv -> m [((Var, Ty), (Var, Ty))]
 matchStateCorrLoop tsInit tsLoop env =
   (snd <$>) <$> matchEmitStatesVars esLoop esInit
   where
@@ -997,7 +993,8 @@ resolveMethodApplicationArgs es
           st <- resolvePartition part
           hdlSCError $ splitThenCastScheme st q r
         _ -> (, Nothing, Nothing) <$> typingPartitionQTy part q
-      (sAndMaySC,) <$> (findVisitEms evBasis (inj <$> unpackPart part) <&> fmap EVar)
+      (sAndMaySC,) <$> (findVisitEms evBasis (inj <$> unpackPart part)
+                        <&> fmap (EVar . fst))
 
 
 
@@ -1009,13 +1006,13 @@ resolveMethodApplicationRets
       , Has (Gensym Emitter) sig m
       , Has Trace sig m
       )
-  => Map.Map Var Range -> MethodType ->  m [Var]
+  => Map.Map Var Range -> MethodType ->  m [(Var, Ty)]
 resolveMethodApplicationRets envArgs
   MethodType { mtSrcReturns=retParams
              , mtReceiver=receiver
              } = do
   trace "* resolveMethodApplicationRets"
-  qBindings :: [Var] <- concat <$> forM psRet ((fst <$>) . extendMetaState'Degree)
+  qBindings <- concat <$> forM psRet ((fst <$>) . extendMetaState'Degree)
   -- TODO: also outputs pure variables here
   -- Sanity check for now:
   let pureArgs = collectPureBindings retParams
@@ -1145,6 +1142,7 @@ bdTypes :: Bindings () -> [Ty]
 bdTypes b = [t | Binding _ t <- b]
 
 
+-- TODO: Refactor this function to use a locus
 -- | Construct from a scratch a new TState containing the given partitons.
 tStateFromPartitionQTys
   :: ( Has (Gensym Emitter) sig m
@@ -1166,7 +1164,7 @@ extendMetaState
      , Has (Error String) sig m
      , Has Trace sig m
      )
-  => Partition -> QTy -> [Int] -> m ([Var], [Maybe (PhaseRef, Ty)])
+  => Partition -> QTy -> [Int] -> m ([(Var, Ty)], [Maybe (PhaseRef, Ty)])
 extendMetaState p@Partition{ranges} qt dgrs = do
   trace "* extendMetaState"
   sLoc <- gensymLoc "requires"
@@ -1191,7 +1189,7 @@ extendMetaState'Degree
      , Has (Error String) sig m
      , Has Trace sig m
    )
-  => (Partition, QTy, [Int]) -> m ([Var], [Maybe (PhaseRef, Ty)])
+  => (Partition, QTy, [Int]) -> m ([(Var, Ty)], [Maybe (PhaseRef, Ty)])
 extendMetaState'Degree (p, qt, ds) =
   extendMetaState p qt ds
 

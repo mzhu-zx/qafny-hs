@@ -21,5 +21,5 @@ findEmitBindingsFromPartition
   :: StateMayFail sig m
   => Partition -> QTy -> m [Binding']
 findEmitBindingsFromPartition Partition{ranges} qt = do
-  vqEmits <- ((, tyKetByQTy qt) <$>) <$> findEmitBasesByRanges ranges
+  vqEmits <- findEmitBasesByRanges ranges
   return (uncurry Binding <$> vqEmits)
