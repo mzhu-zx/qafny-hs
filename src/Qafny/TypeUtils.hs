@@ -12,13 +12,13 @@ import           Qafny.Syntax.IR
     (Locus (Locus, degrees))
 
 
-ampTy :: QTy -> Maybe Ty
-ampTy TNor  = Nothing
-ampTy THad  = Nothing
-ampTy TEn   = Just tySr
-ampTy TEn01 = Just tySr
-ampTy TQft  = Just tySr
-{-# INLINE ampTy #-}
+tyAmp :: QTy -> Maybe Ty
+tyAmp TNor  = Nothing
+tyAmp THad  = Nothing
+tyAmp TEn   = Just tySr
+tyAmp TEn01 = Just tySr
+tyAmp TQft  = Just tySr
+{-# INLINE tyAmp #-}
 
 -- | Type of the emitted value corresponding to its original quantum type.
 tyKetByQTy :: QTy -> Maybe Ty

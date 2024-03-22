@@ -52,7 +52,7 @@ import           Qafny.Syntax.EmitBinding
 import           Qafny.Syntax.IR
     (Locus (..), RangeOrLoc, TState, emitSt)
 import           Qafny.TypeUtils
-    (ampTy, isEN, tyKetByQTy, typingPhaseEmitReprN)
+    (tyAmp, isEN, tyKetByQTy, typingPhaseEmitReprN)
 import           Qafny.Utils.Utils
     (errTrace, haveSameLength, onlyOne)
 
@@ -98,7 +98,7 @@ genPhase n r
 genAmp :: Has (Gensym Emitter) sig m
        => QTy -> Loc -> m (Maybe (Var, Ty))
 genAmp qty l =
-  mapM go $ ampTy qty
+  mapM go $ tyAmp qty
   where
     go ty = gensym (EmAmplitude l qty) <&> (, ty)
 

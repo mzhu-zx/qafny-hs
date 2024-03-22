@@ -14,7 +14,7 @@ import           Data.Sum
 import           Qafny.Syntax.AST
 import           Qafny.Syntax.EmitBinding
 import           Qafny.TypeUtils
-    (tyKetByQTy, ampTy)
+    (tyKetByQTy, tyAmp)
 import           Text.Printf
     (printf)
 
@@ -95,7 +95,7 @@ instance Variable Emitter where
   variable (EmPhaseSeq b i)   = variable (b, variablePhaseN i)
   variable (EmPhaseBase b)    = variable (b, "phase_base")
   variable (EmAnyBinding v t) = variable (v, t)
-  variable (EmAmplitude v qt) = case ampTy qt of
+  variable (EmAmplitude v qt) = case tyAmp qt of
     Just t -> variable (r, t)
     _      -> error $ printf
       "internal error: %s doesn't have a ket representation."
