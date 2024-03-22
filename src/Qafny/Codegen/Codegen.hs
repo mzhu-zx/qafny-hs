@@ -278,8 +278,8 @@ codegenToplevel'Method q@(QMethod vMethod bds rts rqs ens (Just block)) = runWit
 
 
     fDecl :: Emitter -> Var -> Maybe Stmt'
-    fDecl (EmBaseSeq _ qt) v' =
-      Just $ mkSVar v' (tyKetByQTy qt)
+    fDecl (EmBaseSeq _ ty) v' =
+      Just $ mkSVar v' ty
     fDecl (EmPhaseSeq _ i) v' =
       emitTypeFromDegree i <&> mkSVar v'
     fDecl (EmPhaseBase _) v' =
@@ -1183,11 +1183,10 @@ codegenMethodReturns MethodType{ mtSrcReturns=srcReturns
       -- FIXME: remove loc as well!
       deleteEms (inj<$> ranges p)
       newVars <- genEmStByRangesSansPhase' qt (ranges p) >>= visitEmsBasis
-      let emitTy = tyKetByQTy qt
-      pure $ zipWith (pairAndBind emitTy) (fsts newVars) prevVars
+      pure $ zipWith pairAndBind newVars prevVars
     pairEachRef (PhaseRef{prRepr=vNew}, _) (PhaseRef{prRepr=vOld}, ty) =
-      pairAndBind ty vNew vOld
-    pairAndBind emitTy nv pv = (mkAssignment nv pv, (`Binding` emitTy) nv)
+      pairAndBind (vNew, ty)  vOld
+    pairAndBind (nv, emitTy) pv = (mkAssignment nv pv, (`Binding` emitTy) nv)
 
 
 codegenEnsures

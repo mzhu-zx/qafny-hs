@@ -88,15 +88,12 @@ instance (Variable a, Variable b) => Variable (a, b) where
     else variable a ++ "__" ++ variable b
 
 instance Variable Emitter where
-  variable (EmBaseSeq r qt)   = case tyKetByQTy qt of
-    Just t -> variable (r, t)
-    _      -> error $ printf
-      "internal error: %s doesn't have a ket representation."
+  variable (EmBaseSeq r t)   =  variable (r, t)
   variable (EmPhaseSeq b i)   = variable (b, variablePhaseN i)
   variable (EmPhaseBase b)    = variable (b, "phase_base")
   variable (EmAnyBinding v t) = variable (v, t)
   variable (EmAmplitude v qt) = case tyAmp qt of
-    Just t -> variable (r, t)
+    Just t -> variable (v, t)
     _      -> error $ printf
       "internal error: %s doesn't have a ket representation."
 

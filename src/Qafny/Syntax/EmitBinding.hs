@@ -8,8 +8,6 @@ module Qafny.Syntax.EmitBinding where
 
 import           Control.Applicative
     (Alternative (..))
-import           Control.Monad
-    (liftM2)
 import qualified Data.Map.Strict     as Map
 import           Data.Sum
 import           Qafny.Syntax.AST
@@ -69,7 +67,7 @@ instance Show EmitBinding where
 
 -- | Emitter : the thing used to perform Gensym
 data Emitter
-  = EmBaseSeq Range QTy              -- ^ Base  seq per range
+  = EmBaseSeq Range Ty               -- ^ Base  seq per range
   | EmPhaseSeq (Range :+: Loc) Int   -- ^ Phase Seq per range/loc with degree
   | EmPhaseBase (Range :+: Loc)      -- ^ Phase Base per range/loc with degree
   -- TODO: I may need to add a Phase Index here

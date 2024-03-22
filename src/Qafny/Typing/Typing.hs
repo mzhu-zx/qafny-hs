@@ -377,12 +377,12 @@ splitScheme' s@(Locus{loc, part, qty, degrees}) rSplitTo@(Range to rstL rstR) = 
               vSyms <- mapM (visitEm evBasis . snd) rsEms
               --
               -- FIXME: cobble "genEmStUpdatePhase" with "genEmStSansPhaseByRanges"
-              ~eds@(edSplit : edsRem) <-
-                forM (rSplitTo : rsRem) (genEmStUpdatePhase dgrOrigin . inj)
+              eds@(edSplit :| edsRem) <-
+                forM (rSplitTo :| rsRem) (genEmStUpdatePhase qty dgrOrigin . inj)
               edsRest <- forM rsRest (findEm . inj)
-              let (ptySplitTo: ptysRem) = evPhaseRef <$> eds
+              let (ptySplitTo :| ptysRem) = evPhaseRef <$> eds
               --
-              return (vEmitR, vSyms, (ptySplitTo : ptysRem))
+              return (vEmitR, vSyms, ptySplitTo : ptysRem)
             _    -> throwError'' $ errUnsupprtedTy ++ "\n" ++ infoSS
           let sAux' = Locus { loc=locAux, part=pAux, qty, degrees=[dgrOrigin] }
           let ans = SplitScheme

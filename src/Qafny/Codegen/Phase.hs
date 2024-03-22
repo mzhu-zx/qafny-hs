@@ -1,6 +1,5 @@
 {-# LANGUAGE
-    CPP
-  , DataKinds
+    DataKinds
   , FlexibleContexts
   , FlexibleInstances
   , IncoherentInstances
@@ -175,7 +174,7 @@ codegenQft locusEn locusQft = do
   (PhaseRef{prRepr=vpEn, prBase=vbEn}, tpEn) <- visitEm evPhaseRef edLocus
 
   -- update phase ed
-  edLocus' <- genEmStUpdatePhase qftDegree iloc
+  edLocus' <- genEmStUpdatePhase (qty locusQft) qftDegree iloc
   -- find phase variables from generated phases
   (PhaseRef{prRepr=vpFresh, prBase=vbFresh}, tpFresh) <-
     visitEm evPhaseRef edLocus'
