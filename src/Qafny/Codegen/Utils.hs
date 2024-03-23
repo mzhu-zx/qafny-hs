@@ -1,11 +1,16 @@
+--------------------------------------------------------------------------------
+-- |
+-- Utilities for code generation.
+--------------------------------------------------------------------------------
+
 module Qafny.Codegen.Utils where
 
-import           Control.Algebra
-import           Control.Effect.Error
-import           Control.Effect.Reader
+import           Qafny.Effect
 import           Data.Bool
     (bool)
 import           Qafny.Syntax.AST
+import           Qafny.Syntax.Emit
+    (DafnyPrinter, showEmitI)
 
 --------------------------------------------------------------------------------
 -- * Splits
@@ -18,12 +23,27 @@ import           Qafny.Syntax.AST
 -- putPure and putOpt are used to flag which ones are state-changing, and which
 -- are not.
 --------------------------------------------------------------------------------
--- put Stmt's anyway
+-- | Put Stmt regardless of which branch is taken.
 putPure :: Has (Reader Bool) sig m
         => [Stmt'] -> m [Stmt']
 putPure = pure
 
--- put Stmt's only if it's allowed
+-- | Suppress the Stmt if the current context tag is `False`.
 putOpt :: Has (Reader Bool) sig m => m [a] -> m [a]
 putOpt s = do
   bool (pure []) s =<< ask
+
+
+-- * Debug and Report
+
+-- | Attach control flow information to error handling.
+runWithCallStack
+  :: ( Has (Error String) sig m
+     , DafnyPrinter s
+     )
+  => s
+  -> m b
+  -> m b
+runWithCallStack s =
+  flip catchError $ \err -> throwError $ err ++ "\nat:\n" ++ showEmitI 4 s
+

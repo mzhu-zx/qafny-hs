@@ -1,6 +1,5 @@
 {-# LANGUAGE
-    DataKinds
-  , DeriveAnyClass
+    DeriveAnyClass
   , DeriveFoldable
   , DeriveFunctor
   , DeriveGeneric
@@ -29,8 +28,6 @@ import           Data.Bifunctor
 -- import           Data.Data
 import           Data.Functor.Foldable
     (Base, Corecursive (embed), Recursive (cata, project))
-import           Data.Kind
-    (Type)
 import           Data.List.NonEmpty
     (NonEmpty (..))
 import qualified Data.Map.Strict       as Map
@@ -101,8 +98,8 @@ data MethodType = MethodType
   -- Parameters for the source method (Type resolution level)
   { mtSrcParams   :: [MethodElem]
   , mtSrcReturns  :: [MethodElem]
-  , mtInstantiate :: Map.Map Var Range -> [(Partition, QTy, [Int])]
-  , mtReceiver    :: Map.Map Var Range -> [(Partition, QTy, [Int])]
+  , mtInstantiate :: Map.Map Var Range -> [(Partition, QTy, [Maybe Int])]
+  , mtReceiver    :: Map.Map Var Range -> [(Partition, QTy, [Maybe Int])]
   -- , mtDebugInit :: [(Partition, QTy)]
   }
 
@@ -209,8 +206,8 @@ data Exp x
   | EForall (Binding x) (Maybe (XRec x (Exp x))) (XRec x (Exp x))
   | EDafny String
   | EEmit EmitExp
-  | EPartition Partition
-  | ESpec Partition QTy [QSpecF (XRec x (Exp x))]
+  | ERange Range
+  | ESpec Partition QTy [SpecExpF (XRec x (Exp x))]
   | ERepr Range
   | ELambda (LambdaF (XRec x (Exp x)))
 
@@ -234,11 +231,11 @@ deriving instance Ord f => Ord (AmpExpF f)
 
 type AmpExp = AmpExpF Exp'
 
-data PhaseExpF f :: Type where
-  PhaseZ :: PhaseExpF f
-  PhaseOmega :: f -> f -> PhaseExpF f
-  PhaseSumOmega :: Range -> f -> f -> PhaseExpF f
-  PhaseWildCard :: PhaseExpF f
+data PhaseExpF f 
+  = PhaseZ        
+  | PhaseOmega    f f 
+  | PhaseSumOmega Range f f 
+  | PhaseWildCard 
   deriving (Functor, Traversable, Foldable)
 
 type PhaseExp = PhaseExpF Exp'
@@ -260,19 +257,86 @@ deriving instance (Ord (Exp Source))
 
 
 data SpecExpF f
-  = SESpecNor  Var f
-  | SESpecEN   Var Intv [f]
-  | SESpecEN01 Var Intv Var Intv [f]
+  = SESpecNor (SpecNorF f)
+    -- ^ `⊗ id . e`
+  | SESpecHad (SpecHadF f)
+    -- ^ `⊗ id . ω`
+  | SESpecEn (SpecEnF f)
+    -- ^ `Σ id ∈ intv . ω ~ e`
+  | SESpecEn01 (SpecEn01F f)
+    -- ^ `Σ id1 ∈ intv1 . ⊗ id2 . ω ~ e`
   | SEWildcard
+    -- ^ `_`
   deriving (Functor, Foldable, Traversable)
 
 deriving instance Generic (SpecExpF f)
 deriving instance (Show f) => Show (SpecExpF f)
 deriving instance (Eq f) => Eq (SpecExpF f)
 deriving instance (Ord f) => Ord (SpecExpF f)
-
 type SpecExp = SpecExpF Exp'
 
+data SpecNorF f =
+  SpecNorF { norVar :: Var -- ^ enumerator for each qubit
+           , norKet :: f   -- ^ basis ket for each qubit
+           }
+  deriving (Functor, Foldable, Traversable)
+
+deriving instance Generic (SpecNorF f)
+deriving instance (Show f) => Show (SpecNorF f)
+deriving instance (Eq f) => Eq (SpecNorF f)
+deriving instance (Ord f) => Ord (SpecNorF f)
+
+type SpecNor = SpecNorF Exp'
+
+
+data SpecHadF f =
+  SpecHadF { hadVar   :: Var           -- ^ enumerator for each qubit
+           , hadPhase :: PhaseExpF f   -- ^ phase attached to |1> per qubit
+           }
+  deriving (Functor, Foldable, Traversable)
+
+deriving instance Generic (SpecHadF f)
+deriving instance (Show f) => Show (SpecHadF f)
+deriving instance (Eq f) => Eq (SpecHadF f)
+deriving instance (Ord f) => Ord (SpecHadF f)
+
+type SpecHad = SpecHadF Exp'
+
+data SpecEnF f =
+  SpecEnF { enVarSup    :: Var         -- ^ enumerator for superposition
+          , enIntvSup   :: Intv        -- ^ scope of the enumerator
+          , enAmpCoef   :: AmpExpF f   -- ^ amplitude coef
+          , enPhaseCoef :: PhaseExpF f -- ^ phase coef
+          , enKet       :: [f]         -- ^ basis ket for each range
+          }
+  deriving (Functor, Foldable, Traversable)
+
+deriving instance Generic (SpecEnF f)
+deriving instance (Show f) => Show (SpecEnF f)
+deriving instance (Eq f) => Eq (SpecEnF f)
+deriving instance (Ord f) => Ord (SpecEnF f)
+
+type SpecEn = SpecEnF Exp'
+
+data SpecEn01F f =
+  SpecEn01F { en01VarSup    :: Var
+            , en01IntvSup   :: Intv
+            , en01AmpCoef   :: AmpExpF f
+            , en01PhaseCoef :: PhaseExpF f
+            , en01VarQbit   :: Var
+            , en01IntvQbit  :: Intv
+            , en01          :: f
+            }
+  deriving (Functor, Foldable, Traversable)
+
+deriving instance Generic (SpecEn01F f)
+deriving instance (Show f) => Show (SpecEn01F f)
+deriving instance (Eq f) => Eq (SpecEn01F f)
+deriving instance (Ord f) => Ord (SpecEn01F f)
+
+type SpecEn01 = SpecEn01F Exp'
+
+--------------------------------------------------------------------------------
 showExp :: Exp () -> String
 showExp (ENum n) = show n
 showExp (EVar v) = v
@@ -453,8 +517,8 @@ data ExpF f
   | EForallF (Binding ()) (Maybe f) f
   | EDafnyF String
   | EEmitF EmitExp
-  | EPartitionF Partition
-  | ESpecF Partition QTy [QSpecF f]
+  | ERangeF Range
+  | ESpecF Partition QTy [SpecExpF f]
   | EReprF Range
   | ELambdaF (LambdaF f)
   deriving (Functor, Foldable, Traversable, Show, Generic)
@@ -479,20 +543,6 @@ deriving instance Eq f => Eq (LambdaF f)
 deriving instance Ord f => Ord (LambdaF f)
 type Lambda = LambdaF Exp'
 
-
-data QSpecF f
-  = QSpecF { amp   :: AmpExpF f
-           , phase :: PhaseExpF f
-           , spec  :: SpecExpF f
-           }
-  deriving (Functor, Foldable, Traversable)
-
-deriving instance Generic (QSpecF f)
-deriving instance Show f => Show (QSpecF f)
-deriving instance Eq f => Eq (QSpecF f)
-deriving instance Ord f => Ord (QSpecF f)
-type QSpec = QSpecF Exp'
-
 --------------------------------------------------------------------------------
 -- * Exp Utils
 --------------------------------------------------------------------------------
@@ -505,13 +555,17 @@ instance Num (Exp ()) where
   signum = undefined
   fromInteger a = ENum (fromInteger a)
 
+-- | Constraints where each variable has only one assignment.
 type AEnv = [(Var, Exp ())]
+
+-- | Constraints where each variable can be associated with many assignments.
 type IEnv = [(Var, NonEmpty (Exp ()))]
 
 -- | Remove from 'IEnv' variables that are not in the free variable list
 filterIEnv :: [Var] -> IEnv -> IEnv
 filterIEnv fvs = filter (\(v, _) -> v `elem` fvs)
 
+-- | Compute all `AEnv` permutations from an `IEnv`
 nondetIEnv :: IEnv -> NonEmpty AEnv
 nondetIEnv = traverse (\(v, ne) -> (v,) <$> ne)
 
@@ -564,16 +618,6 @@ substMapKeys a = Map.mapKeys (subst a)
 fVarMapKeys :: Substitutable k => Map.Map k v -> [Var]
 fVarMapKeys = fVars . Map.keys
 
--- instance Substitutable QTy where
---   subst = const id
---   fVars = const []
-
--- instance Substitutable Loc where
---   subst = const id
---   fVars = const []
-
-
-
 substE :: AEnv -> Exp () -> Exp ()
 substE [] = id
 substE env = go
@@ -581,7 +625,7 @@ substE env = go
     go :: Exp () -> Exp ()
     go (EVar x)       = EVar x `fromMaybe` lookup x env
     go (ESpec p q e)  = ESpec (substP env p) q e
-    go (EPartition p) = EPartition (substP env p)
+    go (ERange r)     = ERange (substR env r)
     go e              = embed $ go <$> project e
 
 substP :: AEnv -> Partition -> Partition
@@ -606,7 +650,7 @@ type Exp' = Exp ()
 type Binding' = Binding ()
 type Block' = Block ()
 type Toplevel' = Toplevel ()
-type QSpec' = QSpecF ()
+-- type QSpec' = QSpecF ()
 
 -- * Annotated Types
 type LExp = XRec Source (Exp Source)

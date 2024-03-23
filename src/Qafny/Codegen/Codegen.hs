@@ -51,7 +51,7 @@ import           Text.Printf
 
 -- Qafny
 import           Qafny.Codegen.Utils
-    (putOpt)
+    (putOpt, runWithCallStack)
 
 import           Qafny.Config
 import           Qafny.Interval
@@ -88,6 +88,8 @@ import           Qafny.Codegen.Method
     (codegenMethodParams, genEmitSt)
 import           Qafny.Codegen.Phase
     (codegenApplyQft)
+import           Qafny.Codegen.Predicates
+    (codegenAssertion, codegenEnsures, codegenRequires)
 import           Qafny.Codegen.SplitCast      hiding
     (throwError')
 import           Qafny.Typing.Error
@@ -97,8 +99,8 @@ import           Qafny.Utils.EmitBinding
 import           Qafny.Utils.TraceF
     (Traceable (tracef))
 import           Qafny.Utils.Utils
-    (both, dumpSt, fst2, gensymLoc, getMethodType, haveSameLength, onlyOne,
-    uncurry3, bothM)
+    (both, bothM, dumpSt, fst2, gensymLoc, getMethodType, haveSameLength,
+    onlyOne, uncurry3)
 
 first3 :: (a -> d) -> (a, b, c) -> (d, b, c)
 first3 f (a, b, c) = (f a, b, c)
@@ -346,16 +348,6 @@ codegenStmt
   -> m [Stmt']
 codegenStmt s = runWithCallStack s (codegenStmt' s)
 
-runWithCallStack
-  :: ( Has (Error String) sig m
-     , DafnyPrinter s
-     )
-  => s
-  -> m b
-  -> m b
-runWithCallStack s =
-  flip catchError $ \err -> throwError $ err ++ "\nat:\n" ++ showEmitI 4 s
-
 codegenStmt'
   :: ( Has (Reader TEnv) sig m
      , Has (Reader Bool) sig m
@@ -404,7 +396,7 @@ codegenStmt' (SIf e seps b) = do
 codegenStmt' s@(SFor {}) =
   codegenStmt'For s
 
-codegenStmt' (SAssert e@(ESpec{})) =
+codegenStmt' (SAssert e) =
   (SAssert <$>) <$> codegenAssertion e
 
 -- TODO: Handle arguments in the method call in one pass to codegen Repr.
@@ -1115,43 +1107,6 @@ codegenMergeScheme = mapM $ \scheme -> do
 --------------------------------------------------------------------------------
 -- * Specification Related
 --------------------------------------------------------------------------------
--- | Find the representation of the given range
-codegenRangeRepr
-  :: ( Has (State TState) sig m
-     , Has (Error String) sig m
-     , Has (Reader IEnv) sig m
-     , Has Trace sig m
-     )
-  => Range -> m (Var, Ty)
-codegenRangeRepr r =
-  resolvePartition (Partition [r]) >> findEmitBasisByRange r
-
-
--- | Generate predicates for require clauses
---
--- This introduces constraints and knowledges into the current context.
-codegenRequires
-  :: ( Has (State TState)  sig m
-     , Has (Error String) sig m
-     , Has (Gensym String) sig m
-     , Has (Gensym Emitter) sig m
-     , Has Trace sig m
-     )
-  => [Exp'] -> m ([Exp'], [(PhaseRef, Ty)])
-codegenRequires rqs = do
-  trace "* codegenRequires"
-  (bimap concat concat . unzip <$>) . forM rqs $ \rq ->
-  -- TODO: I need to check if partitions from different `requires` clauses are
-  -- indeed disjoint!
-    case rq of
-      ESpec s qt espec -> do
-        let pspec = phase <$> espec
-        let dgrs = pspec <&> analyzePhaseSpecDegree
-        (vsEmit, ptys) <- extendMetaState s qt dgrs
-        es <- runReader True $
-          codegenSpecExp (zip vsEmit (unpackPart s)) qt espec ptys
-        return (es, catMaybes ptys)
-      _ -> return ([rq], [])
 
 codegenMethodReturns
   :: ( Has (State TState) sig m
@@ -1187,186 +1142,3 @@ codegenMethodReturns MethodType{ mtSrcReturns=srcReturns
     pairEachRef (PhaseRef{prRepr=vNew}, _) (PhaseRef{prRepr=vOld}, ty) =
       pairAndBind (vNew, ty)  vOld
     pairAndBind (nv, emitTy) pv = (mkAssignment nv pv, (`Binding` emitTy) nv)
-
-
-codegenEnsures
-  :: ( Has (State TState)  sig m
-     , Has (Error String) sig m
-     , Has Trace sig m
-     )
-  => [Exp'] -> m [Exp']
-codegenEnsures ens =
-  concat <$> forM ens (runReader initIEnv . runReader True  . codegenAssertion)
-
-
-codegenAssertion
-  :: ( Has (State TState)  sig m
-     , Has (Error String) sig m
-     , Has (Reader IEnv) sig m
-     , Has (Reader Bool) sig m
-     , Has Trace sig m
-     )
-  => Exp' -> m [Exp']
-codegenAssertion e = runWithCallStack e (codegenAssertion' e)
-
--- | Take in an /assertional/ expression, perform type check and emit
--- corresponding expressions
---
--- TODO: Would it be better named as _checkAndCodegen_?
-codegenAssertion'
-  :: ( Has (State TState)  sig m
-     , Has (Error String) sig m
-     , Has (Reader IEnv) sig m
-     , Has (Reader Bool) sig m
-     , Has Trace sig m
-     )
-  => Exp' -> m [Exp']
-codegenAssertion' (ESpec s qt espec) = do
-  st@Locus{degrees=dgrs} <- typingPartitionQTy s qt
-  vsEmit <- findEmitBasesByRanges (ranges s)
-  qtys <- queryPhaseRef st
-  codegenSpecExp (zip vsEmit (unpackPart s)) qt espec qtys
-codegenAssertion' e = return [e]
-
--- | Take in the emit variable corresponding to each range in the partition and the
--- partition type; with which, generate expressions (predicates)
-codegenSpecExp
-  :: ( Has (Error String) sig m, Has (Reader Bool) sig m )
-  => [((Var, Ty), Range)] -> QTy -> [QSpec] -> [Maybe (PhaseRef, Ty)] -> m [Exp']
-codegenSpecExp vrs p specs ptys = putOpt $
-  if isEN p
-  then do
-    when (length specs /= 1) $ throwError' $ printf "More then one specs!"
-    pspec <- onlyOne throwError' (phase <$> specs)
-    specPerPartition p (spec (head specs)) pspec
-  else do
-      -- For `nor` and `had`, one specification is given one per range
-    haveSameLength vrs specs
-    concat <$> mapM (specPerRange' p) (zip3 (first fst <$> vrs) specs ptys)
-  where
-    specPerRange' ty (vr, qspec, pty) =
-      specPerRange ty (vr, (spec qspec, phase qspec), pty)
-    specPerRange ty ((v, Range _ el er), (SESpecNor idx eBody, pspec), pty) |
-      ty `elem` [TNor, THad] =
-      -- In x[l .. r]
-      -- @
-      --   forall idx | 0 <= idx < (r - l) :: xEmit[idx] == eBody
-      -- @
-      let eSelect x = x >:@: idx
-          eBound = Just (eIntv idx (ENum 0) (reduce (er - el)))
-          quantifier = EForall (natB idx) eBound . ($ idx)
-          eSize = reduce (er - el)
-      in do
-        ePSpec <- codegenPhaseSpec quantifier eSize pty pspec
-        return $
-         [ eSize `eEq` ECard (EVar v)
-         , quantifier (const (eSelect v `eEq` eBody))
-         ] ++ ePSpec
-    -- specPerRange THad ((v, Range _ el er), (SESpecNor idx eBody, pspec), pty) =
-    --   -- In x[l .. r]
-    --   -- @
-    --   --   forall idx | 0 <= idx < (r - l) :: xEmit[idx] == eBody
-    --   -- @
-    --   let eSelect x = EEmit (ESelect (EVar x) (EVar idx))
-    --       eBound = Just (eIntv idx (ENum 0) (reduce (er - el)))
-    --       quantifier = EForall (natB idx) eBound . ($ idx)
-    --   in do
-    --     ePSpec <- codegenPhaseSpec quantifier pty pspec
-    --     return $
-    --      [ reduce (er - el) `eEq` EEmit (ECard (EVar v))
-    --      , quantifier (const (eSelect v `eEq` eBody))
-    --      ] ++ ePSpec
-    specPerRange _ (_, (SEWildcard, pspec), pty) =
-      return []
-    specPerRange _ e  =
-      errIncompatibleSpec e
-
-    specPerPartition TEn (SESpecEN idx (Intv l r) eValues) pspec = do
-      haveSameLength vrs eValues
-      -- In x[? .. ?] where l and r bound the indicies of basis-kets
-      -- @
-      --   forall idx | l <= idx < r :: xEmit[idx] == eBody
-      -- @
-      let eBound = Just $ eIntv idx l r
-          eSize = reduce (r - l)
-          eSelect x = x >:@: idx
-          quantifier = EForall (natB idx) eBound . ($ idx)
-      pty <- onlyOne throwError' ptys
-      ePSpec <- codegenPhaseSpec quantifier eSize pty pspec
-      return $ ePSpec ++ concat
-        [ [ eSize `eEq` ECard (EVar vE)
-          , quantifier (const (EOp2 OEq (eSelect vE) eV)) ]
-        | (((vE, _), _), eV) <- zip vrs eValues
-        , eV /= EWildcard ]
-
-    specPerPartition
-      TEn01
-      (SESpecEN01 idxSum (Intv lSum rSum) idxTen (Intv lTen rTen) eValues)
-      pspec
-       = do
-      -- In x[l .. r]
-      -- @
-      --   forall idxS | lS <= idxS < rS ::
-      --   forall idxT | 0 <= idxT < rT - lT ::
-      --   xEmit[idxS][idxT] == eBody
-      -- @
-      -- todo: also emit bounds!
-      haveSameLength vrs eValues
-      pty <- onlyOne throwError' ptys
-      let eBoundSum = Just $ eIntv idxSum lSum rSum
-          eSizeSum = reduce (rSum - lSum)
-          eForallSum = EForall (natB idxSum) eBoundSum . ($ idxSum)
-      ePSpec <- codegenPhaseSpec eForallSum eSizeSum pty pspec
-      return . (ePSpec ++) . concat $ do
-        (((vE, _), Range _ el er), eV) <- bimap (second reduce) reduce<$> zip vrs eValues
-        when (eV == EWildcard) mzero
-        let cardSum = eSizeSum `eEq` ECard (EVar vE)
-        let rTen' = reduce (er - el)
-        let eBoundTen = Just $ eIntv idxTen 0 rTen'
-        let cardTen = rTen' `eEq` ECard (vE >:@: idxSum)
-        let eForallTen = EForall (natB idxTen) eBoundTen
-        let eSel = vE >:@: idxSum >:@: idxTen
-        let eBodys = [ cardTen
-                     , EOp2 OEq eSel eV
-                     ]
-        return $  cardSum : (eForallSum . const . eForallTen <$> eBodys)
-    specPerPartition _ e _ = throwError' $
-      printf "%s is not compatible with the specification %s"
-         (show p) (show e)
-
-    errIncompatibleSpec e = throwError' $
-      printf "%s is not compatible with the specification %s"
-      (show p) (show e)
-
-
--- | Generate a predicates over phases based on the phase type
---
--- FIXME: Here's a subtlety: each range maps to one phase type which in the
--- current specification language is not supported?
-codegenPhaseSpec
-  :: ( Has (Error String) sig m
-     )
-  => ((Var -> Exp') -> Exp') -> Exp' -> Maybe (PhaseRef, Ty) ->  PhaseExp -> m [Exp']
-codegenPhaseSpec _ _ Nothing pe =
-  if | pe `elem` [ PhaseZ, PhaseWildCard ] -> return []
-     | otherwise ->
-       throwError' $ printf "%s is not a zeroth degree predicate." (show pe)
-codegenPhaseSpec quantifier eSize (Just (ref, _)) (PhaseOmega eK eN) =
-  let assertN = EOp2 OEq eN (EVar (prBase ref))
-      assertK idx = EOp2 OEq eK (prRepr ref >:@: idx)
-      assertKCard = EOp2 OEq eSize (mkCard (prRepr ref))
-  in return [assertN, assertKCard, quantifier assertK ]
-
-codegenPhaseSpec quantifier eSize (Just (ref, _)) (PhaseSumOmega (Range v l r) eK eN) =
-  let assertN = EOp2 OEq eN (EVar (prBase ref))
-      pLength = r - l
-      -- FIXME: emit the length of the 2nd-degree range and get the inner
-      -- quantifier right
-      assertK idx = EForall (Binding v TNat) Nothing $
-                    (EOp2 OEq eK (prRepr ref >:@: v >:@: idx))
-  in return [assertN, quantifier assertK]
-codegenPhaseSpec _ _ _ e =
-  throwError' $ printf "Invalid %s phase." (show e)
-
-
-

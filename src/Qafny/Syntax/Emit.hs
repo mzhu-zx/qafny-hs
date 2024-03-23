@@ -266,19 +266,24 @@ instance (Show f, DafnyPrinter f) => DafnyPrinter (LambdaF f) where
         "=>" <+>
         ePhase <+> "~" <+> tupleLike eBases
 
+instance DafnyPrinter Intv where
+  build e@(Intv e1 e2) = debugOnly e $
+    withBracket $ e1 <+> ".." <+> e2
+
 instance (DafnyPrinter f, Show f) => DafnyPrinter (SpecExpF f) where
   build s = debugOnly s buildSubterm
     where
       buildSubterm = case s of
         SEWildcard -> build "_"
-        SESpecNor v1 e2 -> "⊗" <+> v1 <+> '.' <+> e2
-        SESpecEN v1 (Intv e1 e2) e3 ->
-          "Σ" <+> v1 <+> "∈" <+> '[' <!> e1 <+> ".." <+> e2 <!> ']' <+> '.' <+>
-          withParen (byComma e3)
-        SESpecEN01 v1 (Intv e1 e2) v2 (Intv e3 e4) e5 ->
-          "Σ" <+> v1 <+> "∈" <+> '[' <!> e1 <+> ".." <+> e2 <!> ']' <+> '.' <+>
-          "⊗" <+> v2 <+> "∈" <+> '[' <!> e3 <+> ".." <+> e4 <!> ']' <+> '.' <+>
-          withParen (byComma e5)
+        SESpecNor (SpecNorF v1 e2) -> "⊗" <+> v1 <+> '.' <+> e2
+        SESpecHad (SpecHadF v1 p) -> "⊗" <+> v1 <+> '.' <+> p
+        SESpecEn (SpecEnF v1 intv a p es) ->
+          "Σ" <+> v1 <+> "∈" <+> intv <+> '.' <+> a <+> p <+> 
+          withParen (byComma es)
+        SESpecEn01 (SpecEn01F v1 intv1 v2 intv2 a p e5) ->
+          "Σ" <+> v1 <+> "∈" <+> intv1 <+> '.' <+>
+          "⊗" <+> v2 <+> "∈" <+> intv2 <+> '.' <+>
+          a <+> p <+> withParen e5
 
 instance DafnyPrinter f => DafnyPrinter (Maybe f) where
   build Nothing  = build "_"
@@ -341,9 +346,9 @@ instance ( Show a, Show b, Show c
   build t@(a, b, c) = debugOnly t $
     withParen . byComma $ [build a, build b, build c]
 
-instance (Show f, DafnyPrinter f) => DafnyPrinter (QSpecF f) where
-  build q@QSpecF{amp, phase, spec} = debugOnly q $
-    amp <+> phase <+> "~" <+> spec
+-- instance (Show f, DafnyPrinter f) => DafnyPrinter (QSpecF f) where
+--   build q@QSpecF{amp, phase, spec} = debugOnly q $
+--     amp <+> phase <+> "~" <+> spec
 
 
 instance ( Show k, Show v

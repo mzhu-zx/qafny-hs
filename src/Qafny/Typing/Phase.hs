@@ -130,6 +130,27 @@ promotionScheme st@Locus{loc, part, qty, degrees=dgrsSt} pb pe = do
 --------------------------------------------------------------------------------
 -- * Phase Typing
 --------------------------------------------------------------------------------
+-- data SpecExpF f
+--   = SESpecNor (SpecNorF f)
+--     -- ^ `⊗ id . e`
+--   | SESpecHad (SpecHadF f)
+--     -- ^ `⊗ id . ω`
+--   | SESpecEn (SpecEnF f)
+--     -- ^ `Σ id ∈ intv . ω ~ e`
+--   | SESpecEn01 (SpecEn01F f)
+--     -- ^ `Σ id1 ∈ intv1 . ⊗ id2 . ω ~ e`
+--   | SEWildcard
+--     -- ^ `_`
+--   deriving (Functor, Foldable, Traversable)
+
+analyzeSpecDegree :: SpecExpF f -> Maybe Int 
+analyzeSpecDegree (SESpecHad SpecHadF{hadPhase})=
+  return (analyzePhaseSpecDegree hadPhase)
+analyzeSpecDegree (SESpecEn SpecEnF{enPhaseCoef})=
+  return (analyzePhaseSpecDegree enPhaseCoef)
+analyzeSpecDegree (SESpecEn01 SpecEn01F{en01PhaseCoef})=
+  return (analyzePhaseSpecDegree en01PhaseCoef)
+analyzeSpecDegree _ = Nothing
 
 -- | Analyze the degree of a phase expression
 analyzePhaseSpecDegree :: PhaseExpF f -> Int

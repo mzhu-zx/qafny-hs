@@ -192,26 +192,33 @@ range
   : id '[' expr ".." expr ']'         { Range $1 $3 $5 }
                                                                 
 spec ::   { Exp' }
-  : '{' partition ':'  qty "↦" tuple(qspec) '}'
+  : '{' partition ':'  qty "↦" list(qspec) '}'
                                       { ESpec $2 $4 $6                       }
   | '{' partition ':'  qty "↦" qspec '}'
                                       { ESpec $2 $4 [$6]                     }
 
-qspec :: { QSpec }
-  : qspec_                            { let (amp, phase, spec) = $1 in QSpecF amp phase spec }
+nullableId :: { Var }
+  : id                                { $1 }
+  | {- empty -}                       { "_" }
+
+intv :: { Intv }
+  : '[' expr ".." expr ']'            { Intv $2 $4 }
+
+qspec ::  { SpecExp }
+  : "⊗" nullableId '.' pspec
+                                      { SESpecHad (SpecHadF $2 $4) }
+  | "⊗" nullableId '.' expr
+                                      { SESpecNor (SpecNorF $2 $4) }
+  | "Σ" id "∈" intv '.' ampExp pspec tuple(expr)
+                                      { SESpecEn (SpecEnF $2 $4 $6 $7 $8) }
+  | "Σ" id "∈" intv '.'               {- 5  -}
+    ampExp pspec                      {- 7  -}
+    "⊗" id "∈" intv '.'               {- 12 -}
+    expr
+                                      { SESpecEn01 (SpecEn01F $2 $4 $6 $7 $9 $11 $13) }
+  | '_'                               { SEWildcard }
 
 
-qspec_ ::  { (AmpExp, PhaseExp, SpecExp) }
-  : "⊗" opt(id) '.' ampExp pspec expr
-                                      { ($4, $5, SESpecNor (fromMaybe "_" $2) $6) }
-  | "Σ" id "∈" '[' expr ".." expr ']' '.' ampExp pspec tuple(expr)
-                                      { ($10, $11, SESpecEN $2 (Intv $5 $7) $12)  }
-  | "Σ" id "∈" '[' expr ".." expr ']' '.'             {- 9  -}
-    ampExp pspec                                      {- 11 -}
-    "⊗" id "∈" '[' expr ".." expr ']' '.'             {- 20 -}
-    tuple(expr)
-                                      { ($10, $11, SESpecEN01 $2 (Intv $5 $7) $13 (Intv $16 $18) $21) }
-  | '_'                               { (ADefault, PhaseZ, SEWildcard) }
 
 
 ampExp :: { AmpExp }
@@ -240,6 +247,10 @@ mayTuple(p)
 tuple(p)
   : '(' manyComma(p) ')'              { $2 }
 
+list(p)
+  : '[' manyComma(p) ']'              { $2 }
+
+
 expr                                                                      
   : '_'                               { EWildcard              }
   | spec                              { $1                     }
@@ -252,8 +263,8 @@ expr
   | lamExpr                           { $1                     }
 
 argExpr
-  : expr                              { $1            }
-  | braces(partition)                 { EPartition $1 }
+  : expr                              { $1        }
+  | range                             { ERange $1 }
 
 
 lamExpr :: { Exp' }

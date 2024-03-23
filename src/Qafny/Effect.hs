@@ -8,7 +8,8 @@ module Qafny.Effect
   , module Control.Algebra
   , module Effect.Gensym
   , GensymEmitterWithState, GensymEmitterWithStateError, StateMayFail
-  , HasResolution
+  , GensymMeta
+  , HasResolution, GenConditionally
   ) where
 
 -- | Re-export useful effects to avoid cluttered imports in other modules
@@ -28,14 +29,27 @@ import           Qafny.Syntax.EmitBinding
 import           Qafny.Syntax.IR
 
 
+-- TODO: Separate EmitStates from MetaStates on the type level.
+
+-- | May mangae and generate emitted symbols
 type GensymEmitterWithState sig m =
   (Has (Gensym Emitter) sig m , Has (State TState) sig m)
 
+-- | May mangae and generate emitted symbols, may fail.
 type GensymEmitterWithStateError sig m =
   (GensymEmitterWithState sig m, Has (Error String) sig m)
+
+type GensymMeta sig m =
+  Has (Gensym Var) sig m
 
 type StateMayFail sig m =
   (Has (Error String) sig m , Has (State TState) sig m)
 
+-- | May perform type resolution.
 type HasResolution sig m =
   (StateMayFail sig m, Has (Reader IEnv) sig m, Has Trace sig m)
+
+-- | May generate differently depending on what conditional branch the current
+-- context corresponds to.
+type GenConditionally sig m =
+  Has (Reader Bool) sig m
