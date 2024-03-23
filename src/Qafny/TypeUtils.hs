@@ -1,17 +1,17 @@
 {-# LANGUAGE
     TupleSections
+  , LambdaCase
   #-}
 module Qafny.TypeUtils where
 
 -- | Pure utility functions related to types
 
 import           Qafny.Syntax.AST
-    (QTy (..), Ty (..))
 import           Qafny.Syntax.ASTFactory
 import           Qafny.Syntax.IR
-    (Locus (Locus, degrees))
 
 
+-- | Get the amplitude representation type given its entanglement type. 
 tyAmp :: QTy -> Maybe Ty
 tyAmp TNor  = Nothing
 tyAmp THad  = Nothing
@@ -65,3 +65,15 @@ modifyPty f st@Locus{degrees} = st{degrees=f degrees}
 --   | (n, PhaseRef {prRepr=vRepr, prBase=vBase}) <- getPhaseRefN ptys
 --   , let ty = typingPhaseEmitReprN n
 --   ]
+
+-- | Check if the given partiton of given entanglement type is well-formed
+-- w.r.t. the partition arity 
+assertPartQTyArity :: Partition -> QTy -> Bool
+assertPartQTyArity Partition{ranges} = \case
+  TNor  -> len == 1
+  THad  -> len == 1
+  TEn   -> len >= 1
+  TEn01 -> len >= 1
+  TQft  -> len >= 2
+  where
+    len = length ranges

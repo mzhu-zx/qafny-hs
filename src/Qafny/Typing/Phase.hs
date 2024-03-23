@@ -143,6 +143,7 @@ promotionScheme st@Locus{loc, part, qty, degrees=dgrsSt} pb pe = do
 --     -- ^ `_`
 --   deriving (Functor, Foldable, Traversable)
 
+-- | Compute phase degree information from a specification
 analyzeSpecDegree :: SpecExpF f -> Maybe Int 
 analyzeSpecDegree (SESpecHad SpecHadF{hadPhase})=
   return (analyzePhaseSpecDegree hadPhase)
@@ -160,45 +161,6 @@ analyzePhaseSpecDegree PhaseOmega{}    = 1
 analyzePhaseSpecDegree PhaseSumOmega{} = 2
 
 
--- dispatchPhaseSpec :: (forall k . PhaseExpF' f k -> g) -> PhaseExpF f -> g
--- dispatchPhaseSpec f = construct
---   where
---     construct PhaseZ = f (PhaseZ')
---     construct PhaseWildCard = f (PhaseWildCard')
---     construct (PhaseOmega a b) = f (PhaseOmega' a b)
---     construct (PhaseSumOmega r a b) = f (PhaseSumOmega' r a b)
-
-
-
--- | Generate variables and phase types based on a phase specification.
--- generatephasetype
---   :: ( Has (Gensym Emitter) sig m
---      )
---   => Int -> m PhaseTy
--- generatePhaseType 0 = return PT0
--- generatePhaseType n = do
---   vEmitBase <- gensym (LBinding ("base", inj n))
---   vEmitRepr <- gensym (LBinding ("repr", inj (typingPhaseEmitReprN 1)))
---   return (PTN n $ PhaseRef { prBase = vEmitBase, prRepr = vEmitRepr })
-
--- | Generate a new phase type based on the Locus.
---
--- allocPhaseType
---   :: ( Has (Gensym Emitter) sig m
---      , Has (State TState) sig m
---      , Has (Error String) sig m
---      )
---   => Locus -> m [PhaseTy]
--- allocPhaseType (Locus (loc, Partition rs, (qt, dgrs))) =
---   if isEN qt
---     then
---     do dgr <- onlyOne throwError' dgrs
---        ed  <- genEmStUpdatePhase dgr  (inj loc)
---        return [evPhaseTy dgr ed]
---     else do haveSameLength dgrs rs
---             sequence [ evPhaseTy dgr <$> genEmStUpdatePhase dgr (inj r)
---                      | (r, dgr) <- zip rs dgrs
---                      ]
 
 
 

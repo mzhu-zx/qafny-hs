@@ -57,8 +57,14 @@ throwError' = throwError @String . ("[Typing/Method] " ++)
 -- Generate a method type signature through pre-&post- conditions and the
 -- origianl signature following the calling convention.
 --
-analyzeMethodType :: QMethod () -> (Var, MethodType)
-analyzeMethodType (QMethod v bds rts rqs ens _) =
+analyzeMethodType
+  :: Has (Error String) sig m
+  => QMethod () -> m (Var, MethodType)
+analyzeMethodType (QMethod v bds rts rqs ens _) = do
+  
+
+
+
   let srcParams   = collectRange <$> bds
       srcReturns  = collectRange <$> rts
       instantiate = flip mkRun rqs
