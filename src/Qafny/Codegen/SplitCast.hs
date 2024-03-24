@@ -5,17 +5,24 @@
 module Qafny.Codegen.SplitCast where
 
 
+import           Control.Monad
+    (liftM2)
+import qualified Data.List.NonEmpty       as NE
 import           Qafny.Effect
 import           Qafny.Partial
 import           Qafny.Syntax.AST
 import           Qafny.Syntax.ASTFactory
-    (qComment)
+import           Qafny.Syntax.EmitBinding
 import           Qafny.Syntax.IR
 import           Qafny.Typing
-    (resolvePartition, retypePartition, castScheme)
+    (castScheme, resolvePartition, retypePartition)
 import           Qafny.Utils.EmitBinding
+import           Qafny.Utils.Utils
+    (both)
 import           Text.Printf
     (printf)
+import Data.Maybe (maybeToList)
+
 
 
 throwError'
@@ -26,47 +33,48 @@ throwError' = throwError @String . ("[Codgen|SplitCast] " ++)
 --------------------------------------------------------------------------------
 -- * Split Semantics
 --------------------------------------------------------------------------------
-codegenSplitEmitMaybe
-  :: ( Has (Error String) sig m
-     )
-  => Maybe SplitScheme
-  -> m [Stmt']
-codegenSplitEmitMaybe = maybe (return []) codegenSplitEmit
+codegenSplitEmitMaybe :: Maybe SplitScheme -> [Stmt']
+codegenSplitEmitMaybe = maybe [] codegenSplitEmit
 
 -- | Generate emit variables and split operations from a given split scheme.
--- FIXME: implement split for phases as well
+codegenSplitEmit :: SplitScheme -> [Stmt']
 codegenSplitEmit
-  :: ( Has (Error String) sig m
-     )
-  => SplitScheme
-  -> m [Stmt']
-codegenSplitEmit
-  ss@SplitScheme { schQty=qty
-                 , schROrigin=rOrigin@(Range x left _)
-                 , schRTo=rTo
-                 , schRsRem=rsRem
-                 , schVEmitOrigin=(vEmitOrigin, tyEmitOrigin)
-                 , schVsEmitAll=vEmitAll
-                 } =
-  -- trace ("codegenSplitEmit: " ++ show ss) >>
-  case qty of
-    t | t `elem` [ TNor, THad, TEn01 ] -> do
-      let offset e = reduce $ EOp2 OSub e left
-      let stmtsSplit =
-            [ [ (vEmitNew ::=:) $
-                EEmit (ESlice (EVar vEmitOrigin) (offset el) (offset er))
-              , infoWeirdAssertionNeeded
-              , SAssert (EOp2 OEq
-                          (EEmit (ESlice (EVar vEmitOrigin) (offset el) (offset er)))
-                          (EEmit (ESlice (EVar vEmitNew) 0 (reduce (er - el)))))
-              ]
-            | ((vEmitNew, tyEmitNew), Range _ el er) <- zip (schVsEmitAll ss) (rTo : rsRem) ]
-      return . concat $ stmtsSplit
-    _    ->
-      throwError @String $ printf "Splitting a %s partition is unsupported." (show qty)
+  SplitScheme { schEdAffected=(rAffected@(Range _ elAff erAff)
+                              ,edAffL, edAffR )
+              , schEdSplit=(rSplit ,edSplitR)
+              , schEdRemainders
+              } =
+  concatMap stmtsSplitRem $ NE.toList schEdRemainders ++ [(rSplit, edAffL, edSplitR)]
   where
-    infoWeirdAssertionNeeded =
-      qComment "I have no idea why this assertion about equality is necessary...."
+    stmtsSplitRem (Range _ elRem erRem, edRemL, edRemR) =
+      let off  = elRem - elAff
+          size = erRem - elRem
+      in codegenSplitEd edRemL edAffL off size ++
+         codegenSplitEd edRemR edAffR   off size
+
+
+codegenSplitEd :: EmitData -> EmitData -> Exp' -> Exp' -> [Stmt']
+codegenSplitEd ed1 ed2 offset size =
+  liftC splitSimple base
+  ++ liftC splitSimple amp
+  ++ concat (liftC splitPhase refs)
+  where
+    liftC f a = maybeToList $ uncurry (liftM2 f) a
+    bothFst f = both ((fst <$>) . f)
+    base  = bothFst evBasis (ed1, ed2)
+    amp   = bothFst evAmp (ed1, ed2)
+    refs  = bothFst evPhaseRef (ed1, ed2)
+
+    splitPhase :: PhaseRef -> PhaseRef -> [Stmt']
+    splitPhase pr1 pr2 =
+      [ splitSimple (prRepr pr1) (prRepr pr2)
+      , prBase pr1 ::=: EVar (prRepr pr2)
+      ]
+
+    splitSimple :: Var -> Var -> Stmt'
+    splitSimple v1 v2 =
+      v1 ::=: v2 >:@@: (offset, offset + size)
+
 
 --------------------------------------------------------------------------------
 -- * Split & Cast Semantics
@@ -80,7 +88,7 @@ codegenSplitThenCastEmit
   -> m [Stmt']
 codegenSplitThenCastEmit sS sC = do
   trace "* codegenSplitThenCastEmit"
-  (++) <$> codegenSplitEmitMaybe sS <*> codegenCastEmitMaybe sC
+  (codegenSplitEmitMaybe sS ++) <$> codegenCastEmitMaybe sC
 
 
 --------------------------------------------------------------------------------
@@ -175,7 +183,7 @@ castPartitionEN st@Locus{loc=locS, part=s, qty=qtS} = do
 -- modifying the existing bindings!
 --
 dupState
-  :: ( GensymEmitterWithStateError sig m 
+  :: ( GensymEmitterWithStateError sig m
      , Has (Reader IEnv) sig m
      , Has Trace sig m
      )
@@ -185,7 +193,7 @@ dupState s' = do
   let rs = ranges s
   -- generate a set of fresh emit variables as the stashed partition
   -- do not manipulate the `emitSt` here
-  vsEmitFresh <- genEmByRangeSansPhase qtS `mapM` rs >>= visitEmsBasis
+  vsEmitFresh <- genEmByRange qtS `mapM` rs >>= visitEmsBasis
   -- the only place where state is used!
   vsEmitPrev  <- findEmitBasesByRanges rs
   let comm = qComment "Duplicate"

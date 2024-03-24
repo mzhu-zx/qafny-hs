@@ -28,7 +28,7 @@ import           Qafny.Syntax.AST
 import           Qafny.Syntax.ASTFactory
 import           Qafny.Syntax.IR
 import           Qafny.TypeUtils
-    (isEN)
+    (isEn)
 import           Qafny.Typing
     (analyzePhaseSpecDegree, extendMetaState, queryPhaseRef, resolvePartition,
     typingPartitionQTy)
@@ -83,9 +83,9 @@ codegenAssertion' e = return [e]
 -- partition type; with which, generate expressions (predicates)
 codegenSpecExp
   :: ( Has (Error String) sig m, Has (Reader Bool) sig m )
-  => [((Var, Ty), Range)] -> QTy -> [QSpec] -> [Maybe (PhaseRef, Ty)] -> m [Exp']
+  => [((Var, Ty), Range)] -> QTy -> [SpecExp] -> [Maybe (PhaseRef, Ty)] -> m [Exp']
 codegenSpecExp vrs p specs ptys = putOpt $
-  if isEN p
+  if isEn p
   then do
     when (length specs /= 1) $ throwError' $ printf "More then one specs!"
     pspec <- onlyOne throwError' (phase <$> specs)
@@ -132,7 +132,7 @@ codegenSpecExp vrs p specs ptys = putOpt $
     specPerRange _ e  =
       errIncompatibleSpec e
 
-    specPerPartition TEn (SESpecEN idx (Intv l r) eValues) pspec = do
+    specPerPartition TEn (SESpecEn (SpecEn01F idx (Intv l r) eValues)) pspec = do
       haveSameLength vrs eValues
       -- In x[? .. ?] where l and r bound the indicies of basis-kets
       -- @
@@ -152,7 +152,7 @@ codegenSpecExp vrs p specs ptys = putOpt $
 
     specPerPartition
       TEn01
-      (SESpecEN01 idxSum (Intv lSum rSum) idxTen (Intv lTen rTen) eValues)
+      (SESpecEn01 idxSum (Intv lSum rSum) idxTen (Intv lTen rTen) eValues)
       pspec
        = do
       -- In x[l .. r]
@@ -198,10 +198,11 @@ codegenPhaseSpec
   :: ( Has (Error String) sig m
      )
   => ((Var -> Exp') -> Exp') -> Exp' -> Maybe (PhaseRef, Ty) ->  PhaseExp -> m [Exp']
-codegenPhaseSpec _ _ Nothing pe =
-  if | pe `elem` [ PhaseZ, PhaseWildCard ] -> return []
-     | otherwise ->
-       throwError' $ printf "%s is not a zeroth degree predicate." (show pe)
+codegenPhaseSpec _ _ Nothing pe
+  | pe `elem` [ PhaseZ, PhaseWildCard ] =
+      return [] 
+  | otherwise =
+      throwError' $ printf "%s is not a zeroth degree predicate." (show pe)
 codegenPhaseSpec quantifier eSize (Just (ref, _)) (PhaseOmega eK eN) =
   let assertN = EOp2 OEq eN (EVar (prBase ref))
       assertK idx = EOp2 OEq eK (prRepr ref >:@: idx)
@@ -213,8 +214,8 @@ codegenPhaseSpec quantifier eSize (Just (ref, _)) (PhaseSumOmega (Range v l r) e
       pLength = r - l
       -- FIXME: emit the length of the 2nd-degree range and get the inner
       -- quantifier right
-      assertK idx = EForall (Binding v TNat) Nothing $
-                    (EOp2 OEq eK (prRepr ref >:@: v >:@: idx))
+      assertK idx = EForall (Binding v TNat) Nothing 
+                    (eK `eEq` (prRepr ref >:@: v >:@: idx))
   in return [assertN, quantifier assertK]
 codegenPhaseSpec _ _ _ e =
   throwError' $ printf "Invalid %s phase." (show e)

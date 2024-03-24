@@ -3,7 +3,6 @@ module Qafny.Syntax.ASTFactory where
 import           Qafny.Partial
     (reduce)
 import           Qafny.Syntax.AST
-import Data.Text (count)
 
 
 -- | AstInjection makes ast construction easier.
@@ -96,8 +95,12 @@ eEq :: (AstInjection a Exp', AstInjection b Exp')
     => a -> b -> Exp'
 eEq a b = EOp2 OEq (injAst a) (injAst b)
 
-sliceV :: Var -> Exp' -> Exp' -> Exp'
-sliceV x l r = EEmit (ESlice (EVar x) (reduce l) (reduce r))
+infixl 6 >:@@:
+-- | Construct "e1 [ e2 .. e3 ]"
+(>:@@:) :: (AstInjection a Exp', AstInjection b Exp', AstInjection c Exp')
+        => a -> (b, c) -> Exp'
+(>:@@:) e1 (e2, e3) = injAst $
+  injAst e1 :@@: (reduce (injAst e2),  reduce (injAst e3))
 
 
 callMap :: (AstInjection a Exp', AstInjection b Exp')
@@ -138,7 +141,7 @@ natSeqLike = seqLike TNat
 seqLike :: (AstInjection a Exp') => Ty -> a -> Exp' -> Exp'
 seqLike ty liked = EEmit . EMakeSeq ty (EEmit (ECard (injAst liked)))
 
--- | Construct a sequence 
+-- | Construct a sequence
 mkSeqConst :: (AstInjection a Exp', AstInjection b Exp') => Ty -> a -> b -> Exp'
 mkSeqConst ty cnt content =
   injAst $ EMakeSeq ty (injAst cnt) (constLambda content)

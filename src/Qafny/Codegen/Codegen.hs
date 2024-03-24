@@ -65,7 +65,7 @@ import           Qafny.Syntax.Emit
 import           Qafny.Syntax.EmitBinding
 import           Qafny.Syntax.IR
 import           Qafny.TypeUtils
-    (emitTypeFromDegree, isEN, tyKetByQTy)
+    (emitTypeFromDegree, isEn, tyKetByQTy)
 import           Qafny.Typing
     (allocAndUpdatePhaseType, analyzePhaseSpecDegree, appkEnvWithBds,
     checkSubtype, checkSubtypeQ, collectConstraints, collectMethodTypes,
@@ -736,7 +736,7 @@ codegenFor'Body idx boundl boundr eG body stSep@(Locus{qty=qtSep}) newInvs = do
 
       -- It seems that castEN semantics maybe unnecessary with invariant typing?
       (stmtsCastB, stB) <- case qtB of
-        _ | isEN qtB -> return ([], stB')
+        _ | isEn qtB -> return ([], stB')
         _            ->
           (,) <$> castPartitionEN stB' <*> resolvePartition (part stB')
 

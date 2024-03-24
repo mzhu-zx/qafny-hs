@@ -12,7 +12,7 @@ import           Qafny.Partial
     (Reducible (reduce))
 import           Qafny.Syntax.AST
 import           Qafny.Syntax.Emit
-    (showEmitI, showEmit0, byLineT, byComma)
+    (byComma, byLineT, showEmit0, showEmitI)
 import           Qafny.Syntax.EmitBinding
 import           Qafny.Syntax.IR
 import           Qafny.Utils.Utils
@@ -24,11 +24,14 @@ import           Qafny.Utils.EmitBinding
 import           Control.Carrier.State.Lazy
     (execState, runState)
 import           Control.Monad
-    (forM, forM_, unless, zipWithM, when)
+    (forM, forM_, unless, when, zipWithM)
+import           Data.Foldable
+    (Foldable (toList))
+import           Data.Functor
 import           Data.Functor.Identity
 import qualified Data.Map.Strict            as Map
 import           Data.Maybe
-    (catMaybes)
+    (catMaybes, maybeToList)
 import           Data.Sum
 import           Qafny.Typing.Error
     (hdlSCError)
@@ -39,7 +42,6 @@ import           Qafny.Typing.Typing
     typingExp, typingPartitionQTy)
 import           Text.Printf
     (printf)
-import Data.Foldable (Foldable(toList))
 
 
 throwError'
@@ -137,7 +139,7 @@ kindCheckEachParameter earg (MTyQuantum v cardinality) = do
 --   - a map between variable and range represents quantum variable to the
 --     actual range used to instantiate
 --   - a list of arguments for non-quantum parameters
--- 
+--
 -- The function only kind check arguments against the parameters as well as
 -- potential range overlappings among those arguments at the call site.
 --
@@ -154,7 +156,7 @@ normalizeArguments es params = do
   isBot' <- (all (== Just True) .) <$> isBotI
   let hasDuplication = checkRangeDuplication isBot' rs
   when hasDuplication $
-    throwError' (errNonLinear rs) 
+    throwError' (errNonLinear rs)
   return (qmap, pureArgs)
   where
     errNonLinear rs = printf
@@ -165,14 +167,14 @@ normalizeArguments es params = do
 checkRangeDuplication :: (Range -> Bool) -> [Range] -> Bool
 checkRangeDuplication isBot' = go
   where
-    go [] = False
+    go []       = False
     go (x : xs) = any (cmp x) xs || go xs
-    cmp r1 r2 = maybe False isBot' (r1 ⊓ r2) 
+    cmp r1 r2 = maybe False isBot' (r1 ⊓ r2)
 
 
 -- | Take in a list of arguments, check against the method signature and resolve
 -- arguments to be emitted w.r.t. the calling convention.
--- 
+--
 -- This function check not only kind information as well as entanglement types.
 --
 -- Return a map from QVars to ranges passed, arguments to be emitted, and passed
@@ -231,7 +233,7 @@ resolveInstantiatedQuantumArgs insts = do
   where
     regroup (a, b, c) = (a, (b, c))
 
-    -- | type cast and type checks 
+    -- | type cast and type checks
     go (p@(Partition [r]), q, degreeM)  = do
       -- cast is only feasible for singleton partitions
       st <- resolvePartition p
@@ -239,15 +241,14 @@ resolveInstantiatedQuantumArgs insts = do
     go (p, q, degreeM) =
       -- use `typingPartitionQTy` to make sure the partition is exact!
       (, Nothing, Nothing) <$> typingPartitionQTy p q
-  
+
     -- | phase type checks
     checkPhase Locus{degrees} (_, _, methodDegree) =
       toList methodDegree == degrees
 
-    errDegreeMismatch loci = throwError' $
-      printf "Degree mismatch:\n%s\n%s"
-      (byComma (degrees <$> loci))
-      (byComma (trd <$> insts))
+    errDegreeMismatch loci = throwError' $ printf "Degree mismatch:\n%s\n%s"
+      (showEmit0 (byComma (byComma . degrees <$> loci)))
+      (showEmit0 (byComma (trd <$> insts)))
 
 -- | Compute the typing state after returning from a method call.
 resolveMethodApplicationRets
@@ -272,7 +273,7 @@ resolveMethodApplicationRets envArgs
   where
     unimpl = throwError' "Unimplemented: method returns a pure value."
     -- partitions after the method call
-    psRet = receiver envArgs
+    psRet = receiver envArgs <&> \(a, b, c) -> (a, b, maybeToList c)
 
 
 
@@ -292,7 +293,7 @@ collectMethodTypes a = execState @(Map.Map Var MethodType) Map.empty $
           )
        => Toplevel () -> m' ()
     go (Toplevel (Inl q@(QMethod {}))) = do
-      let (idMethod, methodTy) = analyzeMethodType q
+      (idMethod, methodTy) <- analyzeMethodType q
       existsMaybe <- (Map.!? idMethod) <$> get @(Map.Map Var MethodType)
       case existsMaybe of
         Just _ ->

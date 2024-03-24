@@ -305,7 +305,7 @@ instance (Show f, DafnyPrinter f) => DafnyPrinter (AmpExpF f) where
 
 instance DafnyPrinter EmitExp where
   build (e1 :@: e2) = e1 <!> "[" <!> e2 <!> "]"
-  build (ESlice e1 e2 e3) = e1 <!> "[" <!> e2 <!> ".." <!> e3 <!> "]"
+  build (e1 :@@: (e2, e3)) = e1 <!> "[" <!> e2 <!> ".." <!> e3 <!> "]"
   build EMtSeq = build "[]"
   build (EMakeSeq ty e ee) =
     "seq<" <!> ty <!> ">" <!> withParen (e <!> ", " <!> ee)
@@ -317,7 +317,7 @@ instance DafnyPrinter EmitExp where
   build (EMultiLambda vs e) = withParen (byComma vs) <+> "=>" <+> e
 
 instance DafnyPrinter Range where
-  build rr@(Range v l r) = debugOnly rr $ build (ESlice (EVar v) l r)
+  build rr@(Range v l r) = debugOnly rr $ build (EVar v :@@: (l, r))
 
 instance DafnyPrinter Partition where
   build pp@(Partition p) = debugOnly pp $ byComma p

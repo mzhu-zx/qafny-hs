@@ -1,6 +1,7 @@
 {-# LANGUAGE
     FlexibleContexts
   , FlexibleInstances
+  , ParallelListComp
   , LambdaCase
   , MultiParamTypeClasses
   , MultiWayIf
@@ -48,13 +49,15 @@ import           Control.Carrier.State.Lazy
 import           Control.Lens
     (at, (%~), (?~), (^.))
 import           Control.Monad
-    (forM, forM_, liftM2, unless, when)
+    (forM, forM_, liftM2, unless, when, zipWithM, zipWithM_)
 import           Data.Bifunctor
     (Bifunctor (second))
 import           Data.Bool
     (bool)
 import           Data.Functor
     ((<&>))
+import           Data.Functor.Identity
+
 import qualified Data.List                  as List
 import           Data.List.NonEmpty
     (NonEmpty (..))
@@ -247,10 +250,6 @@ splitScheme
   -> m (Locus, Maybe SplitScheme)
 splitScheme s r = errTrace "`splitScheme`" $ do
   splitScheme' s r
-  -- trace $ printf "[splitScheme]\n\tIn: %s %s\n\tOut: %s"
-  --   (show s) (show r) (show ans)
-
-
 
 -- | Rationale: there's no good reason to split a partition with multiple ranges
 -- in entanglement. So, we're safe to reject non-singleton partitions for now.
@@ -310,99 +309,81 @@ splitScheme' s@(Locus{loc, part, qty, degrees}) rSplitTo@(Range to rstL rstR) = 
   -- FIXME: Type checking of `qt` should happen first because splitting an EN
   -- typed partition should not be allowed.
   -- TODO: Is this correct?
-  when (isEN qty) $ throwError'' errSplitEN
-  RangeSplits { rsRsRest=rsRest
-              , rsDsRest=dgrsRest
-              , rsRLeft=rLMaybe
-              , rsRRight=rRMaybe
-              , rsRFocused=rOrigin
-              , rsDFocused=dgrOrigin
-              , rsRsRem = rsRem
-              } <- getRangeSplits s rSplitTo
-  let -- the ranges except the chosen one + the quotient ranges
-      rsMain = rsRem ++ rsRest
-      rsAux  = [rSplitTo]
-      pMain  = Partition rsMain
-      pAux   = Partition rsAux
-  -- generate
-      -- ptysRest = uncurry evPhaseRef <$> zip dgrsRest edsRest
-      -- ptysMain = ptysRem ++ ptysRest
-  let  dgrsMain = (dgrOrigin <$ rsRem) ++ dgrsRest
-  case rsMain of
-    [] ->
-      -- ^ No need to split at all, so we're safe regardless of the qtype
-      --
-      return (s, Nothing) -- no split at all!
+  when (isEn qty) $
+    throwError'' errSplitEN
 
-    _  -> do
-      -- ^ Split in partition or in both partition and a range
-      -- There's a need for split.
-      --
+  rangeSplit@RangeSplits { rsRsUnchanged, rsRLeft, rsRRight, rsRAffected} <-
+    getRangeSplits s rSplitTo
+  case NE.nonEmpty (rsRsRemainder rangeSplit) of
+    Nothing -> -- | No split!
+      return (s, Nothing) 
+
+    Just rsRemainder -> do
+
+      let psRemainder = Partition . Identity <$> rsRemainder
+          psRemainder' = Partition . List.singleton <$> rsRemainder
+          pSplitInto  = Partition [rSplitTo]
+      -- | ill-formed partition
+      unless (null rsRsUnchanged) $
+        throwError'' errInconsistentRemainder
+
       -- 1. Allocate partitions, break ranges and move them around
-      locAux <- gensymLoc to
-      sSt %= (at loc ?~ (pMain, (qty, dgrsMain))) .
-        (at locAux ?~ (pAux, (qty, [dgrOrigin])))
-      -- use sSt >>= \s' -> trace $ printf "sSt: %s" (show s')
+      lociRem <- mapM (gensymLoc . rangeVar) rsRemainder
+      -- Aux reuses the current loc 
+      sSt %= (at loc ?~ (pSplitInto, (qty, degrees)))
+      sequence_ $ NE.zipWith
+        (\locMain pMain -> sSt %= (at locMain ?~ (pMain, (qty, degrees))))
+        lociRem psRemainder'
+
+      -- | retrieve all (range, loc) pair associated with the variable `x` 
       xRangeLocs <- use (xSt . at to) `rethrowMaybe` errXST
       let xrl =
-            -- "new range -> new loc"
-            [ (rAux, locAux) | rAux <- rsAux ] ++
-            -- "split ranges -> old loc"
-            [ (rMainNew, loc) | rMainNew <- rsRem ] ++
+            -- "split range -> old loc"
+            [ (rSplitTo, loc) ] ++
+            -- "quotient ranges -> new loci"
+            [ (rRemainder, locRem) | rRemainder <- NE.toList rsRemainder
+                                   | locRem <- NE.toList lociRem
+                                   ] ++
             -- "the rest with the old range removed"
-            List.filter ((/= rOrigin) . fst) xRangeLocs
+            List.filter ((/= rsRAffected) . fst) xRangeLocs
+      -- update the range name state
       xSt %= (at to ?~ xrl)
+
       -- 2. Generate emit symbols for split ranges
-      let sMain' = s{part=pMain, degrees=dgrsMain} -- the part that's split _from_
-      case rsRem of
-        [] -> case qty of
-          t | t `elem` [ TEn, TEn01 ] ->
-              throwError'' errSplitEN
-          _ ->
-            -- only split in partition but not in a range,
-            -- therefore, no need to duplicate the range-based phases
-            let sAux' = s { loc=locAux, part=pAux }
-            in return (sAux', Nothing)
-        _  -> do
-          (vEmitR, vSyms, rPhReprs) <- case qty of
-            t | t `elem` [ TNor, THad ] -> do
-              -- locate the original range
-              vEmitR <- findVisitEm evBasis (inj rOrigin)
-              -- delete it from the record
-              deleteEms [inj rOrigin]
-              -- gensym for each split ranges
-              rsEms <- genEmStSansPhaseByRanges qty (rSplitTo : rsRem)
-              vSyms <- mapM (visitEm evBasis . snd) rsEms
-              pty <- case t of
-                THad -> do
-                  eds@(edSplit :| edsRem) <-
-                    forM (locAux :| loc) (genEmStUpdatePhase qty dgrOrigin . inj)
-                  edsRest <- forM rsRest (findEm . inj)
-                  evPhaseRef <$> eds
-                _     -> []
-              return (vEmitR, vSyms, pty)
-            _    -> throwError'' $ errUnsupprtedTy ++ "\n" ++ infoSS
-          let sAux' = Locus { loc=locAux, part=pAux, qty, degrees=[dgrOrigin] }
-          let ans = SplitScheme
-                { schROrigin = rOrigin
-                , schRTo = rSplitTo
-                , schRsRem = rsRem
-                , schQty = qty
-                , schSMain = sMain'
-                , schVEmitOrigin = vEmitR
-                , schVsEmitAll = vSyms
-                }
-          -- trace $ printf "[splitScheme (post)] %s" (show ans)
-          return (sAux', Just ans)
+      let locusSplitInto = s{part=pSplitInto}
+          lociRemainder  = NE.zipWith updateLocPartOfS lociRem psRemainder
+
+      -- locate EmitData of both range and locus 
+      edRAffected@EmitData{evBasis=vEmitRMaybe} <- findEm (inj rsRAffected)
+      edLAffected@EmitData{evPhaseRef=vPhaseMaybe
+                          ,evAmp=vEmitAMaybe} <- findEm (inj loc)
+      vEmitR <- findVisitEm evBasis (inj rsRAffected)
+      -- delete the range record
+      deleteEms [inj rsRAffected]
+
+      -- generate EmitData for new ranges
+      edRSplit <- genEmStByRange qty rSplitTo
+      let schEdAffected = (rsRAffected, edLAffected, edRAffected)
+      let schEdSplit = (rSplitTo,edRSplit)
+      schEdRemainders <- forM lociRemainder $ \locRem -> do
+        (edLoc, Identity (rRem, edR)) <- genEmStFromLocus locRem
+        return (rRem, edLoc, edR)
+      return $ ( locusSplitInto
+               , Just SplitScheme { schEdAffected, schEdSplit, schEdRemainders })
   where
-    infoSS :: String = printf
-      "[splitScheme] from (%s) to (%s)" (show s) (show rSplitTo)
+    updateLocPartOfS l p = s{loc=l, part=p}
+    rangeVar (Range x _ _) = x
+    -- infoSS :: String = printf
+    --   "[splitScheme] from (%s) to (%s)" (show s) (show rSplitTo)
     throwError'' = throwError' . ("[split] " ++)
-    errUnsupprtedTy = printf
-      "Splitting a %s partition is unsupported." (show qty)
+    -- errUnsupprtedTy = printf
+    --   "Splitting a %s partition is unsupported." (show qty)
     errXST = printf
       "No range beginning with %s cannot be found in `xSt`" to
     errSplitEN = "Splitting an EN partition is disallowed!"
+    errInconsistentRemainder = printf
+      "Splittable partition %s should not include more than one range."
+      (showEmit0 part)
 
 -- | Duplicate a phase type by allocating a new reference to its Repr if
 -- necessary.
@@ -420,25 +401,33 @@ splitScheme' s@(Locus{loc, part, qty, degrees}) rSplitTo@(Range to rstL rstR) = 
 
 
 data RangeSplits = RangeSplits
-  { rsRLeft    :: Maybe Range -- | left remainder
-  , rsRRight   :: Maybe Range -- | right remainder
-  , rsRSplit   :: Range       -- | the split range
-  , rsRFocused :: Range       -- | the original range
-  , rsDFocused :: Int         -- | the degree of the original range
-  , rsRsRest   :: [Range]     -- | other ranges untouched
-  , rsDsRest   :: [Int]       -- | The degrees of ....
-  , rsRsRem    :: [Range]     -- | all remainders (left + right)
+  { rsRLeft       :: Maybe Range
+    -- ^ left remainder
+  , rsRRight      :: Maybe Range
+    -- ^ right remainder
+  , rsRSplitInto  :: Range 
+    -- ^ resulting range
+  , rsRAffected   :: Range
+    -- ^ original range that is affected 
+  , rsRsUnchanged :: [Range]
+    -- ^ other ranges untouched
+  , rsRsRemainder :: [Range]
+    -- ^ remainders introduced by breaking the affected range (left + right)
   }
 
 -- | Compute, in order to split the given range from a resolved partition, which
 -- range in the partition needs to be split as well as the resulting quotient
 -- ranges.
+--
+-- Note: this function is entanglement-type-agnostic and works for any kind of
+-- partitions regardless of the number of ranges in the partition.
+-- Ranges that are kept as is will be put in `rsRsUnchanged`
 getRangeSplits
   :: ( Has (Error String) sig m
      , Has (Reader IEnv) sig m
      )
   => Locus -> Range -> m RangeSplits
-getRangeSplits s@(Locus{loc, part=p, qty, degrees}) rSplitTo@(Range to rstL rstR) = do
+getRangeSplits s@(Locus{loc, part=p, degrees}) rSplitTo@(Range to rstL rstR) = do
   botHuh <- ($ rSplitTo) <$> isBotI
   case botHuh of
     _ | all (== Just True)  botHuh -> throwError' errBotRx
@@ -451,17 +440,14 @@ getRangeSplits s@(Locus{loc, part=p, qty, degrees}) rSplitTo@(Range to rstL rstR
     Just (rRemL, _, rRemR, rOrigin, idx)  -> do
       rRemLeft <- contractRange rRemL
       rRemRight <- contractRange rRemR
-      let psRest = if isEN qty then [] else removeNth idx degrees
-          rsRest = removeNth idx (unpackPart p)
+      let rsRest = removeNth idx (unpackPart p)
       return $ RangeSplits
-        { rsRLeft = rRemLeft
-        , rsRRight = rRemRight
-        , rsRSplit = rSplitTo
-        , rsRFocused = rOrigin
-        , rsDFocused = head degrees
-        , rsRsRest = rsRest
-        , rsDsRest = psRest
-        , rsRsRem = catMaybes [rRemLeft, rRemRight]
+        { rsRLeft       = rRemLeft
+        , rsRRight      = rRemRight
+        , rsRSplitInto  = rSplitTo
+        , rsRAffected   = rOrigin
+        , rsRsUnchanged = rsRest
+        , rsRsRemainder = catMaybes [rRemLeft, rRemRight]
         }
   where
     removeNth n l = let (a, b) = splitAt n l in a ++ tail b
@@ -497,16 +483,16 @@ splitThenCastScheme
 splitThenCastScheme s'@Locus{ loc, part, qty=qt1, degrees } qt2 rSplitTo =
   failureAsSCError . errTrace "`splitThenCastScheme`" $
   case (qt1, qt2) of
-    (_, _) | isEN qt1 && qt1 == qt2 -> do
+    (_, _) | isEn qt1 && qt1 == qt2 -> do
       -- same type therefore no cast needed,
-      -- do check to see if split is also not needed
-      RangeSplits { rsRFocused = rOrigin
-                  , rsRsRem = rsRem
+      -- do check to see if a split in range is also not needed
+      RangeSplits { rsRAffected
+                  , rsRsRemainder
                   } <- getRangeSplits s' rSplitTo
-      case rsRem of
+      case rsRsRemainder of
         [] -> return (s', Nothing, Nothing)
-        _  -> throwError $ SplitENError s' rSplitTo (rSplitTo : rsRem)
-    (_ , _) | not (isEN qt1) && isEN qt2 -> do
+        _  -> throwError $ SplitENError s' rSplitTo rsRAffected rsRsRemainder
+    (_ , _) | not (isEn qt1) && isEn qt2 -> do
       -- casting a smaller type to a larger type
       (sSplit, maySchemeS) <- splitScheme s' rSplitTo
       (sCast, maySchemeC) <- castScheme sSplit qt2
@@ -667,7 +653,7 @@ castScheme st qtNow = errTrace "`castScheme`" $ do
       let tNewEmit = tyKetByQTy qtNow
       -- FIXME: Cast phases
       sSt %= (at locS ?~ (sResolved, (qtNow, dgrs)))
-      rsEmsNew <- genEmStSansPhaseByRanges qtNow $ unpackPart sResolved
+      rsEmsNew <- genEmStByRanges qtNow $ unpackPart sResolved
       vsNewEmit <- mapM (visitEm evBasis . snd) rsEmsNew
       return ( st { qty=qtNow }
              , CastScheme { schVsOldEmit=vsOldEmit

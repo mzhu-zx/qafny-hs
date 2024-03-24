@@ -181,7 +181,7 @@ queryPhase
      )
   => Locus -> m [Maybe (PhaseRef, Ty)]
 queryPhase Locus{loc, part=Partition{ranges}, qty, degrees}
-  | isEN qty = do
+  | isEn qty = do
       dgr <- onlyOne throwError' degrees
       singleton . evPhaseRef <$> findEm (inj loc)
   | otherwise = do
@@ -195,7 +195,7 @@ queryPhaseRef
      )
   => Locus -> m [Maybe (PhaseRef, Ty)]
 queryPhaseRef Locus{loc, part=Partition{ranges}, qty, degrees}
-  | isEN qty = do
+  | isEn qty = do
       dgr <- onlyOne throwError' degrees
       singleton . evPhaseRef <$> findEm (inj loc)
   | otherwise = do

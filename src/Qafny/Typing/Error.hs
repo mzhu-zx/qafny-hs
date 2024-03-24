@@ -12,23 +12,23 @@ import           Qafny.Syntax.AST
 import           Qafny.Syntax.Emit
     (byComma, showEmit0)
 import           Qafny.Syntax.IR
-    (Locus (..))
 import           Text.Printf
     (printf)
 
 data SCError
-  = SplitENError Locus Range [Range]
+  = SplitENError Locus Range Range [Range]
   | SplitOtherError String
 
 
 instance Show SCError where
-  show (SplitENError s@Locus{part} r0 rs) = printf
+  show (SplitENError s@Locus{part} r0 rAff rs) = printf
     ("The partition %s cannot be obtained from the 'EN' partition %s.\n" ++
-     "Reason: it requires tearing the range apart into %s.\n" ++
+     "Reason: it requires tearing the range %s apart into %s.\n" ++
      "Advice: Use `EN01` isntead.\n" ++
      "Info: %s\n")
     (showEmit0 r0)
     (showEmit0 part)
+    (showEmit0 rAff)
     (showEmit0 (byComma rs))
     (showEmit0 s)
   show (SplitOtherError s) = s

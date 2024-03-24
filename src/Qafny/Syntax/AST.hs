@@ -313,6 +313,8 @@ showExp (EOp2 op e1 e2) = showExp e1 ++ sop ++ showExp e2
         _    -> undefined
 showExp e = show e
 
+infixl 5 :@@: 
+infixl 5 :@:
 -- | EmitExp : Unsafe Expressions for Codegen Only
 data EmitExp
   = EMtSeq
@@ -320,7 +322,7 @@ data EmitExp
   | ECard (Exp ())
   | ECall Var [Exp ()]
   | (Exp ()) :@: (Exp ())
-  | ESlice (Exp ()) (Exp ()) (Exp ())
+  | (Exp ()) :@@: (Exp (), Exp ())
   | EDafnyVar Var
   | EMultiLambda [Var] (Exp ())
   | EOpChained (Exp ()) [(Op2, Exp ())]
@@ -384,13 +386,18 @@ newtype Loc = Loc { deref :: Var }
 instance Show Loc where
   show = deref
 
-newtype Partition = Partition { ranges :: [Range] }
-  deriving (Eq, Ord-- , Data, Typeable
-           )
+newtype PartitionT t = Partition { ranges :: t Range }
+type Partition = PartitionT []
+
+deriving instance Eq Partition
+deriving instance Ord Partition
+
 
 unpackPart :: Partition -> [Range]
 unpackPart = ranges
 
+infixl 5 ::=:
+infixl 5 :*=:
 instance Show Partition where
   show = showPP . unpackPart
     where

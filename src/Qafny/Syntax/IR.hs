@@ -19,19 +19,22 @@ import           Qafny.Syntax.EmitBinding
 
 import           Text.Printf
     (printf)
+import Data.List.NonEmpty (NonEmpty)
 
 --------------------------------------------------------------------------------
 -- High-Order Types
 --------------------------------------------------------------------------------
 -- TODO: Migrate to Locus representation
-data Locus =
-  Locus { loc     :: Loc       -- * identifier for the locus
-        , part    :: Partition -- * partition
-        , qty     :: QTy       -- * entanglement type
-        , degrees :: [Int]     -- * degrees of phase info
+data LocusT t =
+  Locus { loc     :: Loc           -- ^ identifier for the locus
+        , part    :: PartitionT t  -- ^ partition
+        , qty     :: QTy           -- ^ entanglement type
+        , degrees :: [Int]         -- ^ degrees of phase info
         }
-  deriving (Show, Eq)
 
+type Locus = LocusT []
+deriving instance Show Locus
+deriving instance Eq Locus
 
 --------------------------------------------------------------------------------
 -- Methods
@@ -144,14 +147,13 @@ initTState = TState
   }
 
 data SplitScheme = SplitScheme
-  { schROrigin     :: Range       -- | the original range
-  , schRTo         :: Range       -- | the range splitted _to_
-  , schRsRem       :: [Range]     -- | the remainder range
-  , schQty         :: QTy         -- | entanglement types
-  , schSMain       :: Locus       -- | the partition that was splitted _from_
-  , schVEmitOrigin :: (Var, Ty)   -- | the emit var & type of the original range
-  , schVsEmitAll   :: [(Var, Ty)] -- | the emit vars & types of new ranges
-  -- , schVsEmitPhaseAll :: [Maybe Var] -- | the emit variables of new phases
+  { schEdAffected :: (Range, EmitData, EmitData)
+    -- ^ Both locus and range `EmitData` for the affected range
+  , schEdSplit   :: (Range, EmitData)
+    -- ^ The range `EmitData` for the split range. The affected one shares the
+    -- same locus as the split one.
+  , schEdRemainders :: NonEmpty (Range, EmitData, EmitData)
+    -- ^ Both locus and range `EmitData` for each (singleton) remainders
   }
   deriving Show
 

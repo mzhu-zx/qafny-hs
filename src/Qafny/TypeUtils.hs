@@ -49,10 +49,11 @@ emitTypeFromDegree n =
 
 
 -- | Check if the given type is an 'EN'-like type.
-isEN :: QTy -> Bool
-isEN TEn01 = True
-isEN TEn   = True
-isEN _     = False
+isEn :: QTy -> Bool
+isEn TEn01 = True
+isEn TEn   = True
+isEn TQft  = True
+isEn _     = False
 
 
 -- | STuple

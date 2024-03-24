@@ -11,13 +11,9 @@ module Qafny.Utils.EmitBinding
     gensymBinding
   , genEmStUpdatePhase, genEmStByRange, genEmStByRanges, genEmStFromLocus
   , genEmStUpdatePhaseFromLocus
-  , genEmStSansPhaseByRanges
-  , genEmStByRangesSansPhase, genEmStByRangeSansPhase
-  , genEmStByRangesSansPhase'
   , genEmStUpdateKets
     -- * Gensyms w/o State
   , genEmByRange
-  , genEmByRangeSansPhase
     -- * Query
   , findEm, findEms
   , visitEm, visitEms, visitEmBasis, visitEmsBasis
@@ -45,19 +41,16 @@ import           Text.Printf
     (printf)
 
 import           Control.Effect.Lens
-import           Data.Foldable
-    (Foldable (toList))
+import           Data.Maybe
+    (catMaybes)
 import           Qafny.Effect
 import           Qafny.Syntax.AST
 import           Qafny.Syntax.EmitBinding
 import           Qafny.Syntax.IR
-    (Locus (..), RangeOrLoc, TState, emitSt)
 import           Qafny.TypeUtils
-    (isEN, tyAmp, tyKetByQTy, typingPhaseEmitReprN)
+    (tyAmp, tyKetByQTy, typingPhaseEmitReprN)
 import           Qafny.Utils.Utils
-    (errTrace, haveSameLength, onlyOne)
-import Data.Maybe (catMaybes)
-import Qafny.Syntax.EmitBinding (extractEmitables)
+    (errTrace)
 
 --------------------------------------------------------------------------------
 -- * Gensym Utils
@@ -76,7 +69,7 @@ gensymBinding v t = (,t) <$> gensym (EmAnyBinding v t)
 
 genKetsByQTy :: Has (Gensym Emitter) sig m => QTy -> [Range] -> m [Maybe (Var, Ty)]
 genKetsByQTy qty ranges =
-  maybe (return (replicate (length ranges) Nothing)) go tyKets 
+  maybe (return (replicate (length ranges) Nothing)) go tyKets
   where
     go ty = mapM (go' ty) ranges
     go' ty r = Just . (,ty) <$> gensym (EmBaseSeq r ty)
@@ -90,7 +83,7 @@ genKet qty range =
     tyKets = tyKetByQTy qty
 
 -- | Generate a phase representation
--- TODO: a lot of redundency from changes, refactor this 
+-- TODO: a lot of redundency from changes, refactor this
 genPhase
   :: Has (Gensym Emitter) sig m
   => QTy -> Int -> Loc -> m (Maybe (PhaseRef, Ty))
@@ -112,14 +105,14 @@ genAmp qty l =
 -- ** Basics but Stateful
 
 -- | Generate a /complete/ 'EmitData' of a Range and manage it within the 'emitSt'
-genEmStByRange ::  GensymEmitterWithState sig m => QTy -> Int -> Range -> m EmitData
-genEmStByRange qt i r = do
-  ed <- genEmByRange qt i r
+genEmStByRange ::  GensymEmitterWithState sig m => QTy -> Range -> m EmitData
+genEmStByRange qt r = do
+  ed <- genEmByRange qt r
   emitSt %= (at (inj r) ?~ ed)
   return ed
 
-genEmByRange :: (Has (Gensym Emitter) sig m) => QTy -> Int -> Range -> m EmitData
-genEmByRange qt i r = do
+genEmByRange :: (Has (Gensym Emitter) sig m) => QTy -> Range -> m EmitData
+genEmByRange qt r = do
   b <- genKet qt r
   let ed =  EmitData { evPhaseRef   = Nothing
                      , evBasis      = b
@@ -127,48 +120,30 @@ genEmByRange qt i r = do
                      }
   return ed
 
-
-genEmStByRangeSansPhase ::  GensymEmitterWithState sig m => QTy -> Range -> m EmitData
-genEmStByRangeSansPhase qt = genEmStByRange qt 0
-
-genEmByRangeSansPhase
-  :: (Has (Gensym Emitter) sig m)
-  => QTy -> Range -> m EmitData
-genEmByRangeSansPhase qt = genEmByRange qt 0
-
-
+-- | Generate EmitData for a list of ranges and manage it in state. 
 genEmStByRanges
-  :: GensymEmitterWithState sig m
-  => QTy -> [(Range, Int)] -> m [(Range, EmitData)]
-genEmStByRanges qt ris =
-  sequence [ (r,) <$> genEmStByRange qt i r | (r, i) <- ris ]
+  :: ( GensymEmitterWithState sig m
+     , Traversable t
+     )
+  => QTy -> t Range -> m (t (Range, EmitData))
+genEmStByRanges qt = mapM go
+  where
+    go r = (r,) <$> genEmStByRange qt r
 
--- | Generate a /complete/ 'EmitData' of a Partition, managed 'emitSt'
---
-genEmStByLoc
-  :: GensymEmitterWithState sig m
-  => Loc -> Int -> QTy -> [(Range, Int)] -> m (EmitData, [(Range, EmitData)])
-genEmStByLoc l iLoc qt ris = do
-  rAndEms <- sequence [ (r,) <$> genEmStByRange qt i r | (r, i) <- ris ]
-  p <- genPhase qt iLoc l
-  a <- genAmp qt l
-  let edL = mtEmitData { evPhaseRef = p }
-  emitSt %= (at (inj l) ?~ edL)
-  return ( edL , rAndEms )
-
-
--- | Generate an `EmitData` of a Partition from a Locus.
--- In particular, generate degree and phases based on its qt
+-- | Generate an `EmitData` from a Locus including both amplitude, range and
+-- phase.
 genEmStFromLocus
   :: ( GensymEmitterWithState sig m
-     , Has (Error String) sig m
+     , Traversable t
      )
-  => Locus -> m (EmitData, [(Range, EmitData)])
-genEmStFromLocus Locus{loc=l, part=Partition{ranges}, qty, degrees=is} = do
-  (il, ir) <- if isEN qty
-    then (, repeat (-1)) <$> onlyOne throwError is
-    else (-1, is)  <$ haveSameLength is ranges
-  genEmStByLoc l il qty $ zip ranges ir
+  => LocusT t -> m (EmitData, t (Range, EmitData))
+genEmStFromLocus Locus{loc, part=Partition{ranges}, qty, degrees} = do
+  rEms <- genEmStByRanges qty ranges
+  p <- genPhase qty (head degrees) loc
+  a <- genAmp qty loc
+  let edL = mtEmitData { evPhaseRef = p }
+  emitSt %= (at (inj loc) ?~ edL)
+  return ( edL , rEms )
 
 -- | Update existing `EmitData` based on degree information from a Locus.
 genEmStUpdatePhaseFromLocus
@@ -179,30 +154,28 @@ genEmStUpdatePhaseFromLocus
 genEmStUpdatePhaseFromLocus Locus{loc, part=Partition{ranges=rs}, qty, degrees} =
   zipWithM (genEmStUpdatePhase qty) degrees [loc]
 
--- | Generate an 'EmitData' w/o Phase, managed by 'emitSt'
-genEmStSansPhaseByLocAndRange
-  :: GensymEmitterWithState sig m
-  => Loc -> QTy -> [Range] -> m (EmitData, [(Range, EmitData)])
-genEmStSansPhaseByLocAndRange l qt = genEmStByLoc l (-1) qt . ((, -1) <$>)
+-- -- | Generate an 'EmitData' w/o Phase, managed by 'emitSt'
+-- genEmStSansPhaseByLocAndRange
+--   :: GensymEmitterWithState sig m
+--   => Loc -> QTy -> [Range] -> m (EmitData, [(Range, EmitData)])
+-- genEmStSansPhaseByLocAndRange l qt = genEmStByLoc l (-1) qt . ((, -1) <$>)
 
-{-# INLINE genEmStByRangesSansPhase #-}
-genEmStByRangesSansPhase
-  :: GensymEmitterWithState sig m
-  => QTy -> [Range] -> m [(Range, EmitData)]
-genEmStByRangesSansPhase qt = genEmStByRanges qt . ((, -1) <$>)
+-- {-# INLINE genEmStByRangesSansPhase #-}
+-- genEmStByRangesSansPhase
+--   :: GensymEmitterWithState sig m
+--   => QTy -> [Range] -> m [(Range, EmitData)]
+-- genEmStByRangesSansPhase qt = genEmStByRanges qt . ((, -1) <$>)
 
--- | Same as `genEmStByRangesSansPhase` but without `Range` indices
-genEmStByRangesSansPhase'
-  :: GensymEmitterWithState sig m
-  => QTy -> [Range] -> m [EmitData]
-genEmStByRangesSansPhase' qt = ((snd <$>) <$>) . genEmStByRanges qt . ((, -1) <$>)
+-- -- | Same as `genEmStByRangesSansPhase` but without `Range` indices
+-- genEmStByRangesSansPhase'
+--   :: GensymEmitterWithState sig m
+--   => QTy -> [Range] -> m [EmitData]
+-- genEmStByRangesSansPhase' qt = ((snd <$>) <$>) . genEmStByRanges qt . ((, -1) <$>)
 
-
-
-genEmStSansPhaseByRanges
-  :: GensymEmitterWithState sig m
-  => QTy -> [Range] -> m [(Range, EmitData)]
-genEmStSansPhaseByRanges = genEmStByRangesSansPhase
+-- genEmStSansPhaseByRanges
+--   :: GensymEmitterWithState sig m
+--   => QTy -> [Range] -> m [(Range, EmitData)]
+-- genEmStSansPhaseByRanges = genEmStByRangesSansPhase
 
 -- | Append the given `EmitData` to the given entry.
 appendEmSt
@@ -289,7 +262,6 @@ findEmitBasesByRanges
   :: StateMayFail sig m
   => [Range] -> m [(Var, Ty)]
 findEmitBasesByRanges = findVisitEms evBasis . (inj <$>)
-
 
 -- ** Destructor
 deleteEm :: (Has (State TState) sig m) => RangeOrLoc -> m ()
