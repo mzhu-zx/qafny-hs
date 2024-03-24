@@ -36,7 +36,6 @@ import           Qafny.Syntax.AST
 import           Qafny.Syntax.Emit
     (showEmitI)
 import           Qafny.Syntax.IR
-    (TEnv, TState, emitSt, kEnv, sSt)
 import           Qafny.Variable
     (Variable (variable))
 
@@ -52,6 +51,8 @@ fst2 (a, b, c) = (a, b)
 internalError :: a
 internalError = error "Internal Error!"
 
+trd :: (a, b, c) -> c
+trd (_, _, c) = c
 --------------------------------------------------------------------------------
 
 onlyOne
@@ -84,12 +85,6 @@ gensymLoc
   :: ( Has (Gensym String) sig m )
   => String -> m Loc
 gensymLoc = (Loc <$>) . gensym . variable . Loc
-
-both :: Bifunctor f => (a -> b) -> f a a -> f b b
-both = join bimap
-
-bothM :: Applicative m => (a -> m b) -> (a, a) -> m (b, b)
-bothM f (a, b) = liftA2 (,) (f a) (f b)
 
 --------------------------------------------------------------------------------
 -- * Gensym Utils
@@ -177,3 +172,18 @@ haveSameLength vsEmit eValues =
 errTrace :: (Has (Error String) sig m) => String -> m a ->  m a
 errTrace info m =
   catchError m (\e -> throwError (e ++ "\n↑ " ++ info))
+
+
+-- * Pure functions 
+
+both :: Bifunctor f => (a -> b) -> f a a -> f b b
+both = join bimap
+
+bothM :: Applicative m => (a -> m b) -> (a, a) -> m (b, b)
+bothM f (a, b) = liftA2 (,) (f a) (f b)
+
+hasNoDup :: Eq a => [a] -> Bool
+hasNoDup [] = True
+hasNoDup (x:xs) = foldr go True xs
+  where
+    go x' ans = x == x' && ans

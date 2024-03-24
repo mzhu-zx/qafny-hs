@@ -373,14 +373,14 @@ splitScheme' s@(Locus{loc, part, qty, degrees}) rSplitTo@(Range to rstL rstR) = 
               -- gensym for each split ranges
               rsEms <- genEmStSansPhaseByRanges qty (rSplitTo : rsRem)
               vSyms <- mapM (visitEm evBasis . snd) rsEms
-              --
-              -- FIXME: cobble "genEmStUpdatePhase" with "genEmStSansPhaseByRanges"
-              eds@(edSplit :| edsRem) <-
-                forM (rSplitTo :| rsRem) (genEmStUpdatePhase qty dgrOrigin . inj)
-              edsRest <- forM rsRest (findEm . inj)
-              let (ptySplitTo :| ptysRem) = evPhaseRef <$> eds
-              --
-              return (vEmitR, vSyms, ptySplitTo : ptysRem)
+              pty <- case t of
+                THad -> do
+                  eds@(edSplit :| edsRem) <-
+                    forM (locAux :| loc) (genEmStUpdatePhase qty dgrOrigin . inj)
+                  edsRest <- forM rsRest (findEm . inj)
+                  evPhaseRef <$> eds
+                _     -> []
+              return (vEmitR, vSyms, pty)
             _    -> throwError'' $ errUnsupprtedTy ++ "\n" ++ infoSS
           let sAux' = Locus { loc=locAux, part=pAux, qty, degrees=[dgrOrigin] }
           let ans = SplitScheme
@@ -445,7 +445,7 @@ getRangeSplits s@(Locus{loc, part=p, qty, degrees}) rSplitTo@(Range to rstL rstR
     _ | all (== Just False) botHuh -> return ()
     _ -> do ienv <- ask @IEnv
             throwError' $ printf "Cannot decide if %s is empty.\nEnv: %s" (show rSplitTo) (show ienv)
-  (⊑??) <- (⊑?)
+  (⊑??) <- (∀⊑/)
   case matched (⊑??) of
     Nothing -> throwError' errImproperRx
     Just (rRemL, _, rRemR, rOrigin, idx)  -> do
@@ -963,17 +963,19 @@ extendMetaState
   => Partition -> QTy -> [Int] -> m ([(Var, Ty)], [Maybe (PhaseRef, Ty)])
 extendMetaState p@Partition{ranges} qt dgrs = do
   trace "* extendMetaState"
-  sLoc <- gensymLoc "requires"
+  sLoc <- gensymLoc "receiver"
+  -- "receive" a new locus
   sSt %= (at sLoc ?~ (p, (qt, dgrs)))
   let xMap = [ (v, [(r, sLoc)]) | r@(Range v _ _) <- ranges ]
   let sLocus = Locus{loc=sLoc, qty=qt, part=p, degrees=dgrs}
   (edL, rEd) <- genEmStFromLocus sLocus
+
   let eds = snd <$> rEd
   -- bdsEmit <- genEmStByRangesSansPhase qt (unpackPart p)
   -- ptys <- allocPhaseType (Locus (sLoc, p, (qt, dgrs)))
   vsEmit <- visitEms evBasis eds
   -- FIXME: redesign dgrs in Locus so that len(dgrs)==1+len(ranges)
-  let ptys = selectPhase <$> (edL : eds)
+  let ptys = evPhaseRef <$> (edL : eds)
   trace "* Die?"
   xSt %= Map.unionWith (++) (Map.fromListWith (++) xMap)
   return (vsEmit, ptys)

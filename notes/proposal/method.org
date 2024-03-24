@@ -7,7 +7,7 @@ To encode frame conditions, the pillar of conditionals, a straightforward
 approach is compile statements in a new frame as a new Dafny =method=.
 # 
 Here'e a challenge:
-
+# 
 =qreg=​s are expanded into its pure data representation such as =seq<nat>= and
 =seq<seq<nat>>= after compilation without using heap-allocated objects.
 # 
@@ -55,9 +55,12 @@ as followed.
 
 #+begin_src haskell
 data MethodType = MethodType
-  { mtSrcParams :: [MethodElem]
-  , mtSrcReturns :: [MethodElem]
-  , mtInstantiate :: Map.Map Var Range -> [(Partition, QTy)]
+  -- Parameters for the source method (Type resolution level)
+  { mtSrcParams   :: [MethodElem]
+  , mtSrcReturns  :: [MethodElem]
+  , mtInstantiate :: Map.Map Var Range -> [(Partition, QTy, Maybe Int)]
+  , mtReceiver    :: Map.Map Var Range -> [(Partition, QTy, Maybe Int)]
+  -- , mtDebugInit :: [(Partition, QTy)]
   }
 
 data MethodElem
@@ -73,7 +76,14 @@ and returns partition-level typing requirements to be satisfied.
 The instantiator is deterministic, and therefore can determine the order of
 quantum states to be passed into the compiled method. 
 
+** Calling Conventions
+Calling convention is defined by extracting all range, phase, and amplitude
+representations for the current locus inferred from the instantied entanglement
+tuple and placing them at the end of the argument list. 
+
 ** Input
+/This section is not how the current implementation works./
+
 #+begin_src racket
   (define-metafunction qafny
     call-conv : x ... -> x ...
@@ -97,6 +107,8 @@ For convenience, those variables are put after non-quantum parameters.
 #
 
 ** Output
+/This section is not how the current implementation works./
+
 #+begin_src racket
   (define-metafunction qafny
     call-conv-ret : x ... -> x ...

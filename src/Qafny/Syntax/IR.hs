@@ -23,9 +23,6 @@ import           Text.Printf
 --------------------------------------------------------------------------------
 -- High-Order Types
 --------------------------------------------------------------------------------
--- TODO: refactor STuple to a Record
-newtype STuple = STuple { unSTup :: (Loc, Partition, (QTy, [Int])) }
-
 -- TODO: Migrate to Locus representation
 data Locus =
   Locus { loc     :: Loc       -- * identifier for the locus
@@ -35,9 +32,46 @@ data Locus =
         }
   deriving (Show, Eq)
 
-instance Show STuple where
-  show (STuple (loc, s, qt)) =
-    printf " <%s :: %s ↦ %s>" (show loc) (show qt) (show s)
+
+--------------------------------------------------------------------------------
+-- Methods
+--------------------------------------------------------------------------------
+data MethodElem
+  = MTyPure Var Ty
+  | MTyQuantum Var Exp'
+  deriving (Show, Eq, Ord)
+
+data MethodType = MethodType
+  -- Parameters for the source method (Type resolution level)
+  { mtSrcParams   :: [MethodElem]
+  , mtSrcReturns  :: [MethodElem]
+  , mtInstantiate :: Map.Map Var Range -> [(Partition, QTy, Maybe Int)]
+  , mtReceiver    :: Map.Map Var Range -> [(Partition, QTy, Maybe Int)]
+  -- , mtDebugInit :: [(Partition, QTy)]
+  }
+
+instance Show MethodType where
+  show MethodType {mtSrcParams=ts, mtSrcReturns=ts'} =
+    show ts ++ "\n" ++ show ts'
+
+
+newtype MTy = MTy { unMTy :: Ty :+: MethodType }
+
+instance Show MTy where
+  show (MTy (Inl t)) = show t
+  show (MTy (Inr m)) = show (mtSrcParams m) ++ show (mtSrcReturns m)
+
+projTy :: MTy -> Maybe Ty
+projTy = projLeft . unMTy
+
+projMethodTy :: MTy -> Maybe MethodType
+projMethodTy = projRight . unMTy
+
+instance Injection Ty MTy where
+  inj = MTy . inj
+
+instance Injection MethodType MTy where
+  inj = MTy . inj
 
 --------------------------------------------------------------------------------
 -- General
@@ -90,7 +124,7 @@ instance Show TState where
             (intercalate "\n    " . map show . Map.toList) (st ^. xSt) ++
             "\n  Partition State:\n    " ++
             (intercalate "\n    " .
-             map show . ((\(x, (y,z)) -> STuple (x, y, z)) <$>) . Map.toList)
+             map show . ((\(x, (y,z)) -> (x, y, z)) <$>) . Map.toList)
             (st ^. sSt) ++
             "\n  Renaming State:\n    " ++
             (intercalate "\n    " . map show . Map.toList) (st ^. emitSt)

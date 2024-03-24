@@ -29,13 +29,15 @@ import           Qafny.Syntax.EmitBinding
 import           Qafny.Syntax.IR
 import           Qafny.TypeUtils
     (tyKetByQTy)
-import           Qafny.Typing.Typing
+
+import           Data.Foldable
+    (Foldable (toList))
+import           Qafny.Typing.Method
     (collectPureBindings)
 import           Qafny.Utils.EmitBinding
     (findEmitBasesByRanges, gensymBinding)
 import           Qafny.Utils.Utils
     (dumpSt)
-import Data.Foldable (Foldable(toList))
 
 -- * Method related definitions
 
@@ -112,4 +114,4 @@ codegenMethodParams
 codegenPhaseBinding :: PhaseRef -> Ty -> [Binding']
 codegenPhaseBinding PhaseRef{prBase, prRepr} ty =
   [ Binding prBase TNat , Binding prRepr ty ]
-  
+

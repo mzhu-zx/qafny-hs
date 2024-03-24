@@ -89,24 +89,6 @@ data Ty
   | TEmit EmitTy
   deriving (Show, Eq, Ord)
 
-data MethodElem
-  = MTyPure Var Ty
-  | MTyQuantum Var Exp'
-  deriving (Show, Eq, Ord)
-
-data MethodType = MethodType
-  -- Parameters for the source method (Type resolution level)
-  { mtSrcParams   :: [MethodElem]
-  , mtSrcReturns  :: [MethodElem]
-  , mtInstantiate :: Map.Map Var Range -> [(Partition, QTy, [Maybe Int])]
-  , mtReceiver    :: Map.Map Var Range -> [(Partition, QTy, [Maybe Int])]
-  -- , mtDebugInit :: [(Partition, QTy)]
-  }
-
-instance Show MethodType where
-  show MethodType {mtSrcParams=ts, mtSrcReturns=ts'} =
-    show ts ++ "\n" ++ show ts'
-
 -- | EmitExp : Unchecked Types for Codegen Only
 data EmitTy
   = TAny String
@@ -124,25 +106,6 @@ data QTy
   deriving (Show, Eq, Ord)
 
 type Var = String
-
-newtype MTy = MTy { unMTy :: Ty :+: MethodType }
-
-instance Show MTy where
-  show (MTy (Inl t)) = show t
-  show (MTy (Inr m)) = show (mtSrcParams m) ++ show (mtSrcReturns m)
-
-projTy :: MTy -> Maybe Ty
-projTy = projLeft . unMTy
-
-projMethodTy :: MTy -> Maybe MethodType
-projMethodTy = projRight . unMTy
-
-instance Injection Ty MTy where
-  inj = MTy . inj
-
-instance Injection MethodType MTy where
-  inj = MTy . inj
-
 
 
 data Binding x

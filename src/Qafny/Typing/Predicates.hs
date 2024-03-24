@@ -1,26 +1,34 @@
-module Qafny.Typing.Predicates where
+-- | Specification and predicate typechecking
+module Qafny.Typing.Predicates(
+  wfSignatureFromPredicate
+  ) where
 
 -- Effects
 import           Qafny.Effect
 
 -- Qafny
+import           Control.Monad
+    (unless)
 import           Data.Maybe
-    (mapMaybe)
+    (catMaybes, listToMaybe)
 import           Qafny.Syntax.AST
+import           Qafny.Syntax.Emit
+    (showEmit0)
+import           Qafny.TypeUtils
+    (assertPartQTyArity)
 import           Qafny.Typing.Phase hiding
     (throwError')
-import Qafny.TypeUtils (assertPartQTyArity)
+import           Qafny.Utils
+import           Text.Printf
+    (printf)
 
 
--- | Collect entanglement type signature from predicate-ish clauses
--- without checking the well-formedness of the predicate.
-signatureFromPredicate :: Exp' -> Maybe (Partition, QTy, [Int])
-signatureFromPredicate (ESpec s qt pexp) =
-  let degrees = mapMaybe analyzeSpecDegree pexp
-  in Just (s, qt, degrees)
-signatureFromPredicate _                 = Nothing
+throwError'
+  :: ( Has (Error String) sig m )
+  => String -> m a
+throwError' = throwError @String . ("[Typing/Predicates] " ++)
 
-
+--------------------------------------------------------------------------------
 -- | Check if a specification expression has correct corresponding types.
 assertSpecWf :: QTy -> SpecExp -> Bool
 assertSpecWf TNor  SESpecNor{}  = True
@@ -30,7 +38,20 @@ assertSpecWf TEn01 SESpecEn01{} = True
 assertSpecWf _     SEWildcard   = True
 assertSpecWf _     _            = False
 
-assertAssertionWf :: Exp' -> Bool
-assertAssertionWf (ESpec part qty es) =
-  assertPartQTyArity part qty && all (assertSpecWf qty) es
-assertAssertionWf _ = True
+-- | Collect entanglement type signature from predicate-ish clauses
+-- without checking the well-formedness of the predicate.
+wfSignatureFromPredicate
+  :: Has (Error String) sig m
+  => Exp' -> m (Maybe (Partition, QTy, Maybe Int))
+wfSignatureFromPredicate e@(ESpec part qty es) = do
+  unless isWf $
+    throwError' (printf "Specification is not well formed.\n%s" (showEmit0 e))
+  return $ Just (part, qty, degree)
+  where
+    degrees = analyzeSpecDegree <$> es
+    isWf =
+      assertPartQTyArity part qty  -- repr arity matches with qtype
+      && all (assertSpecWf qty) es -- all specs are wf w.r.t. qtype
+      && hasNoDup degrees          -- all phases have the same degree
+    degree = listToMaybe $ catMaybes degrees
+wfSignatureFromPredicate _ = return Nothing

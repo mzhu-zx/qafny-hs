@@ -8,6 +8,7 @@
 module Qafny.Syntax.Emit where
 
 import           Qafny.Syntax.AST
+import           Qafny.Syntax.IR
 
 import           Control.Arrow
     (Arrow (first))
@@ -19,8 +20,6 @@ import           Data.Sum
 import           Data.Text.Lazy
     (Text, unpack)
 import qualified Data.Text.Lazy.Builder as TB
-import           Qafny.Syntax.IR
-    (Locus (..), STuple (..))
 
 -------------------- Builder --------------------
 
@@ -325,10 +324,6 @@ instance DafnyPrinter Partition where
 
 instance DafnyPrinter Loc where
   build = build . deref
-
-instance DafnyPrinter STuple where
-  build st@(STuple (l, p, (qty, dgrs))) = debugOnly st $
-    l <+> "↦" <+> p <+> "::" <+> qty <+> withBracket (byComma dgrs)
 
 instance DafnyPrinter Locus where
   build st@(Locus {loc=l, part=p, qty, degrees=dgrs}) = debugOnly st $

@@ -183,10 +183,10 @@ queryPhase
 queryPhase Locus{loc, part=Partition{ranges}, qty, degrees}
   | isEN qty = do
       dgr <- onlyOne throwError' degrees
-      singleton . selectPhase <$> findEm (inj loc)
+      singleton . evPhaseRef <$> findEm (inj loc)
   | otherwise = do
       haveSameLength ranges degrees
-      sequence [ selectPhase <$> findEm (inj r) | r <- ranges ]
+      sequence [ evPhaseRef <$> findEm (inj r) | r <- ranges ]
 
 -- | Query in the emit state the phase types of the given Locus
 queryPhaseRef

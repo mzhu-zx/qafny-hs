@@ -9,7 +9,7 @@ module Qafny.Effect
   , module Effect.Gensym
   , GensymEmitterWithState, GensymEmitterWithStateError, StateMayFail
   , GensymMeta
-  , HasResolution, GenConditionally
+  , HasResolution, GenConditionally, MayFail
   ) where
 
 -- | Re-export useful effects to avoid cluttered imports in other modules
@@ -53,3 +53,6 @@ type HasResolution sig m =
 -- context corresponds to.
 type GenConditionally sig m =
   Has (Reader Bool) sig m
+
+type MayFail sig m =
+  Has (Error String) sig m

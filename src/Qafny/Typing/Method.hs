@@ -12,11 +12,11 @@ import           Qafny.Partial
     (Reducible (reduce))
 import           Qafny.Syntax.AST
 import           Qafny.Syntax.Emit
-    (showEmitI, showEmit0, byLineT)
+    (showEmitI, showEmit0, byLineT, byComma)
 import           Qafny.Syntax.EmitBinding
 import           Qafny.Syntax.IR
 import           Qafny.Utils.Utils
-    (errTrace)
+    (errTrace, trd)
 
 import           Qafny.Utils.EmitBinding
 
@@ -24,26 +24,22 @@ import           Qafny.Utils.EmitBinding
 import           Control.Carrier.State.Lazy
     (execState, runState)
 import           Control.Monad
-    (forM, forM_, mapAndUnzipM, unless, zipWithM, when)
-import           Data.Bifunctor
-    (Bifunctor (second))
-import           Data.Functor
-    ((<&>))
+    (forM, forM_, unless, zipWithM, when)
 import           Data.Functor.Identity
 import qualified Data.Map.Strict            as Map
 import           Data.Maybe
-    (catMaybes, mapMaybe)
+    (catMaybes)
 import           Data.Sum
 import           Qafny.Typing.Error
     (hdlSCError)
 import           Qafny.Typing.Partial
 import           Qafny.Typing.Predicates
-    (signatureFromPredicate)
 import           Qafny.Typing.Typing
     (checkTypeEq, extendMetaState'Degree, resolvePartition, splitThenCastScheme,
     typingExp, typingPartitionQTy)
 import           Text.Printf
     (printf)
+import Data.Foldable (Foldable(toList))
 
 
 throwError'
@@ -61,22 +57,20 @@ analyzeMethodType
   :: Has (Error String) sig m
   => QMethod () -> m (Var, MethodType)
 analyzeMethodType (QMethod v bds rts rqs ens _) = do
-  
-
-
-
+  sigRqs <- sigsFromClauses rqs
+  sigEns <- sigsFromClauses ens
   let srcParams   = collectRange <$> bds
       srcReturns  = collectRange <$> rts
-      instantiate = flip mkRun rqs
-      receiver    = flip mkRun ens
-  in (v, MethodType { mtSrcParams=srcParams
-                    , mtSrcReturns=srcReturns
-                    , mtInstantiate = instantiate
-                    , mtReceiver = receiver
-                    })
+      instantiate = embedSubst (catMaybes sigRqs)
+      receiver    = embedSubst (catMaybes sigEns)
+  return (v, MethodType { mtSrcParams=srcParams
+                        , mtSrcReturns=srcReturns
+                        , mtInstantiate = instantiate
+                        , mtReceiver = receiver
+                        })
   where
-    mkRun r preds =
-      runIdentity $ runReader r $ forM (mapMaybe signatureFromPredicate preds) go
+    sigsFromClauses cs = wfSignatureFromPredicate `mapM` cs
+    embedSubst sigs r = runIdentity . runReader r $ mapM go sigs
 
     collectRange :: Binding () -> MethodElem
     collectRange (Binding vq (TQReg a)) = MTyQuantum vq (aexpToExp a)
@@ -101,10 +95,9 @@ analyzeMethodType (QMethod v bds rts rqs ens _) = do
           reduce $ Range x' (reduce (l + l')) (reduce (r + l'))
         Nothing               -> rr
 
-
-
 -- | Given an argument, check it against the parameter in the method signature.
-typeCheckEachParameter
+-- Note this function doesn't check the entanglement type information.
+kindCheckEachParameter
   :: ( Has (Error String) sig m'
      , Has (State (Map.Map Var Range)) sig m'
      , Has (Reader IEnv) sig m'
@@ -112,17 +105,17 @@ typeCheckEachParameter
      )
   => Exp' -> MethodElem -> m' (Maybe Exp')
 -- for simple types, check it immediately
-typeCheckEachParameter earg (MTyPure v ty) = do
+kindCheckEachParameter earg (MTyPure v ty) = do
   tyArg <- typingExp earg
   checkTypeEq tyArg ty
   pure (Just earg)
 -- for quantum types, collect the qreg correspondence instead
-typeCheckEachParameter earg (MTyQuantum v cardinality) = do
+kindCheckEachParameter earg (MTyQuantum v cardinality) = do
   qRange@(Range x el er) <-
     case earg of
-      EVar varg                  -> pure $ Range varg 0 cardinality
-      EPartition (Partition [r]) -> pure r
-      _                          -> nonQArgument earg
+      EVar varg -> pure $ Range varg 0 cardinality
+      ERange r  -> pure r
+      _         -> nonQArgument earg
   -- check if the cardinality is fine
   let eCard :: Exp' = er - el
   -- test if the cadinality is known to be the same as the qreg's size
@@ -139,9 +132,15 @@ typeCheckEachParameter earg (MTyQuantum v cardinality) = do
       (showEmitI 0 cardGiven) (showEmitI 0 cardReq)
 
 
--- | Compute the argment map and pure arguments for a given argument list and
--- parameter list. Throw an error if there is any range overlappings among those
--- arguments at the call site.
+-- | Partition arguments into quantum and regular ones and produce
+--
+--   - a map between variable and range represents quantum variable to the
+--     actual range used to instantiate
+--   - a list of arguments for non-quantum parameters
+-- 
+-- The function only kind check arguments against the parameters as well as
+-- potential range overlappings among those arguments at the call site.
+--
 normalizeArguments
   :: ( Has (Error String) sig m
      , Has (Reader IEnv) sig m
@@ -150,7 +149,7 @@ normalizeArguments
   => [Exp'] -> [MethodElem] -> m (Map.Map Var Range, [Exp'])
 normalizeArguments es params = do
   (qmap, pureArgs) <- runState Map.empty $
-    catMaybes <$> zipWithM typeCheckEachParameter es params
+    catMaybes <$> zipWithM kindCheckEachParameter es params
   let rs = Map.elems qmap
   isBot' <- (all (== Just True) .) <$> isBotI
   let hasDuplication = checkRangeDuplication isBot' rs
@@ -173,6 +172,8 @@ checkRangeDuplication isBot' = go
 
 -- | Take in a list of arguments, check against the method signature and resolve
 -- arguments to be emitted w.r.t. the calling convention.
+-- 
+-- This function check not only kind information as well as entanglement types.
 --
 -- Return a map from QVars to ranges passed, arguments to be emitted, and passed
 -- Loci in the caller's context.
@@ -187,38 +188,66 @@ resolveMethodApplicationArgs
       )
   => [Exp']
   -> MethodType
-  -> m (Map.Map Var Range, [Exp'], [(Locus, Maybe SplitScheme, Maybe CastScheme)])
+  -> m ( Map.Map Var Range -- parameter -> range mapping
+       , [Exp']            -- pure args
+       , [Exp']            -- quantum args
+       , [(Maybe SplitScheme, Maybe CastScheme)])
 resolveMethodApplicationArgs es
   MethodType { mtSrcParams=srcParams
              , mtInstantiate=instantiator
              } = errTrace "`resolveMethodApplicationArgs`" $ do
   unless (length es == length srcParams) $
     arityMismatch srcParams
-  (envArgs, pureArgs) <- normalizeArguments es srcParams
-  let inst = instantiator envArgs
+  (qArgMap, pureArgs) <- normalizeArguments es srcParams
+  let inst = instantiator qArgMap -- instantiated partition, qty, and degree
   -- perform qtype check for each argument
-  (resolvedSts, qArgs) <- second concat <$>
-    mapAndUnzipM (uncurry getEmitVarsAfterTyCheck) ((\(a,b,c) -> (a, b)) <$> inst)
-  pure (envArgs, pureArgs ++ qArgs, resolvedSts)
+  (qArgs, schemes) <- resolveInstantiatedQuantumArgs inst
+  pure (qArgMap, pureArgs, qArgs, schemes)
   where
     arityMismatch prs = throwError' $
       "The number of arguments given doesn't match the number of parameters expected by the method."
       ++ printf "Given:\n%s\nExpected:\n%s" (show es) (show prs)
 
+-- | Given an list of instantiated entanglement types, perform splits and casts
+-- and return a list of extracted representations as well as split and cast
+-- schemes requires to do so.
+--
+-- For any instantiation of the same instantiator, the order is guaranteed to be
+-- the same.
+resolveInstantiatedQuantumArgs
+  :: ( HasResolution sig m
+     , GensymMeta sig m
+     , GensymEmitterWithState sig m
+     )
+  => [(Partition, QTy, Maybe Int)]
+  -> m ([Exp'], [(Maybe SplitScheme, Maybe CastScheme)])
+resolveInstantiatedQuantumArgs insts = do
+  locusAndSchemes <- mapM go insts
+  let (loci, schemes) = unzip $ regroup <$> locusAndSchemes
+  unless (and (zipWith checkPhase loci insts)) $
+    errDegreeMismatch loci
+  emits <- mapM extractEmitablesFromLocus loci
+  return (EVar <$> fsts (concat emits), schemes)
+  where
+    regroup (a, b, c) = (a, (b, c))
 
-    -- type check partitions in the typing state
-    getEmitVarsAfterTyCheck part q = errTrace "`getEmitVarsAfterTyCheck`" $ do
-      -- resolve the locus, allowing split/cast conversions
-      sAndMaySC <- case part of
-        Partition [r] -> do
-          st <- resolvePartition part
-          hdlSCError $ splitThenCastScheme st q r
-        _ -> (, Nothing, Nothing) <$> typingPartitionQTy part q
+    -- | type cast and type checks 
+    go (p@(Partition [r]), q, degreeM)  = do
+      -- cast is only feasible for singleton partitions
+      st <- resolvePartition p
+      hdlSCError $ splitThenCastScheme st q r
+    go (p, q, degreeM) =
+      -- use `typingPartitionQTy` to make sure the partition is exact!
+      (, Nothing, Nothing) <$> typingPartitionQTy p q
+  
+    -- | phase type checks
+    checkPhase Locus{degrees} (_, _, methodDegree) =
+      toList methodDegree == degrees
 
-      (sAndMaySC,) <$> (findVisitEms evBasis (inj <$> unpackPart part)
-                        <&> fmap (EVar . fst))
-
-
+    errDegreeMismatch loci = throwError' $
+      printf "Degree mismatch:\n%s\n%s"
+      (byComma (degrees <$> loci))
+      (byComma (trd <$> insts))
 
 -- | Compute the typing state after returning from a method call.
 resolveMethodApplicationRets

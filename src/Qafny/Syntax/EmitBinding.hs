@@ -9,10 +9,12 @@ module Qafny.Syntax.EmitBinding where
 import           Control.Applicative
     (Alternative (..))
 import qualified Data.Map.Strict     as Map
+import           Data.Maybe
+    (catMaybes)
 import           Data.Sum
 import           Qafny.Syntax.AST
--- import           Qafny.Syntax.ASTUtils
---     (getPhaseRefMaybe)
+
+
 -- * EmitBinding related functions
 
 -- | 'EmitData' stores emit variables (a.k.a. data variables) that's supposed to
@@ -32,8 +34,16 @@ mtEmitData = EmitData { evPhaseRef   = Nothing
                       }
 
 
-selectPhase :: EmitData -> Maybe (PhaseRef, Ty)
-selectPhase = evPhaseRef
+-- Extract a list of emitable expressions from an emit data
+extractEmitables :: EmitData -> [(Var, Ty)]
+extractEmitables EmitData{ evPhaseRef, evBasis, evAmp } =
+  maybe []  (uncurry extractRef) evPhaseRef
+  ++
+  catMaybes  [ evBasis, evAmp ]
+  where
+    extractRef PhaseRef{prBase, prRepr} ty =
+      [(prBase, TNat), (prRepr, ty)]
+
 
 -- Merge two EmitData pairwise and prefer the 'Just'-fields or the latter one if
 -- both are fields 'Just'
@@ -68,9 +78,9 @@ instance Show EmitBinding where
 -- | Emitter : the thing used to perform Gensym
 data Emitter
   = EmBaseSeq Range Ty               -- ^ Base  seq per range
-  | EmPhaseSeq (Range :+: Loc) Int   -- ^ Phase Seq per range/loc with degree
-  | EmPhaseBase (Range :+: Loc)      -- ^ Phase Base per range/loc with degree
-  -- TODO: I may need to add a Phase Index here
+  | EmPhaseSeq Loc Int               -- ^ Phase Seq per range/loc with degree
+  | EmPhaseBase Loc                  -- ^ Phase Base per range/loc with degree
+    -- TODO: I may need to add a Phase Index here
   | EmAmplitude Loc QTy              -- ^ Amplitude?
   | EmAnyBinding Var Ty              -- ^ Anything like a binding
   deriving (Show)

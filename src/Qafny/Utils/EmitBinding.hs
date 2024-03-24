@@ -22,14 +22,13 @@ module Qafny.Utils.EmitBinding
   , findEm, findEms
   , visitEm, visitEms, visitEmBasis, visitEmsBasis
   , findVisitEm, findVisitEms
-  , findVisitEmsBasis
   , findEmitBasesByRanges, findEmitBasisByRange
     -- * Deletion
   , deleteEm, deleteEms, deleteEmPartition
     -- * Update
   , appendEmSt
     -- * Helper
-  , fsts
+  , fsts, extractEmitablesFromLocus
   )
 where
 
@@ -58,6 +57,7 @@ import           Qafny.TypeUtils
 import           Qafny.Utils.Utils
     (errTrace, haveSameLength, onlyOne)
 import Data.Maybe (catMaybes)
+import Qafny.Syntax.EmitBinding (extractEmitables)
 
 --------------------------------------------------------------------------------
 -- * Gensym Utils
@@ -89,14 +89,12 @@ genKet qty range =
     go ty = (,ty) <$> gensym (EmBaseSeq range ty)
     tyKets = tyKetByQTy qty
 
+-- | Generate a phase representation
+-- TODO: a lot of redundency from changes, refactor this 
 genPhase
   :: Has (Gensym Emitter) sig m
-  => QTy -> Int -> RangeOrLoc -> m (Maybe (PhaseRef, Ty))
-genPhase qty _ (Inl _)
-  | qty `elem` [TEn, TEn01, TQft ] =
-    -- TODO: require all phases to be managed by loc
-    -- Phases of entangled types are managed by its loc, instead of range
-    return Nothing
+  => QTy -> Int -> Loc -> m (Maybe (PhaseRef, Ty))
+genPhase TNor _ loc = return Nothing
 genPhase _ 0 _ = return Nothing
 genPhase _ n r
   | n < 0 = return Nothing
@@ -123,8 +121,7 @@ genEmStByRange qt i r = do
 genEmByRange :: (Has (Gensym Emitter) sig m) => QTy -> Int -> Range -> m EmitData
 genEmByRange qt i r = do
   b <- genKet qt r
-  p <- genPhase qt i (inj r)
-  let ed =  EmitData { evPhaseRef   = p
+  let ed =  EmitData { evPhaseRef   = Nothing
                      , evBasis      = b
                      , evAmp        = Nothing -- amplitude is not managed by range
                      }
@@ -153,7 +150,8 @@ genEmStByLoc
   => Loc -> Int -> QTy -> [(Range, Int)] -> m (EmitData, [(Range, EmitData)])
 genEmStByLoc l iLoc qt ris = do
   rAndEms <- sequence [ (r,) <$> genEmStByRange qt i r | (r, i) <- ris ]
-  p <- genPhase qt iLoc (inj l)
+  p <- genPhase qt iLoc l
+  a <- genAmp qt l
   let edL = mtEmitData { evPhaseRef = p }
   emitSt %= (at (inj l) ?~ edL)
   return ( edL , rAndEms )
@@ -178,12 +176,8 @@ genEmStUpdatePhaseFromLocus
      , Has (Error String) sig m
      )
   => Locus -> m [EmitData]
-genEmStUpdatePhaseFromLocus Locus{loc, part=Partition{ranges=rs}, qty, degrees} = do
-  is' <- if isEN qty
-    then (: repeat (-1)) <$> onlyOne throwError degrees
-    else (-1 : degrees)  <$ haveSameLength degrees rs
-  zipWithM (genEmStUpdatePhase qty) degrees (inj loc : (inj <$> rs))
-
+genEmStUpdatePhaseFromLocus Locus{loc, part=Partition{ranges=rs}, qty, degrees} =
+  zipWithM (genEmStUpdatePhase qty) degrees [loc]
 
 -- | Generate an 'EmitData' w/o Phase, managed by 'emitSt'
 genEmStSansPhaseByLocAndRange
@@ -221,10 +215,10 @@ appendEmSt rl ed = do
 -- | Update an existing `EmitData` by generating a phase from a given degree.
 genEmStUpdatePhase
   :: GensymEmitterWithStateError sig m
-  => QTy -> Int -> RangeOrLoc -> m EmitData
-genEmStUpdatePhase qt i rl  = errTrace "`genEmStUpdatePhase`" $ do
-  evPhaseRef  <- genPhase qt i rl
-  appendEmSt rl (mtEmitData {evPhaseRef})
+  => QTy -> Int -> Loc -> m EmitData
+genEmStUpdatePhase qt i l  = errTrace "`genEmStUpdatePhase`" $ do
+  evPhaseRef  <- genPhase qt i l
+  appendEmSt (inj l) (mtEmitData {evPhaseRef})
 
 genEmStUpdateKets
   :: GensymEmitterWithStateError sig m
@@ -311,3 +305,10 @@ deleteEmPartition l rs =
 -- ** Helpers
 fsts :: [(a, b)] -> [a]
 fsts = (fst <$>)
+
+
+extractEmitablesFromLocus :: StateMayFail sig m => Locus -> m [(Var, Ty)]
+extractEmitablesFromLocus Locus{loc, part} = do
+  emLoc <- findEm (inj loc)
+  emRanges <- (findEm . inj) `mapM` ranges part
+  return $ concatMap extractEmitables (emLoc : emRanges)
