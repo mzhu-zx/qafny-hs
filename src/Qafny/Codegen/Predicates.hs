@@ -28,7 +28,7 @@ import           Qafny.Partial
 import           Qafny.Syntax.AST
 import           Qafny.Syntax.ASTFactory
 import           Qafny.Syntax.IR
-import           Qafny.TypeUtils
+import           Qafny.Typing.Utils
     (isEn)
 import           Qafny.Typing
     (analyzePhaseSpecDegree, extendMetaState, queryPhaseRef, resolvePartition,

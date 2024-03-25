@@ -48,7 +48,7 @@ import           Qafny.Effect
 import           Qafny.Syntax.AST
 import           Qafny.Syntax.EmitBinding
 import           Qafny.Syntax.IR
-import           Qafny.TypeUtils
+import           Qafny.Typing.Utils
     (tyAmp, tyKetByQTy, typingPhaseEmitReprN)
 import           Qafny.Utils.Utils
     (errTrace)

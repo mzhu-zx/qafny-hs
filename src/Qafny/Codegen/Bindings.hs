@@ -11,7 +11,7 @@ module Qafny.Codegen.Bindings where
 import           Qafny.Effect
     (StateMayFail)
 import           Qafny.Syntax.AST
-import           Qafny.TypeUtils
+import           Qafny.Typing.Utils
     (tyKetByQTy)
 import           Qafny.Utils.EmitBinding
 

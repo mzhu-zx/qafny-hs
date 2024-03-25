@@ -27,7 +27,7 @@ import           Qafny.Syntax.ASTFactory
     (mkDeclAssign)
 import           Qafny.Syntax.EmitBinding
 import           Qafny.Syntax.IR
-import           Qafny.TypeUtils
+import           Qafny.Typing.Utils
     (tyKetByQTy)
 
 import           Data.Foldable

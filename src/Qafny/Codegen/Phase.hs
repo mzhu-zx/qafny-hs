@@ -34,7 +34,7 @@ import           Qafny.Syntax.Emit
     (showEmit0)
 import           Qafny.Syntax.EmitBinding
 import           Qafny.Syntax.IR
-import           Qafny.TypeUtils
+import           Qafny.Typing.Utils
 import           Qafny.Typing
     (Promotion (..), PromotionScheme (..), castScheme, queryPhaseRef,
     resolvePartition')

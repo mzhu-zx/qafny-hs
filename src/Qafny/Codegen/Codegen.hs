@@ -64,7 +64,7 @@ import           Qafny.Syntax.Emit
     (DafnyPrinter, byLineT, showEmit0, showEmitI)
 import           Qafny.Syntax.EmitBinding
 import           Qafny.Syntax.IR
-import           Qafny.TypeUtils
+import           Qafny.Typing.Utils
     (emitTypeFromDegree, isEn, tyKetByQTy)
 import           Qafny.Typing
     (allocAndUpdatePhaseType, analyzePhaseSpecDegree, appkEnvWithBds,

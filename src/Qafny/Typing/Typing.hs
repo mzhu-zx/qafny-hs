@@ -34,7 +34,7 @@ import           Qafny.Syntax.Emit
     (byComma, byLineT, showEmit0, showEmitI)
 import           Qafny.Syntax.EmitBinding
 import           Qafny.Syntax.IR
-import           Qafny.TypeUtils
+import           Qafny.Typing.Utils
 import           Qafny.Typing.Phase         hiding
     (throwError')
 import           Qafny.Utils.Utils

@@ -14,7 +14,7 @@ import           Data.Maybe
 import           Qafny.Syntax.AST
 import           Qafny.Syntax.Emit
     (showEmit0)
-import           Qafny.TypeUtils
+import           Qafny.Typing.Utils
     (assertPartQTyArity)
 import           Qafny.Typing.Phase hiding
     (throwError')

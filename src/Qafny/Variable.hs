@@ -13,7 +13,7 @@ module Qafny.Variable where
 import           Data.Sum
 import           Qafny.Syntax.AST
 import           Qafny.Syntax.EmitBinding
-import           Qafny.TypeUtils
+import           Qafny.Typing.Utils
     (tyKetByQTy, tyAmp)
 import           Text.Printf
     (printf)

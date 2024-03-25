@@ -2,7 +2,7 @@
     TupleSections
   , LambdaCase
   #-}
-module Qafny.TypeUtils where
+module Qafny.Typing.Utils where
 
 -- | Pure utility functions related to types
 
