@@ -6,6 +6,7 @@
 {-# LANGUAGE
     MultiWayIf
   , TypeFamilies
+  , LambdaCase
   #-}
 
 module Qafny.Codegen.Predicates(
@@ -44,6 +45,7 @@ import           Qafny.Utils.EmitBinding
 import           Qafny.Utils.Utils
     (haveSameLength, onlyOne)
 import Data.List (sort)
+import Qafny.Syntax.EmitBinding (EmitData)
 
 
 throwError'
@@ -71,9 +73,8 @@ codegenAssertion' (ESpec s qt espec) = do
   -- FIXME: do something seriously when (part /= s) 
   when (sort (ranges part) /= sort (ranges s)) $
     throwError' (printf "Assertion: %s is inconsistent with %s." (show part) (show s))
-  vsEmit <- findEmitBasesByRanges (ranges s)
-  qtys <- queryPhaseRef st
-  codegenSpecExp (zip vsEmit (unpackPart s)) qt espec qtys
+  (locusEd, rangesEd) <- findEmsByLocus st
+  codegenSpecExp locusEd rangesEd espec
 codegenAssertion' e = return [e]
   -- FIXME: what to do if [e] contains an assertion?
 
@@ -83,112 +84,127 @@ codegenAssertion' e = return [e]
 -- partition type; with which, generate expressions (predicates)
 codegenSpecExp
   :: ( Has (Error String) sig m, Has (Reader Bool) sig m )
-  => [((Var, Ty), Range)] -> QTy -> [SpecExp] -> [Maybe (PhaseRef, Ty)] -> m [Exp']
-codegenSpecExp vrs p specs ptys = putOpt $
-  if isEn p
-  then do
-    when (length specs /= 1) $ throwError' $ printf "More then one specs!"
-    pspec <- onlyOne throwError' (phase <$> specs)
-    specPerPartition p (spec (head specs)) pspec
-  else do
-      -- For `nor` and `had`, one specification is given one per range
-    haveSameLength vrs specs
-    concat <$> mapM (specPerRange' p) (zip3 (first fst <$> vrs) specs ptys)
+  => EmitData -> [(Range, EmitData)] -> QTy -> [SpecExp] -> m [Exp']
+codegenSpecExp locusEd rangesEd = go
   where
-    specPerRange' ty (vr, qspec, pty) =
-      specPerRange ty (vr, (spec qspec, phase qspec), pty)
-    specPerRange ty ((v, Range _ el er), (SESpecNor idx eBody, pspec), pty) |
-      ty `elem` [TNor, THad] =
-      -- In x[l .. r]
-      -- @
-      --   forall idx | 0 <= idx < (r - l) :: xEmit[idx] == eBody
-      -- @
-      let eSelect x = x >:@: idx
-          eBound = Just (eIntv idx (ENum 0) (reduce (er - el)))
-          quantifier = EForall (natB idx) eBound . ($ idx)
-          eSize = reduce (er - el)
-      in do
-        ePSpec <- codegenPhaseSpec quantifier eSize pty pspec
-        return $
-         [ eSize `eEq` ECard (EVar v)
-         , quantifier (const (eSelect v `eEq` eBody))
-         ] ++ ePSpec
-    -- specPerRange THad ((v, Range _ el er), (SESpecNor idx eBody, pspec), pty) =
-    --   -- In x[l .. r]
-    --   -- @
-    --   --   forall idx | 0 <= idx < (r - l) :: xEmit[idx] == eBody
-    --   -- @
-    --   let eSelect x = EEmit (ESelect (EVar x) (EVar idx))
-    --       eBound = Just (eIntv idx (ENum 0) (reduce (er - el)))
-    --       quantifier = EForall (natB idx) eBound . ($ idx)
-    --   in do
-    --     ePSpec <- codegenPhaseSpec quantifier pty pspec
-    --     return $
-    --      [ reduce (er - el) `eEq` EEmit (ECard (EVar v))
-    --      , quantifier (const (eSelect v `eEq` eBody))
-    --      ] ++ ePSpec
-    specPerRange _ (_, (SEWildcard, pspec), pty) =
-      return []
-    specPerRange _ e  =
-      errIncompatibleSpec e
+    go TNor specs = do
+      (range, ed) <- onlyOne throwError' rangesEd
+      vKet <- fst <$> visitEmBasis ed
+      let size = Intv 0 (rangeSize range)
+      mapM (codegenSpecExpNor vKet size . seNor)  specs
 
-    specPerPartition TEn (SESpecEn (SpecEn01F idx (Intv l r) eValues)) pspec = do
-      haveSameLength vrs eValues
-      -- In x[? .. ?] where l and r bound the indicies of basis-kets
-      -- @
-      --   forall idx | l <= idx < r :: xEmit[idx] == eBody
-      -- @
-      let eBound = Just $ eIntv idx l r
-          eSize = reduce (r - l)
-          eSelect x = x >:@: idx
-          quantifier = EForall (natB idx) eBound . ($ idx)
-      pty <- onlyOne throwError' ptys
-      ePSpec <- codegenPhaseSpec quantifier eSize pty pspec
-      return $ ePSpec ++ concat
-        [ [ eSize `eEq` ECard (EVar vE)
-          , quantifier (const (EOp2 OEq (eSelect vE) eV)) ]
-        | (((vE, _), _), eV) <- zip vrs eValues
-        , eV /= EWildcard ]
+    errVariableNotFound = printf "%s variable for %s is not found."
 
-    specPerPartition
-      TEn01
-      (SESpecEn01 idxSum (Intv lSum rSum) idxTen (Intv lTen rTen) eValues)
-      pspec
-       = do
-      -- In x[l .. r]
-      -- @
-      --   forall idxS | lS <= idxS < rS ::
-      --   forall idxT | 0 <= idxT < rT - lT ::
-      --   xEmit[idxS][idxT] == eBody
-      -- @
-      -- todo: also emit bounds!
-      haveSameLength vrs eValues
-      pty <- onlyOne throwError' ptys
-      let eBoundSum = Just $ eIntv idxSum lSum rSum
-          eSizeSum = reduce (rSum - lSum)
-          eForallSum = EForall (natB idxSum) eBoundSum . ($ idxSum)
-      ePSpec <- codegenPhaseSpec eForallSum eSizeSum pty pspec
-      return . (ePSpec ++) . concat $ do
-        (((vE, _), Range _ el er), eV) <- bimap (second reduce) reduce<$> zip vrs eValues
-        when (eV == EWildcard) mzero
-        let cardSum = eSizeSum `eEq` ECard (EVar vE)
-        let rTen' = reduce (er - el)
-        let eBoundTen = Just $ eIntv idxTen 0 rTen'
-        let cardTen = rTen' `eEq` ECard (vE >:@: idxSum)
-        let eForallTen = EForall (natB idxTen) eBoundTen
-        let eSel = vE >:@: idxSum >:@: idxTen
-        let eBodys = [ cardTen
-                     , EOp2 OEq eSel eV
-                     ]
-        return $  cardSum : (eForallSum . const . eForallTen <$> eBodys)
-    specPerPartition _ e _ = throwError' $
-      printf "%s is not compatible with the specification %s"
-         (show p) (show e)
 
-    errIncompatibleSpec e = throwError' $
-      printf "%s is not compatible with the specification %s"
-      (show p) (show e)
+  -- if isEn p
+  -- then do
+  --   when (length specs /= 1) $ throwError' $ printf "More then one specs!"
+  --   pspec <- onlyOne throwError' (phase <$> specs)
+  --   specPerPartition p (spec (head specs)) pspec
+  -- else do
+  --     -- For `nor` and `had`, one specification is given one per range
+  --   haveSameLength vrs specs
+  --   concat <$> mapM (specPerRange' p) (zip3 (first fst <$> vrs) specs ptys)
+  -- where
+  --   specPerRange' ty (vr, qspec, pty) =
+  --     specPerRange ty (vr, (spec qspec, phase qspec), pty)
+  --   specPerRange ty ((v, Range _ el er), (SESpecNor idx eBody, pspec), pty) |
+  --     ty `elem` [TNor, THad] =
+  --     -- In x[l .. r]
+  --     -- @
+  --     --   forall idx | 0 <= idx < (r - l) :: xEmit[idx] == eBody
+  --     -- @
+  --     let eSelect x = x >:@: idx
+  --         eBound = Just (eIntv idx (ENum 0) (reduce (er - el)))
+  --         quantifier = EForall (natB idx) eBound . ($ idx)
+  --         eSize = reduce (er - el)
+  --     in do
+  --       ePSpec <- codegenPhaseSpec quantifier eSize pty pspec
+  --       return $
+  --        [ eSize `eEq` ECard (EVar v)
+  --        , quantifier (const (eSelect v `eEq` eBody))
+  --        ] ++ ePSpec
+  --   -- specPerRange THad ((v, Range _ el er), (SESpecNor idx eBody, pspec), pty) =
+  --   --   -- In x[l .. r]
+  --   --   -- @
+  --   --   --   forall idx | 0 <= idx < (r - l) :: xEmit[idx] == eBody
+  --   --   -- @
+  --   --   let eSelect x = EEmit (ESelect (EVar x) (EVar idx))
+  --   --       eBound = Just (eIntv idx (ENum 0) (reduce (er - el)))
+  --   --       quantifier = EForall (natB idx) eBound . ($ idx)
+  --   --   in do
+  --   --     ePSpec <- codegenPhaseSpec quantifier pty pspec
+  --   --     return $
+  --   --      [ reduce (er - el) `eEq` EEmit (ECard (EVar v))
+  --   --      , quantifier (const (eSelect v `eEq` eBody))
+  --   --      ] ++ ePSpec
+  --   specPerRange _ (_, (SEWildcard, pspec), pty) =
+  --     return []
+  --   specPerRange _ e  =
+  --     errIncompatibleSpec e
 
+  --   specPerPartition TEn (SESpecEn (SpecEn01F idx (Intv l r) eValues)) pspec = do
+  --     haveSameLength vrs eValues
+  --     -- In x[? .. ?] where l and r bound the indicies of basis-kets
+  --     -- @
+  --     --   forall idx | l <= idx < r :: xEmit[idx] == eBody
+  --     -- @
+  --     let eBound = Just $ eIntv idx l r
+  --         eSize = reduce (r - l)
+  --         eSelect x = x >:@: idx
+  --         quantifier = EForall (natB idx) eBound . ($ idx)
+  --     pty <- onlyOne throwError' ptys
+  --     ePSpec <- codegenPhaseSpec quantifier eSize pty pspec
+  --     return $ ePSpec ++ concat
+  --       [ [ eSize `eEq` ECard (EVar vE)
+  --         , quantifier (const (EOp2 OEq (eSelect vE) eV)) ]
+  --       | (((vE, _), _), eV) <- zip vrs eValues
+  --       , eV /= EWildcard ]
+
+  --   specPerPartition
+  --     TEn01
+  --     (SESpecEn01 idxSum (Intv lSum rSum) idxTen (Intv lTen rTen) eValues)
+  --     pspec
+  --      = do
+  --     -- In x[l .. r]
+  --     -- @
+  --     --   forall idxS | lS <= idxS < rS ::
+  --     --   forall idxT | 0 <= idxT < rT - lT ::
+  --     --   xEmit[idxS][idxT] == eBody
+  --     -- @
+  --     -- todo: also emit bounds!
+  --     haveSameLength vrs eValues
+  --     pty <- onlyOne throwError' ptys
+  --     let eBoundSum = Just $ eIntv idxSum lSum rSum
+  --         eSizeSum = reduce (rSum - lSum)
+  --         eForallSum = EForall (natB idxSum) eBoundSum . ($ idxSum)
+  --     ePSpec <- codegenPhaseSpec eForallSum eSizeSum pty pspec
+  --     return . (ePSpec ++) . concat $ do
+  --       (((vE, _), Range _ el er), eV) <- bimap (second reduce) reduce<$> zip vrs eValues
+  --       when (eV == EWildcard) mzero
+  --       let cardSum = eSizeSum `eEq` ECard (EVar vE)
+  --       let rTen' = reduce (er - el)
+  --       let eBoundTen = Just $ eIntv idxTen 0 rTen'
+  --       let cardTen = rTen' `eEq` ECard (vE >:@: idxSum)
+  --       let eForallTen = EForall (natB idxTen) eBoundTen
+  --       let eSel = vE >:@: idxSum >:@: idxTen
+  --       let eBodys = [ cardTen
+  --                    , EOp2 OEq eSel eV
+  --                    ]
+  --       return $  cardSum : (eForallSum . const . eForallTen <$> eBodys)
+  --   specPerPartition _ e _ = throwError' $
+  --     printf "%s is not compatible with the specification %s"
+  --        (show p) (show e)
+
+  --   errIncompatibleSpec e = throwError' $
+  --     printf "%s is not compatible with the specification %s"
+  --     (show p) (show e)
+
+codegenSpecExpNor :: Var -> Intv -> SpecNor -> [Exp']
+codegenSpecExpNor vKet bound SpecNorF{norVar, norKet} =
+  EForall (natB norVar) bound equality
+  where
+    equality = (vKet >:@: norVar) `eEq` norKet
 
 -- | Generate a predicates over phases based on the phase type
 --

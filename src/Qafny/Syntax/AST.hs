@@ -218,15 +218,14 @@ deriving instance (Eq (Exp Source))
 deriving instance (Ord (Exp ()))
 deriving instance (Ord (Exp Source))
 
-
 data SpecExpF f
-  = SESpecNor (SpecNorF f)
+  = SESpecNor { seNor :: SpecNorF f }
     -- ^ `⊗ id . e`
-  | SESpecHad (SpecHadF f)
+  | SESpecHad { seHad :: SpecHadF f }
     -- ^ `⊗ id . ω`
-  | SESpecEn (SpecEnF f)
+  | SESpecEn { seEn :: SpecEnF f }
     -- ^ `Σ id ∈ intv . ω ~ e`
-  | SESpecEn01 (SpecEn01F f)
+  | SESpecEn01 { seEn01 :: SpecEn01F f }
     -- ^ `Σ id1 ∈ intv1 . ⊗ id2 . ω ~ e`
   | SEWildcard
     -- ^ `_`

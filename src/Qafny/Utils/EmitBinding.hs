@@ -19,6 +19,7 @@ module Qafny.Utils.EmitBinding
   , visitEm, visitEms, visitEmBasis, visitEmsBasis
   , findVisitEm, findVisitEms
   , findEmitBasesByRanges, findEmitBasisByRange
+  , findEmsByLocus
     -- * Deletion
   , deleteEm, deleteEms, deleteEmPartition
     -- * Update
@@ -214,6 +215,13 @@ findEm rl = do
 
 findEms :: StateMayFail sig m => [RangeOrLoc] -> m [EmitData]
 findEms = mapM findEm
+
+findEmsByLocus :: ( StateMayFail sig m , Traversable t)
+               => LocusT t -> m (EmitData, t (Range, EmitData))
+findEmsByLocus Locus{loc, part=Partition{ranges}, qty, degrees} = do
+  liftM2 (,) (findEm (inj loc)) (mapM perRange ranges)
+  where
+    perRange r = (r,) <$> findEm (inj r)
 
 
 -- | Find the EmitData and visit it with an accessor

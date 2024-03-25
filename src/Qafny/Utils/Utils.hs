@@ -65,7 +65,6 @@ onlyOne throw v =
     [v'] -> return v'
     _    -> throw $ printf "Expecting only one element, but given: %s!" (show v)
 
-
 throwError''
   :: ( Has (Error String) sig m )
   => String -> m a

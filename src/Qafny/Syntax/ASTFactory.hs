@@ -114,6 +114,9 @@ callMaps f es = EEmit (ECall "Map" (f : es))
 mkCard :: AstInjection a Exp' => a -> Exp'
 mkCard = injAst . ECard . injAst
 
+rangeSize :: Range -> Exp'
+rangeSize (Range _ l r) = r - l
+
 mkAssignment ::  Var -> Var -> Stmt'
 mkAssignment v1 v2 = v1 ::=: EVar v2
 

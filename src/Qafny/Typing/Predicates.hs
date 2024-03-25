@@ -38,6 +38,7 @@ assertSpecWf TEn01 SESpecEn01{} = True
 assertSpecWf _     SEWildcard   = True
 assertSpecWf _     _            = False
 
+
 -- | Collect entanglement type signature from predicate-ish clauses
 -- without checking the well-formedness of the predicate.
 wfSignatureFromPredicate
