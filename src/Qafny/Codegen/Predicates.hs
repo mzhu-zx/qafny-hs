@@ -23,27 +23,23 @@ import           Text.Printf
 
 -- Qafny
 import           Qafny.Effect
-import           Qafny.Partial
-    (Reducible (reduce))
 import           Qafny.Syntax.AST
 import           Qafny.Syntax.ASTFactory
 import           Qafny.Syntax.IR
-import           Qafny.Typing.Utils
-    (isEn)
-import           Qafny.Typing
-    (analyzePhaseSpecDegree, extendMetaState, queryPhaseRef, resolvePartition,
-    typingPartitionQTy)
+import Qafny.Typing.Phase ( analyzePhaseSpecDegree )
+import Qafny.Typing.Typing
+    ( resolvePartition, typingPartitionQTy, extendMetaState )
 
 import           Control.Carrier.Reader
     (runReader)
 import           Control.Monad
-    (MonadPlus (mzero), forM, when)
+    (forM, when)
 import           Data.Bifunctor
 import           Qafny.Codegen.Utils
-    (putOpt, runWithCallStack)
+    (runWithCallStack)
 import           Qafny.Utils.EmitBinding
 import           Qafny.Utils.Utils
-    (haveSameLength, onlyOne)
+    (onlyOne)
 import Data.List (sort)
 import Qafny.Syntax.EmitBinding (EmitData)
 
@@ -74,7 +70,7 @@ codegenAssertion' (ESpec s qt espec) = do
   when (sort (ranges part) /= sort (ranges s)) $
     throwError' (printf "Assertion: %s is inconsistent with %s." (show part) (show s))
   (locusEd, rangesEd) <- findEmsByLocus st
-  codegenSpecExp locusEd rangesEd espec
+  codegenSpecExp locusEd rangesEd qt espec
 codegenAssertion' e = return [e]
   -- FIXME: what to do if [e] contains an assertion?
 
