@@ -25,7 +25,7 @@ module Qafny.Utils.EmitBinding
     -- * Update
   , appendEmSt
     -- * Helper
-  , fsts, extractEmitablesFromLocus
+  , fsts, extractEmitablesFromLocus, extractEmitablesFromEds, eraseRanges
   )
 where
 
@@ -155,29 +155,6 @@ genEmStUpdatePhaseFromLocus
 genEmStUpdatePhaseFromLocus Locus{loc, part=Partition{ranges=rs}, qty, degrees} =
   zipWithM (genEmStUpdatePhase qty) degrees [loc]
 
--- -- | Generate an 'EmitData' w/o Phase, managed by 'emitSt'
--- genEmStSansPhaseByLocAndRange
---   :: GensymEmitterWithState sig m
---   => Loc -> QTy -> [Range] -> m (EmitData, [(Range, EmitData)])
--- genEmStSansPhaseByLocAndRange l qt = genEmStByLoc l (-1) qt . ((, -1) <$>)
-
--- {-# INLINE genEmStByRangesSansPhase #-}
--- genEmStByRangesSansPhase
---   :: GensymEmitterWithState sig m
---   => QTy -> [Range] -> m [(Range, EmitData)]
--- genEmStByRangesSansPhase qt = genEmStByRanges qt . ((, -1) <$>)
-
--- -- | Same as `genEmStByRangesSansPhase` but without `Range` indices
--- genEmStByRangesSansPhase'
---   :: GensymEmitterWithState sig m
---   => QTy -> [Range] -> m [EmitData]
--- genEmStByRangesSansPhase' qt = ((snd <$>) <$>) . genEmStByRanges qt . ((, -1) <$>)
-
--- genEmStSansPhaseByRanges
---   :: GensymEmitterWithState sig m
---   => QTy -> [Range] -> m [(Range, EmitData)]
--- genEmStSansPhaseByRanges = genEmStByRangesSansPhase
-
 -- | Append the given `EmitData` to the given entry.
 appendEmSt
   :: StateMayFail sig m
@@ -222,7 +199,6 @@ findEmsByLocus Locus{loc, part=Partition{ranges}, qty, degrees} = do
   liftM2 (,) (findEm (inj loc)) (mapM perRange ranges)
   where
     perRange r = (r,) <$> findEm (inj r)
-
 
 -- | Find the EmitData and visit it with an accessor
 visitEm :: Has (Error String) sig m => (EmitData -> Maybe a) -> EmitData -> m a
@@ -292,3 +268,10 @@ extractEmitablesFromLocus Locus{loc, part} = do
   emLoc <- findEm (inj loc)
   emRanges <- (findEm . inj) `mapM` ranges part
   return $ concatMap extractEmitables (emLoc : emRanges)
+
+extractEmitablesFromEds :: EmitData -> [(Range, EmitData)] -> [(Var, Ty)]
+extractEmitablesFromEds eds rEds =
+  concatMap extractEmitables (eds : (snd <$> rEds))
+
+eraseRanges :: (EmitData, [(Range, EmitData)]) -> [EmitData]
+eraseRanges (ed, eds) = ed : (snd <$> eds)

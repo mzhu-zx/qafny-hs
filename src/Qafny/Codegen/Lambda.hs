@@ -31,7 +31,6 @@ import           Qafny.Effect
 import           Qafny.Syntax.AST
 import           Qafny.Syntax.ASTFactory
 import           Qafny.Syntax.IR
-    (Locus (..))
 import           Qafny.Typing
     (promotionScheme, resolvePartition', splitThenCastScheme)
 import           Qafny.Typing.Error
@@ -114,7 +113,7 @@ codegenUnaryLambda rLhs rResolved locus qtLambda
     -- a function to be applied to a map that manipulates a sequence of
     -- sequences.
     bodyOnly v el er f = -- v[0..el] + Map(f, v[el..er]) + v[er..]
-      sliceV v 0 el + callMap f (sliceV v el er) + sliceV v er (mkCard v)
+      (v >:@@: (0 :: Exp', el)) + callMap f (v >:@@: (el, er)) + (v >:@@: (er, mkCard v))
 
     -- for the EN01 case
     lambdaSplit v el er =

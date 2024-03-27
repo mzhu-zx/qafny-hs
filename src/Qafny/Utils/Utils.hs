@@ -53,6 +53,9 @@ internalError = error "Internal Error!"
 
 trd :: (a, b, c) -> c
 trd (_, _, c) = c
+
+third :: (c -> d) -> (a, b, c) -> (a, b, d)
+third f (a, b, c) = (a, b, f c)
 --------------------------------------------------------------------------------
 
 onlyOne
@@ -186,3 +189,4 @@ hasNoDup [] = True
 hasNoDup (x:xs) = foldr go True xs
   where
     go x' ans = x == x' && ans
+

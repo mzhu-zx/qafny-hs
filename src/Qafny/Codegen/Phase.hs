@@ -174,7 +174,7 @@ codegenQft locusEn locusQft = do
   (PhaseRef{prRepr=vpEn, prBase=vbEn}, tpEn) <- visitEm evPhaseRef edLocus
 
   -- update phase ed
-  edLocus' <- genEmStUpdatePhase (qty locusQft) qftDegree iloc
+  edLocus' <- genEmStUpdatePhase (qty locusQft) qftDegree loc
   -- find phase variables from generated phases
   (PhaseRef{prRepr=vpFresh, prBase=vbFresh}, tpFresh) <-
     visitEm evPhaseRef edLocus'

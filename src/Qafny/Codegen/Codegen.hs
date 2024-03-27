@@ -35,23 +35,24 @@ import           Qafny.Gensym
 import           Control.Lens
     (at, non, (%~), (?~), (^.))
 import           Control.Monad
-    (MonadPlus (mzero), forM, forM_, liftM2, unless, when)
+    (forM, forM_, unless)
 
 import           Data.Bifunctor
 import           Data.Functor
     ((<&>))
+import           Data.Functor.Identity
 import           Data.List.NonEmpty
     (NonEmpty (..))
 import qualified Data.Map.Strict              as Map
 import           Data.Maybe
-    (catMaybes, mapMaybe)
+    (mapMaybe)
 import qualified Data.Sum                     as Sum
 import           Text.Printf
     (printf)
 
 -- Qafny
 import           Qafny.Codegen.Utils
-    (putOpt, runWithCallStack)
+    (runWithCallStack)
 
 import           Qafny.Config
 import           Qafny.Interval
@@ -61,31 +62,28 @@ import           Qafny.Partial
 import           Qafny.Syntax.AST
 import           Qafny.Syntax.ASTFactory
 import           Qafny.Syntax.Emit
-    (DafnyPrinter, byLineT, showEmit0, showEmitI)
+    (byLineT, showEmit0, showEmitI)
 import           Qafny.Syntax.EmitBinding
 import           Qafny.Syntax.IR
-import           Qafny.Typing.Utils
-    (emitTypeFromDegree, isEn, tyKetByQTy)
 import           Qafny.Typing
-    (allocAndUpdatePhaseType, analyzePhaseSpecDegree, appkEnvWithBds,
-    checkSubtype, checkSubtypeQ, collectConstraints, collectMethodTypes,
-    collectPureBindings, extendMetaState, matchEmitStatesVars,
-    matchStateCorrLoop, mergeCandidateHad, mergeLociHadEN, mergeMatchedTState,
-    mergeScheme, queryPhase, queryPhaseRef, removeTStateByLocus,
-    resolveMethodApplicationArgs, resolveMethodApplicationRets,
-    resolvePartition, resolvePartition', resolvePartitions, retypePartition1,
-    specPartitionQTys, splitScheme, splitSchemePartition, splitThenCastScheme,
-    tStateFromPartitionQTys, typingExp, typingGuard, typingPartition,
-    typingPartitionQTy)
+    (appkEnvWithBds,
+    checkSubtype, checkSubtypeQ, collectConstraints,
+    matchEmitStatesVars, matchStateCorrLoop, mergeCandidateHad, mergeLociHadEN,
+    mergeMatchedTState, mergeScheme,
+    removeTStateByLocus, resolvePartition, resolvePartition', resolvePartitions,
+    retypePartition1, splitScheme, splitSchemePartition, splitThenCastScheme,
+    tStateFromPartitionQTys, typingExp, typingGuard, typingPartition)
+import           Qafny.Typing.Utils
+    (emitTypeFromDegree, isEn)
 
 import           Data.Sum
     (Injection (inj))
-import           Qafny.Codegen.Bindings
-    (findEmitBindingsFromPartition)
+import           Qafny.Codegen.Common
+    (codegenAssignEmitData)
 import           Qafny.Codegen.Lambda
     (codegenLambdaEntangle, codegenUnaryLambda)
 import           Qafny.Codegen.Method
-    (codegenMethodParams, genEmitSt)
+    (codegenMethodParams, codegenMethodReturns, genEmitSt)
 import           Qafny.Codegen.Phase
     (codegenApplyQft)
 import           Qafny.Codegen.Predicates
@@ -93,14 +91,18 @@ import           Qafny.Codegen.Predicates
 import           Qafny.Codegen.SplitCast      hiding
     (throwError')
 import           Qafny.Typing.Error
+import           Qafny.Typing.Method
+    (collectMethodTypes, resolveMethodApplicationArgs,
+    resolveMethodApplicationRets)
+import           Qafny.Typing.Predicates
+    (dropSignatureSpecs, wfSignatureFromPredicates)
 import           Qafny.Typing.Range
     (areRangesEquiv)
 import           Qafny.Utils.EmitBinding
 import           Qafny.Utils.TraceF
     (Traceable (tracef))
 import           Qafny.Utils.Utils
-    (both, bothM, dumpSt, fst2, gensymLoc, getMethodType, haveSameLength,
-    onlyOne, uncurry3)
+    (both, bothM, dumpSt, gensymLoc, getMethodType)
 
 first3 :: (a -> d) -> (a, b, c) -> (d, b, c)
 first3 f (a, b, c) = (f a, b, c)
@@ -260,11 +262,10 @@ codegenToplevel'Method q@(QMethod vMethod bds rts rqs ens (Just block)) = runWit
 
     codegenRequiresAndParams mty = do
       trace "* codegenRequiresAndParams"
-      (es, ptys) <- codegenRequires rqs
-      methodBindings <- codegenMethodParams mty ptys
+      (es, eds) <- codegenRequires rqs
       stmtsCopy <- genEmitSt
       dumpSt "genEmitSt"
-      return (es, methodBindings, stmtsCopy)
+      return (es, codegenMethodParams mty eds, stmtsCopy)
 
     codegenMethodBody iEnv =
       runReader iEnv . -- | TODO: propagate parameter constraints
@@ -376,7 +377,7 @@ codegenStmt' (SIf e seps b) = do
   (stG'@Locus{qty=qtG, degrees=ptysG}, pG) <- typingGuard e
   -- perform a split to separate the focused guard range from parition
   (stG, maySplit) <- splitSchemePartition stG' pG
-  stmtsSplit <- codegenSplitEmitMaybe maySplit
+  let stmtsSplit = codegenSplitEmitMaybe maySplit
   -- resolve and collect partitions in the body of the IfStmt
   -- analogous to what we do in SepLogic
   stB'@Locus{part=sB, qty=qtB, degrees=ptysB} <-
@@ -403,16 +404,16 @@ codegenStmt' (SAssert e) =
 codegenStmt' (SCall x eargs) = do
   mtyMaybe <- asks @TEnv (^. kEnv . at x) <&> (>>= projMethodTy)
   mty <- maybe errNoAMethod return mtyMaybe
-  (envArgs, resolvedArgs, rSts) <- resolveMethodApplicationArgs eargs mty
-  stmtsSC <- forM rSts codegenStupleSplitCast
-  forM_ rSts $ removeTStateByLocus . fst3
-  rets <- resolveMethodApplicationRets envArgs mty
+  (rMap, pureArgs, qArgs, schemes, loci) <-
+    resolveMethodApplicationArgs eargs mty
+  stmtsSC <- forM schemes $ uncurry codegenSplitThenCastEmit
+  -- because locis has been called, their type are no longer accurate. the
+  -- actual type is then extracted from the method's `ensures` clauses
+  forM_ loci removeTStateByLocus
+  rets <- resolveMethodApplicationRets rMap mty
   pure $ concat stmtsSC ++
-    [SEmit (fsts rets :*:=: [EEmit (ECall x resolvedArgs)])]
+    [SEmit (fsts rets :*:=: [EEmit (ECall x (pureArgs ++ qArgs))])]
   where
-    fst3 (a, _, _) = a
-    codegenStupleSplitCast (_, mS, mC) =
-      codegenSplitThenCastEmit mS mC
     errNoAMethod = throwError' $
       printf "The variable %s is not referring to a method." x
 
@@ -441,15 +442,12 @@ codegenStmt'Apply
 codegenStmt'Apply (s :*=: EHad) = do
   r <- case unpackPart s of
     [r] -> return r
-    _   -> throwError "TODO: support non-singleton partition in `*=`"
+    _   -> throwError' "TODO: support non-singleton partition in `*=`"
   st@Locus{qty=qt} <- resolvePartition s
   opCast <- opCastHad qt
   -- run split semantics here!
   (stSplit, ssMaybe) <- splitScheme st r
-  stmtsSplit <- case ssMaybe of
-    Nothing -> return []
-    Just ss -> codegenSplitEmit ss
-  -- use sSt >>= \s' -> trace $ printf "[precast] sSt: %s" (show s')
+  let stmtsSplit = maybe [] codegenSplitEmit ssMaybe
   (stmtsSplit ++) <$> castWithOp opCast stSplit THad
   where
     opCastHad TNor = return "CastNorHad"
@@ -578,10 +576,14 @@ codegenStmt'For
 codegenStmt'For (SFor idx boundl boundr eG invs (Just seps) body) = do
   -- statePreLoop: the state before the loop starts
   -- stateLoop:    the state for each iteration
-  (stmtsPreGuard, statePreLoop, stateLoop) <- codegenInit
+  newInvs <- forM invs codegenAssertion
+  infoInv <- wfSignatureFromPredicates invs
+  let infoInvPre = substInfoPre infoInv
+
+  (stmtsPreGuard, statePreLoop, stateLoop) <-
+    codegenInit (dropSignatureSpecs infoInv) (dropSignatureSpecs infoInvPre)
   put stateLoop
   -- generate loop invariants
-  newInvs <- forM invs codegenAssertion
 
   stmtsBody <- local (++ substEnv) $ do
     ask @IEnv >>= trace . printf "Augmented IENV: %s" . show
@@ -599,19 +601,11 @@ codegenStmt'For (SFor idx boundl boundr eG invs (Just seps) body) = do
     -- IEnv for loop constraints
     substEnv = [(idx, boundl :| [boundr - 1])]
 
-    -- AEnv for the precondition of the first iteration
-    -- initEnv = [(idx, boundl)]
-
-    -- errInvMtPart = "The invariants contains no partition."
-    -- errInvPolypart p = printf
-    --   "The loop invariants contains more than 1 partition.\n%s" (show p)
-
-    -- | Partitions and their types collected from the loop invariants
-    invPQts = specPartitionQTys invs
-
-    -- | ... partially evaluted with the index variable substituted by the lower
-    -- bound
-    invPQtsPre = first3 (reduce . substP [(idx, boundl)]) <$> invPQts
+    substInfoPre info = go <$> info
+      where
+        subst' :: forall a . Substitutable a => a -> a
+        subst' = subst [(idx, boundl)]
+        go (p, qt, dgr, specs) = (subst' p, qt, dgr, subst' <$> specs)
 
     -- | the postcondtion of one iteration can be computed bys setting the upper
     -- bound to be the index plus one
@@ -619,8 +613,8 @@ codegenStmt'For (SFor idx boundl boundr eG invs (Just seps) body) = do
 
     -- | Generate code and state for the precondition after which
     -- | we only need to concern those mentioned by the loop invariants
-    codegenInit = do
-      stmtsPreGuard <- invPQtsPre `forM` \(sInv, qtInv, _) -> case sInv of
+    codegenInit infoInv infoInvPre = do
+      stmtsPreGuard <- infoInvPre `forM` \(sInv, qtInv, _) -> case sInv of
         Partition [rInv] -> do
           stInv <- resolvePartition sInv
           (sInvSplit, maySplit, mayCast) <- hdlSCError $
@@ -655,7 +649,7 @@ codegenStmt'For (SFor idx boundl boundr eG invs (Just seps) body) = do
       statePreLoop <- get @TState
 
       -- | Do type inference with the loop invariant typing state
-      stateLoop <- tStateFromPartitionQTys invPQts
+      stateLoop <- tStateFromPartitionQTys infoInv
       -- trace $ printf "statePreLoop: %s\nstateLoop: %s"  (show statePreLoop) (show stateLoop)
 
       -- | pass preLoop variables to loop ones
@@ -724,7 +718,7 @@ codegenFor'Body idx boundl boundr eG body stSep@(Locus{qty=qtSep}) newInvs = do
 
   let psBody = leftPartitions . inBlock $ body
   -- FIXME: what's the difference between pG and sG here?
-  (stG@Locus{ part=sG, qty=qtG }, pG) <- typingGuard eG
+  (stG@Locus{part=sG, qty=qtG }, pG) <- typingGuard eG
   trace $ printf "The guard partition collected from %s is %s" (showEmit0 eG) (showEmit0 pG)
   trace $ printf "From invariant typing, the guard partition is %s from %s" (showEmit0 pG) (show stG)
 
@@ -751,7 +745,7 @@ codegenFor'Body idx boundl boundr eG body stSep@(Locus{qty=qtSep}) newInvs = do
 
       let rG = head (unpackPart pG)
       (stGSplited, maySplit) <- splitScheme stG rG
-      stmtsSplitG <- codegenSplitEmitMaybe maySplit
+      let stmtsSplitG = codegenSplitEmitMaybe maySplit
 
       -- Splitting the guard maintains the invariant of the Had part. It remains
       -- to find a merge candidate of this split guard parition at the end of
@@ -780,18 +774,20 @@ codegenFor'Body idx boundl boundr eG body stSep@(Locus{qty=qtSep}) newInvs = do
         _                         -> throwError' errNoSep
 
       -- 1. save the "false" part to a new variable
-      vsEmitG <- findEmitBasesByRanges $ unpackPart sG
-      redFalseG <- genEmStByRangesSansPhase qtG (ranges sG)
-      vsEmitGFalse <- mapM (visitEmBasis . snd) redFalseG
-      let stmtsSaveFalse = uncurry (stmtAssignSlice (ENum 0) eSep)
-            <$> zip (fsts vsEmitGFalse) (fsts vsEmitG)
-      let stmtsFocusTrue = stmtAssignSelfRest eSep <$> fsts vsEmitG
+      -- FIXME: write general function to replicate EmitData from Locus instead.
+      edsFalse <- findEmsByLocus stG
+      edsSaved@(edSavedL, edsSavedR) <- genEmStFromLocus stG
+      -- vsEmitG <- findEmitBasesByRanges $ unpackPart sG
+      -- redFalseG <- genEmStByRanges qtG (ranges sG)
+      -- vsEmitGFalse <- mapM (visitEmBasis . snd) redFalseG
+      -- let stmtsSaveFalse = uncurry (stmtAssignSlice (ENum 0) eSep)
+      --       <$> zip (fsts vsEmitGFalse) (fsts vsEmitG)
+      let stmtsSaveFalse =
+            codegenAssignEmitData (eraseRanges edsSaved) (eraseRanges edsFalse)
+      -- let stmtsFocusTrue = stmtAssignSelfRest eSep <$> fsts vsEmitG
 
       -- save the current emit symbol table for
       stateIterBegin <- get @TState
-
-      let installEmits rEds =
-            forM_ rEds $ \(r, ed) -> appendEmSt (inj r) ed
 
       -- SOLVEm?
       -- TODO: I need one way to duplicate generated emit symbols in the split
@@ -801,7 +797,7 @@ codegenFor'Body idx boundl boundr eG body stSep@(Locus{qty=qtSep}) newInvs = do
 
       -- compile for the 'false' branch with non-essential statements suppressed
       (tsFalse, (stmtsFalse, vsFalse)) <- runState stateIterBegin $ do
-        installEmits redFalseG
+        installEmits ((inj (loc stG), edSavedL) : (first inj <$> edsSavedR))
         local (const False) $ codegenHalf psBody
 
       -- compile the for body for the 'true' branch
@@ -820,7 +816,7 @@ codegenFor'Body idx boundl boundr eG body stSep@(Locus{qty=qtSep}) newInvs = do
       -- 4. put stashed part back
       return ( []
              , concat [ stmtsSaveFalse
-                      , stmtsFocusTrue
+                      -- , stmtsFocusTrue
                       , [qComment "begin false"]
                       , stmtsFalse
                       , [qComment "end false"]
@@ -838,6 +834,7 @@ codegenFor'Body idx boundl boundr eG body stSep@(Locus{qty=qtSep}) newInvs = do
   let innerFor = SEmit $ SForEmit idx boundl boundr newInvs $ Block stmtsBody
   return $ stmtsPrelude ++ [innerFor]
   where
+    installEmits = mapM (uncurry appendEmSt)
     rsSep = ranges $ part stSep
     inferTsLoopEnd =  subst [(idx, EVar idx + 1)]
     codegenHalf psBody = do
@@ -872,9 +869,9 @@ codegenFor'Body idx boundl boundr eG body stSep@(Locus{qty=qtSep}) newInvs = do
 
 
     errNoSep = "Insufficient knowledge to perform a separation for a EN01 partition "
-    stmtAssignSlice el er idTo idFrom = idTo ::=: sliceV idFrom el er
-    stmtAssignSelfRest eBegin idSelf =
-      stmtAssignSlice eBegin (EEmit . ECard . EVar $ idSelf) idSelf idSelf
+    -- stmtAssignSlice el er idTo idFrom = idTo ::=: sliceV idFrom el er
+    -- stmtAssignSelfRest eBegin idSelf =
+    --   stmtAssignSlice eBegin (EEmit . ECard . EVar $ idSelf) idSelf idSelf
 
 
 -- | Code Generation of a `For` statement with a Had partition
@@ -1019,11 +1016,13 @@ codegenAlloc
 codegenAlloc v e@(EOp2 ONor e1 e2) t@(TQReg _) = do
   let eEmit = EEmit $ EMakeSeq TNat e1 $ constLambda e2
   let rV = Range v (ENum 0) e1
-      sV = partition1 rV
-  (vEmit, _) <- genEmStByRangeSansPhase TNor rV >>= visitEmBasis
+      part = partition1 rV
   loc <- gensymLoc v
   xSt %= (at v . non [] %~ ((rV, loc) :))
-  sSt %= (at loc ?~ (sV, (TNor, [0])))
+  sSt %= (at loc ?~ (Partition [rV], (TNor, [0])))
+  let locus = Locus{ loc, part, qty=TNor, degrees=[] }
+  (edL, Identity (_, edR)) <- genEmStFromLocus locus
+  (vEmit, _) <- visitEmBasis edR
   return $ vEmit ::=: eEmit
 codegenAlloc v e@(EOp2 ONor _ _) _ =
   throwError "Internal: Attempt to create a Nor partition that's not of nor type"
@@ -1074,7 +1073,8 @@ codegenMergeScheme = mapM $ \scheme -> do
       case (qtMain, qtMerged) of
         (TEn01, TNor) -> do
           -- append the merged value (ket) into each kets in the main value
-          (vEmitResult, _) <- genEmStByRangeSansPhase qtMain rResult >>= visitEmBasis
+          -- TODO: use `genEmStFromLocus` for phase compatibility
+          (vEmitResult, _) <- genEmStByRange qtMain rResult >>= visitEmBasis
           vBind <- gensym "lambda_x"
           let stmt = vEmitResult ::=: callMap ef vEmitMain
               ef   = simpleLambda vBind (EVar vBind + EVar vEmitMerged)
@@ -1103,42 +1103,3 @@ codegenMergeScheme = mapM $ \scheme -> do
     merge3 vS vRF vRT = vS ::=: (EVar vRF + EVar vRT)
 
 
-
---------------------------------------------------------------------------------
--- * Specification Related
---------------------------------------------------------------------------------
-
-codegenMethodReturns
-  :: ( Has (State TState) sig m
-     , Has (Gensym Emitter) sig m
-     , Has (Error String) sig m
-     , Has (Reader IEnv) sig m
-     , Has Trace sig m
-     )
-  => MethodType -> m ([Stmt'], [Binding'])
-codegenMethodReturns MethodType{ mtSrcReturns=srcReturns
-                               , mtReceiver=receiver
-                               } = do
-  let pureBds = collectPureBindings srcReturns
-      qVars = [ (v, Range v 0 card) | MTyQuantum v card <- srcReturns ]
-      inst = receiver $ Map.fromList qVars
-  -- perform type checking
-  sts <- forM (fst2 <$> inst) (uncurry typingPartitionQTy)
-  ptys <- concat <$>forM sts queryPhase
-  ptysNew <- concat <$> forM sts allocAndUpdatePhaseType
-  let (stmtsP, bdsP) = unzip $ catMaybes $ zipWith (liftM2 pairEachRef) ptysNew ptys
-  (stmtsAssign, bdsRet) <- (unzip . concat <$>) . forM inst $ uncurry3 genAndPairReturnRanges
-  return (stmtsAssign ++ stmtsP, pureBds ++ bdsRet ++ bdsP)
-  where
-    -- genAndPairReturnRanges
-    --   :: Partition -> QTy -> m [(Stmt', Binding')]
-    genAndPairReturnRanges p qt dgrs = do
-      prevBindings <- findEmitBindingsFromPartition p qt
-      let prevVars = [ v | Binding v _ <- prevBindings ]
-      -- FIXME: remove loc as well!
-      deleteEms (inj<$> ranges p)
-      newVars <- genEmStByRangesSansPhase' qt (ranges p) >>= visitEmsBasis
-      pure $ zipWith pairAndBind newVars prevVars
-    pairEachRef (PhaseRef{prRepr=vNew}, _) (PhaseRef{prRepr=vOld}, ty) =
-      pairAndBind (vNew, ty)  vOld
-    pairAndBind (nv, emitTy) pv = (mkAssignment nv pv, (`Binding` emitTy) nv)

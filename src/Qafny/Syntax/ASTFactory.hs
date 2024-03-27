@@ -68,6 +68,9 @@ natB = (`Binding` TNat)
 eIntv :: Var -> Exp' -> Exp' -> Exp'
 eIntv x l r = EEmit (EOpChained l [(OLe, EVar x), (OLt, r)])
 
+predFromIntv :: Intv -> Var -> Exp'
+predFromIntv (Intv l r) v = eIntv v l r 
+
 ands :: [Exp'] -> Exp'
 ands []       = EBool True
 ands (x : xs) = EEmit (EOpChained x [ (OAnd, x') | x' <- xs ])
@@ -152,3 +155,20 @@ mkSeqConst ty cnt content =
 
 mkPow2 :: (AstInjection a Exp') => a -> Exp'
 mkPow2 e = injAst $ ECall "Pow2" [injAst e]
+
+-- | `forall x : nat | P(x) :: v[x] == e`
+mkForallEq :: Var -> (Var -> Exp') -> Var -> Exp' -> Exp'
+mkForallEq x p v e = EForall (Binding x TNat) (Just (p x)) ((v >:@: x) `eEq` e)
+
+-- | `forall x : t1 | P(x) ::
+--    forall y : t2 | Q(y) :: v[x][y] == e`
+      
+mkForallEq2
+  :: Var -> (Var -> Exp')
+  -> Var -> (Var -> Exp')
+  -> Var -> Exp' -> Exp'
+mkForallEq2 x p y q v e =
+  EForall (Binding x TNat) (Just (p x)) $
+  EForall (Binding y TNat) (Just (q y))
+  ((v >:@: x >:@: y) `eEq` e)
+

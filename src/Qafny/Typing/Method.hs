@@ -16,7 +16,7 @@ import           Qafny.Syntax.Emit
 import           Qafny.Syntax.EmitBinding
 import           Qafny.Syntax.IR
 import           Qafny.Utils.Utils
-    (errTrace, trd)
+    (errTrace, trd, uncurry3)
 
 import           Qafny.Utils.EmitBinding
 
@@ -38,8 +38,8 @@ import           Qafny.Typing.Error
 import           Qafny.Typing.Partial
 import           Qafny.Typing.Predicates
 import           Qafny.Typing.Typing
-    (checkTypeEq, extendMetaState'Degree, resolvePartition, splitThenCastScheme,
-    typingExp, typingPartitionQTy)
+    (checkTypeEq, resolvePartition, splitThenCastScheme,
+    typingExp, typingPartitionQTy, extendState)
 import           Text.Printf
     (printf)
 
@@ -193,7 +193,8 @@ resolveMethodApplicationArgs
   -> m ( Map.Map Var Range -- parameter -> range mapping
        , [Exp']            -- pure args
        , [Exp']            -- quantum args
-       , [(Maybe SplitScheme, Maybe CastScheme)])
+       , [(Maybe SplitScheme, Maybe CastScheme)]
+       , [Locus] )
 resolveMethodApplicationArgs es
   MethodType { mtSrcParams=srcParams
              , mtInstantiate=instantiator
@@ -203,8 +204,8 @@ resolveMethodApplicationArgs es
   (qArgMap, pureArgs) <- normalizeArguments es srcParams
   let inst = instantiator qArgMap -- instantiated partition, qty, and degree
   -- perform qtype check for each argument
-  (qArgs, schemes) <- resolveInstantiatedQuantumArgs inst
-  pure (qArgMap, pureArgs, qArgs, schemes)
+  (qArgs, schemes, loci) <- resolveInstantiatedQuantumArgs inst
+  pure (qArgMap, pureArgs, qArgs, schemes, loci)
   where
     arityMismatch prs = throwError' $
       "The number of arguments given doesn't match the number of parameters expected by the method."
@@ -222,14 +223,14 @@ resolveInstantiatedQuantumArgs
      , GensymEmitterWithState sig m
      )
   => [(Partition, QTy, Maybe Int)]
-  -> m ([Exp'], [(Maybe SplitScheme, Maybe CastScheme)])
+  -> m ([Exp'], [(Maybe SplitScheme, Maybe CastScheme)], [Locus])
 resolveInstantiatedQuantumArgs insts = do
   locusAndSchemes <- mapM go insts
   let (loci, schemes) = unzip $ regroup <$> locusAndSchemes
   unless (and (zipWith checkPhase loci insts)) $
     errDegreeMismatch loci
   emits <- mapM extractEmitablesFromLocus loci
-  return (EVar <$> fsts (concat emits), schemes)
+  return (EVar <$> fsts (concat emits), schemes, loci)
   where
     regroup (a, b, c) = (a, (b, c))
 
@@ -264,12 +265,15 @@ resolveMethodApplicationRets envArgs
              , mtReceiver=receiver
              } = do
   trace "* resolveMethodApplicationRets"
-  qBindings <- concat <$> forM psRet ((fst <$>) . extendMetaState'Degree)
+  
+  emitEds <- psRet `forM` uncurry3 extendState
+  let emitables = uncurry extractEmitablesFromEds `concatMap` emitEds
+
   --TODO: also outputs pure variables here
   -- Sanity check for now:
   let pureArgs = collectPureBindings retParams
   unless (null pureArgs) unimpl
-  return qBindings
+  return emitables
   where
     unimpl = throwError' "Unimplemented: method returns a pure value."
     -- partitions after the method call

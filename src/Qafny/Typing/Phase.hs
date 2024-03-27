@@ -161,9 +161,6 @@ analyzePhaseSpecDegree PhaseOmega{}    = 1
 analyzePhaseSpecDegree PhaseSumOmega{} = 2
 
 
-
-
-
 allocAndUpdatePhaseType
   :: ( Has (Gensym Emitter) sig m
      , Has (State TState) sig m

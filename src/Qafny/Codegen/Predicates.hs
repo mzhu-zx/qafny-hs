@@ -4,20 +4,21 @@
 --------------------------------------------------------------------------------
 
 {-# LANGUAGE
-    MultiWayIf
+    LambdaCase
+  , MultiWayIf
   , TypeFamilies
-  , LambdaCase
   #-}
 
 module Qafny.Codegen.Predicates(
   codegenAssertion, codegenRequires, codegenEnsures
   ) where
 
+
+import           Prelude                  hiding
+    (pred)
+
 -- Effects
-import           Data.Functor
-    ((<&>))
 import           Data.Maybe
-    (catMaybes)
 import           Text.Printf
     (printf)
 
@@ -26,22 +27,29 @@ import           Qafny.Effect
 import           Qafny.Syntax.AST
 import           Qafny.Syntax.ASTFactory
 import           Qafny.Syntax.IR
-import Qafny.Typing.Phase ( analyzePhaseSpecDegree )
-import Qafny.Typing.Typing
-    ( resolvePartition, typingPartitionQTy, extendMetaState )
+import           Qafny.Typing.Typing
+    (extendState, resolvePartition, typingPartitionQTy)
 
 import           Control.Carrier.Reader
     (runReader)
 import           Control.Monad
     (forM, when)
-import           Data.Bifunctor
+import           Data.Functor
+    ((<&>))
+import           Data.Foldable
+    (Foldable (toList), foldrM)
+import           Data.List
+    (sort)
 import           Qafny.Codegen.Utils
     (runWithCallStack)
+import           Qafny.Syntax.EmitBinding
+    (EmitData (EmitData, evPhaseRef, evAmp, evBasis))
+import           Qafny.Typing.Predicates
+    (wfSignatureFromPredicate')
 import           Qafny.Utils.EmitBinding
 import           Qafny.Utils.Utils
     (onlyOne)
-import Data.List (sort)
-import Qafny.Syntax.EmitBinding (EmitData)
+import Control.Arrow (Arrow(second))
 
 
 throwError'
@@ -66,7 +74,7 @@ codegenAssertion'
   => Exp' -> m [Exp']
 codegenAssertion' (ESpec s qt espec) = do
   st@Locus{part, degrees=dgrs} <- typingPartitionQTy s qt
-  -- FIXME: do something seriously when (part /= s) 
+  -- FIXME: do something seriously when (part /= s)
   when (sort (ranges part) /= sort (ranges s)) $
     throwError' (printf "Assertion: %s is inconsistent with %s." (show part) (show s))
   (locusEd, rangesEd) <- findEmsByLocus st
@@ -79,17 +87,32 @@ codegenAssertion' e = return [e]
 -- | Take in the emit variable corresponding to each range in the partition and the
 -- partition type; with which, generate expressions (predicates)
 codegenSpecExp
-  :: ( Has (Error String) sig m, Has (Reader Bool) sig m )
+  :: forall sig m . ( Has (Error String) sig m, Has (Reader Bool) sig m )
   => EmitData -> [(Range, EmitData)] -> QTy -> [SpecExp] -> m [Exp']
 codegenSpecExp locusEd rangesEd = go
   where
+    go :: QTy -> [SpecExp] -> m [Exp']
     go TNor specs = do
       (range, ed) <- onlyOne throwError' rangesEd
       vKet <- fst <$> visitEmBasis ed
-      let size = Intv 0 (rangeSize range)
-      mapM (codegenSpecExpNor vKet size . seNor)  specs
+      return $ codegenSpecExpNor vKet (predFromRange range) . seNor <$> specs
+    go THad specs = do
+      (range, _) <- onlyOne throwError' rangesEd
+      return $ case evPhaseRef locusEd of
+        Nothing -> []
+        Just (ref, _) ->
+          concatMap (codegenSpecExpHad ref (predFromRange range) . seHad) specs
+    go TEn specs = do
+      (vAmp, _) <- visitEm evAmp locusEd
+      let refMaybe = fst <$> evPhaseRef locusEd
+          rvKets = second ((fst <$>) . evBasis) <$> rangesEd
+      return $ concatMap (codegenSpecExpEn vAmp refMaybe rvKets . seEn) specs
+    predFromRange r =
+      let bound = Intv 0 (rangeSize r)
+      in predFromIntv  bound
 
-    errVariableNotFound = printf "%s variable for %s is not found."
+
+    -- errVariableNotFound = printf "%s variable for %s is not found."
 
 
   -- if isEn p
@@ -196,65 +219,101 @@ codegenSpecExp locusEd rangesEd = go
   --     printf "%s is not compatible with the specification %s"
   --     (show p) (show e)
 
-codegenSpecExpNor :: Var -> Intv -> SpecNor -> [Exp']
-codegenSpecExpNor vKet bound SpecNorF{norVar, norKet} =
-  EForall (natB norVar) bound equality
+codegenSpecExpNor :: Var -> (Var -> Exp') -> SpecNor -> Exp'
+codegenSpecExpNor vKet pred SpecNorF{norVar, norKet} =
+  mkForallEq norVar pred vKet norKet
+
+codegenSpecExpHad :: PhaseRef -> (Var -> Exp') -> SpecHad -> [Exp']
+codegenSpecExpHad pr pred SpecHadF{hadVar, hadPhase} =
+  codegenPhaseSpec pr hadVar pred hadPhase
+
+codegenSpecExpEn :: Var -> Maybe PhaseRef -> [(Range, Maybe Var)] -> SpecEn
+                 -> [Exp']
+codegenSpecExpEn vAmp prMaybe rvKets
+  SpecEnF{enVarSup, enIntvSup, enAmpCoef, enPhaseCoef, enKets} =
+  ampPred ++ phasePreds ++ ketPreds
   where
-    equality = (vKet >:@: norVar) `eEq` norKet
+    predIntv = predFromIntv enIntvSup
+
+    ampPred = [ vAmp `eEq` codegenAmpExp enAmpCoef]
+    phasePreds = concat $ prMaybe <&> \pr -> 
+      codegenPhaseSpec pr enVarSup predIntv enPhaseCoef
+    ketPreds = -- TODO: generate mod using Range
+      zipWith perKetExp rvKets enKets
+
+    perKetExp (_, v) EWildcard = EBool True
+    perKetExp (_, Nothing) _ = EBool False -- EMMMMM, I should warn instead
+    perKetExp (_, Just v) eKet = mkForallEq enVarSup predIntv v eKet
+
+codegenAmpExp :: AmpExp -> Exp'
+codegenAmpExp = undefined
+
+codegenPhaseSpec :: PhaseRef -> Var -> (Var -> Exp') -> PhaseExp -> [Exp']
+codegenPhaseSpec PhaseRef{prRepr, prBase} vIdx predIdx = go 
+  where
+  go PhaseWildCard = [EBool True]
+  go PhaseZ = [EBool True]
+  go (PhaseOmega e n) =
+    [ prBase `eEq` n
+    , mkForallEq vIdx predIdx prRepr e ]
+  go (PhaseSumOmega (Range x l r) e n) =
+    [ prBase `eEq` n
+    , mkForallEq2 vIdx predIdx x pred' prRepr e ]
+    where
+      pred' = predFromIntv (Intv l r)
+
 
 -- | Generate a predicates over phases based on the phase type
 --
 -- FIXME: Here's a subtlety: each range maps to one phase type which in the
 -- current specification language is not supported?
-codegenPhaseSpec
-  :: ( Has (Error String) sig m
-     )
-  => ((Var -> Exp') -> Exp') -> Exp' -> Maybe (PhaseRef, Ty) ->  PhaseExp -> m [Exp']
-codegenPhaseSpec _ _ Nothing pe
-  | pe `elem` [ PhaseZ, PhaseWildCard ] =
-      return [] 
-  | otherwise =
-      throwError' $ printf "%s is not a zeroth degree predicate." (show pe)
-codegenPhaseSpec quantifier eSize (Just (ref, _)) (PhaseOmega eK eN) =
-  let assertN = EOp2 OEq eN (EVar (prBase ref))
-      assertK idx = EOp2 OEq eK (prRepr ref >:@: idx)
-      assertKCard = EOp2 OEq eSize (mkCard (prRepr ref))
-  in return [assertN, assertKCard, quantifier assertK ]
+-- codegenPhaseSpec
+--   :: ( Has (Error String) sig m
+--      )
+--   => ((Var -> Exp') -> Exp') -> Exp' -> Maybe (PhaseRef, Ty) ->  PhaseExp -> m [Exp']
+-- codegenPhaseSpec _ _ Nothing pe
+--   | pe `elem` [ PhaseZ, PhaseWildCard ] =
+--       return []
+--   | otherwise =
+--       throwError' $ printf "%s is not a zeroth degree predicate." (show pe)
+-- codegenPhaseSpec quantifier eSize (Just (ref, _)) (PhaseOmega eK eN) =
+--   let assertN = EOp2 OEq eN (EVar (prBase ref))
+--       assertK idx = EOp2 OEq eK (prRepr ref >:@: idx)
+--       assertKCard = EOp2 OEq eSize (mkCard (prRepr ref))
+--   in return [assertN, assertKCard, quantifier assertK ]
 
-codegenPhaseSpec quantifier eSize (Just (ref, _)) (PhaseSumOmega (Range v l r) eK eN) =
-  let assertN = EOp2 OEq eN (EVar (prBase ref))
-      pLength = r - l
-      -- FIXME: emit the length of the 2nd-degree range and get the inner
-      -- quantifier right
-      assertK idx = EForall (Binding v TNat) Nothing 
-                    (eK `eEq` (prRepr ref >:@: v >:@: idx))
-  in return [assertN, quantifier assertK]
-codegenPhaseSpec _ _ _ e =
-  throwError' $ printf "Invalid %s phase." (show e)
+-- codegenPhaseSpec quantifier eSize (Just (ref, _)) (PhaseSumOmega (Range v l r) eK eN) =
+--   let assertN = EOp2 OEq eN (EVar (prBase ref))
+--       pLength = r - l
+--       -- FIXME: emit the length of the 2nd-degree range and get the inner
+--       -- quantifier right
+--       assertK idx = EForall (Binding v TNat) Nothing
+--                     (eK `eEq` (prRepr ref >:@: v >:@: idx))
+--   in return [assertN, quantifier assertK]
+-- codegenPhaseSpec _ _ _ e =
+--   throwError' $ printf "Invalid %s phase." (show e)
 
 -- | Generate predicates for require clauses
 --
 -- This introduces constraints and knowledges into the current context.
 codegenRequires
-  :: ( GensymEmitterWithStateError sig m
+  :: forall m sig .
+     ( GensymEmitterWithStateError sig m
      , GensymMeta sig m
      , Has Trace sig m
      )
-  => [Exp'] -> m ([Exp'], [(PhaseRef, Ty)])
+  => [Exp'] -> m ([Exp'], [EmitData])
 codegenRequires rqs = do
   trace "* codegenRequires"
-  (bimap concat concat . unzip <$>) . forM rqs $ \rq ->
-  -- TODO: I need to check if partitions from different `requires` clauses are
-  -- indeed disjoint!
-    case rq of
-      ESpec s qt espec -> do
-        let pspec = phase <$> espec
-        let dgrs = pspec <&> analyzePhaseSpecDegree
-        (vsEmit, ptys) <- extendMetaState s qt dgrs
-        es <- runReader True $
-          codegenSpecExp (zip vsEmit (unpackPart s)) qt espec ptys
-        return (es, catMaybes ptys)
-      _ -> return ([rq], [])
+  sigs <- catMaybes <$> forM rqs wfSignatureFromPredicate'
+  foldrM go ([], []) sigs
+  where
+    go :: (Partition, QTy, Maybe Int, [SpecExp]) -> ([Exp'], [EmitData])
+       -> m ([Exp'], [EmitData])
+    go (p, qt, ds, specs) (retEs, retEds)= do
+      eds <- extendState p qt (toList ds)
+      es <- runReader True $ uncurry codegenSpecExp eds qt specs
+      return (es ++ retEs, eraseRanges eds ++ retEds)
 
 codegenEnsures
   :: ( Has (State TState)  sig m
@@ -275,5 +334,3 @@ codegenRangeRepr
   => Range -> m (Var, Ty)
 codegenRangeRepr r =
   resolvePartition (Partition [r]) >> findEmitBasisByRange r
-
-

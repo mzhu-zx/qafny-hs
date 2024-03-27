@@ -28,13 +28,16 @@ import           Data.Bifunctor
 -- import           Data.Data
 import           Data.Functor.Foldable
     (Base, Corecursive (embed), Recursive (cata, project))
+import           Data.Functor.Foldable.TH
+    (MakeBaseFunctor (makeBaseFunctor))
+import           Data.Functor.Identity
 import           Data.List.NonEmpty
     (NonEmpty (..))
-import qualified Data.Map.Strict       as Map
+import qualified Data.Map.Strict          as Map
 import           Data.Maybe
     (fromMaybe)
 import           Data.Sum
-import           GHC.Generics          hiding
+import           GHC.Generics             hiding
     ((:+:))
 import           Text.Printf
     (printf)
@@ -110,13 +113,6 @@ type Var = String
 
 data Binding x
   = Binding (XRec x Var) Ty
-
-
-
--- deriving instance (Typeable (Binding Source))
--- deriving instance (Typeable (Binding ()))
--- deriving instance (Data (Binding Source))
--- deriving instance (Data (Binding ()))
 
 deriving instance (Show (XRec x Var), Show (XRec x Ty)) => Show (Binding x)
 deriving instance (Eq (XRec x Var), Eq (XRec x Ty)) => Eq (Binding x)
@@ -194,11 +190,11 @@ deriving instance Ord f => Ord (AmpExpF f)
 
 type AmpExp = AmpExpF Exp'
 
-data PhaseExpF f 
-  = PhaseZ        
-  | PhaseOmega    f f 
-  | PhaseSumOmega Range f f 
-  | PhaseWildCard 
+data PhaseExpF f
+  = PhaseZ                  -- 1
+  | PhaseOmega    f f       -- e / N
+  | PhaseSumOmega Range f f -- sum (x i j) e / N
+  | PhaseWildCard           -- _
   deriving (Functor, Traversable, Foldable)
 
 type PhaseExp = PhaseExpF Exp'
@@ -269,7 +265,7 @@ data SpecEnF f =
           , enIntvSup   :: Intv        -- ^ scope of the enumerator
           , enAmpCoef   :: AmpExpF f   -- ^ amplitude coef
           , enPhaseCoef :: PhaseExpF f -- ^ phase coef
-          , enKet       :: [f]         -- ^ basis ket for each range
+          , enKets      :: [f]         -- ^ basis ket for each range
           }
   deriving (Functor, Foldable, Traversable)
 
@@ -312,7 +308,7 @@ showExp (EOp2 op e1 e2) = showExp e1 ++ sop ++ showExp e2
         _    -> undefined
 showExp e = show e
 
-infixl 5 :@@: 
+infixl 5 :@@:
 infixl 5 :@:
 -- | EmitExp : Unsafe Expressions for Codegen Only
 data EmitExp
@@ -447,8 +443,8 @@ range1 :: Var -> Range
 range1 v = Range v (ENum 0) (ENum 1)
 
 
-partition1 :: Range -> Partition
-partition1 =  Partition . (: [])
+partition1 :: Range -> PartitionT Identity
+partition1 =  Partition . pure
 
 
 -- | Extract all variables for each range in a partition
@@ -566,9 +562,13 @@ instance Substitutable Range where
   subst = substR
   fVars (Range _ e1 e2) = fVars e1 ++ fVars e2
 
+instance Substitutable f => Substitutable (SpecExpF f) where
+  subst = substF
+  fVars = fVarsF
+
 instance (Substitutable a) => Substitutable [a] where
-  subst a = fmap (subst a)
-  fVars = concatMap fVars
+  subst = substF
+  fVars = fVarsF
 
 instance (Substitutable a, Substitutable b) => Substitutable (a, b) where
   subst a = bimap (subst a) (subst a)
@@ -579,6 +579,14 @@ instance Substitutable a => Substitutable (a :+: b) where
   subst _ b       = b
   fVars (Inl r) = fVars r
   fVars _       = []
+
+
+-- lift `subst` to Functor
+substF :: (Substitutable a, Functor f) => AEnv -> f a -> f a
+substF a = (subst a <$>)
+
+fVarsF :: (Substitutable a, Foldable t) => t a -> [Var]
+fVarsF = concatMap fVars
 
 
 substMapKeys :: (Ord k, Substitutable k) => AEnv -> Map.Map k v -> Map.Map k v
@@ -592,10 +600,10 @@ substE [] = id
 substE env = go
   where
     go :: Exp () -> Exp ()
-    go (EVar x)       = EVar x `fromMaybe` lookup x env
-    go (ESpec p q e)  = ESpec (substP env p) q e
-    go (ERange r)     = ERange (substR env r)
-    go e              = embed $ go <$> project e
+    go (EVar x)      = EVar x `fromMaybe` lookup x env
+    go (ESpec p q e) = ESpec (substP env p) q e
+    go (ERange r)    = ERange (substR env r)
+    go e             = embed $ go <$> project e
 
 substP :: AEnv -> Partition -> Partition
 substP [] = id

@@ -38,7 +38,7 @@ import           Qafny.Typing.Utils
 import           Qafny.Typing.Phase         hiding
     (throwError')
 import           Qafny.Utils.Utils
-    (errTrace, exp2AExp, gensymLoc, rethrowMaybe)
+    (errTrace, exp2AExp, gensymLoc, rethrowMaybe, uncurry3)
 
 import           Qafny.Typing.Partial
 import           Qafny.Utils.EmitBinding
@@ -934,46 +934,25 @@ tStateFromPartitionQTys
      )
   => [(Partition, QTy, [Int])] -> m TState
 tStateFromPartitionQTys pqts = execState initTState $ do
-  forM_ pqts extendMetaState'Degree
+  forM_ pqts (uncurry3 extendState)
 
 -- | Extend the typing state with a partition and its type, generate emit
--- symbols for every range in the partition and return all emitted symbols in
+-- symbols for every range in the partition and return all emit data
 -- the same order as those ranges.
-extendMetaState
+extendState
   :: ( Has (Gensym Emitter) sig m
      , Has (Gensym Var) sig m
      , Has (State TState) sig m
-     , Has (Error String) sig m
      , Has Trace sig m
      )
-  => Partition -> QTy -> [Int] -> m ([(Var, Ty)], [Maybe (PhaseRef, Ty)])
-extendMetaState p@Partition{ranges} qt dgrs = do
-  trace "* extendMetaState"
+  => Partition -> QTy -> [Int] -> m (EmitData, [(Range, EmitData)])
+extendState p@Partition{ranges} qt dgrs = do
+  trace "* extendState"
   sLoc <- gensymLoc "receiver"
   -- "receive" a new locus
   sSt %= (at sLoc ?~ (p, (qt, dgrs)))
+  -- update range state
   let xMap = [ (v, [(r, sLoc)]) | r@(Range v _ _) <- ranges ]
-  let sLocus = Locus{loc=sLoc, qty=qt, part=p, degrees=dgrs}
-  (edL, rEd) <- genEmStFromLocus sLocus
-
-  let eds = snd <$> rEd
-  -- bdsEmit <- genEmStByRangesSansPhase qt (unpackPart p)
-  -- ptys <- allocPhaseType (Locus (sLoc, p, (qt, dgrs)))
-  vsEmit <- visitEms evBasis eds
-  -- FIXME: redesign dgrs in Locus so that len(dgrs)==1+len(ranges)
-  let ptys = evPhaseRef <$> (edL : eds)
-  trace "* Die?"
   xSt %= Map.unionWith (++) (Map.fromListWith (++) xMap)
-  return (vsEmit, ptys)
-
-extendMetaState'Degree
-  :: ( Has (Gensym Emitter) sig m
-     , Has (Gensym Var) sig m
-     , Has (State TState) sig m
-     , Has (Error String) sig m
-     , Has Trace sig m
-   )
-  => (Partition, QTy, [Int]) -> m ([(Var, Ty)], [Maybe (PhaseRef, Ty)])
-extendMetaState'Degree (p, qt, ds) =
-  extendMetaState p qt ds
-
+  let sLocus = Locus{loc=sLoc, qty=qt, part=p, degrees=dgrs}
+  genEmStFromLocus sLocus
