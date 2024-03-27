@@ -156,13 +156,11 @@ mkSeqConst ty cnt content =
 mkPow2 :: (AstInjection a Exp') => a -> Exp'
 mkPow2 e = injAst $ ECall "Pow2" [injAst e]
 
--- | `forall x : nat | P(x) :: v[x] == e`
+-- | "forall x : nat | P(x) :: v[x] == e"
 mkForallEq :: Var -> (Var -> Exp') -> Var -> Exp' -> Exp'
 mkForallEq x p v e = EForall (Binding x TNat) (Just (p x)) ((v >:@: x) `eEq` e)
 
--- | `forall x : t1 | P(x) ::
---    forall y : t2 | Q(y) :: v[x][y] == e`
-      
+-- | "forall x : t1 | P(x) :: forall y : t2 | Q(y) :: v[x][y] == e"
 mkForallEq2
   :: Var -> (Var -> Exp')
   -> Var -> (Var -> Exp')

@@ -66,13 +66,12 @@ import           Qafny.Syntax.Emit
 import           Qafny.Syntax.EmitBinding
 import           Qafny.Syntax.IR
 import           Qafny.Typing
-    (appkEnvWithBds,
-    checkSubtype, checkSubtypeQ, collectConstraints,
+    (appkEnvWithBds, checkSubtype, checkSubtypeQ, collectConstraints,
     matchEmitStatesVars, matchStateCorrLoop, mergeCandidateHad, mergeLociHadEN,
-    mergeMatchedTState, mergeScheme,
-    removeTStateByLocus, resolvePartition, resolvePartition', resolvePartitions,
-    retypePartition1, splitScheme, splitSchemePartition, splitThenCastScheme,
-    tStateFromPartitionQTys, typingExp, typingGuard, typingPartition)
+    mergeMatchedTState, mergeScheme, removeTStateByLocus, resolvePartition,
+    resolvePartition', resolvePartitions, retypePartition1, splitScheme,
+    splitSchemePartition, splitThenCastScheme, tStateFromPartitionQTys,
+    typingExp, typingGuard, typingPartition)
 import           Qafny.Typing.Utils
     (emitTypeFromDegree, isEn)
 

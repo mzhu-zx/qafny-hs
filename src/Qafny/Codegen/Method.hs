@@ -27,11 +27,9 @@ import           Data.Functor
 import           Qafny.Effect
 import           Qafny.Syntax.AST
 import           Qafny.Syntax.ASTFactory
-    (mkAssignment, mkDeclAssign)
+    (mkDeclAssign)
 import           Qafny.Syntax.EmitBinding
 import           Qafny.Syntax.IR
-import           Qafny.Typing.Utils
-    (tyKetByQTy)
 
 import           Data.Foldable
     (Foldable (toList))
@@ -39,15 +37,13 @@ import           Qafny.Codegen.Common
     (codegenAssignEmitData)
 import           Qafny.Typing.Method
     (collectPureBindings)
-import           Qafny.Typing.Phase
-    (queryPhase)
 import           Qafny.Typing.Typing
     (typingPartitionQTy)
 import           Qafny.Utils.EmitBinding
-    (eraseRanges, findEmitBasesByRanges, findEmsByLocus, genEmStFromLocus,
-    gensymBinding, extractEmitablesFromEds)
+    (eraseRanges, extractEmitablesFromEds, findEmsByLocus, genEmStFromLocus,
+    gensymBinding)
 import           Qafny.Utils.Utils
-    (dumpSt, fst2)
+    (fst2)
 
 -- * Method related definitions
 
