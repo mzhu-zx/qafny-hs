@@ -64,7 +64,7 @@ This results in a convoluted representation of phase kickback:
                               \sum_{x \in \phi_n} \frac{1}{\sqrt{2}} \ket{x}\ket{1}
                               - \sum_{x \in \phi_n} \frac{1}{\sqrt{2}} \ket{x}\ket{0} \\
     \end{aligned}
-    }nn
+    }
   \\
   =
   & \brs{
@@ -107,17 +107,95 @@ calculus only.
 #
 Generalizing to arbitrary =Had= type, we have
 #+begin_export latex
-\[
-  \sum_{x \in \phi_n} \frac{1}{\sqrt{2}} {\omega_{N}^{k(0+f(x))}} \ket{x}\ket{0}
-  +
-  \sum_{x \in \phi_n} \frac{1}{\sqrt{2}} {\omega_{N}^{k(1-f(x))}} \ket{x}\ket{1}.
-\]
+\begin{align}
+  & U_f \prs{
+    \sum_{x \in \phi_n} \frac{1}{\sqrt{2}} \omega_N^{0} \ket{x} \ket{0}
+    +
+    \sum_{x \in \phi_n} \frac{1}{\sqrt{2}} \omega_N^{k_x} \ket{x} \ket{1}
+    } 
+  \\
+  =
+  & \sum_{x \in \phi_n} \frac{1}{\sqrt{2}} \omega_N^{0} \ket{x} \ket{0 + f(x)}
+    +
+    \sum_{x \in \phi_n} \frac{1}{\sqrt{2}} \omega_N^{k_x} \ket{x} \ket{1 + f(x)}
+  \\
+  = 
+  & \sum_{x \in \phi_n} \frac{1}{\sqrt{2^N}}
+    \brs{
+    \begin{aligned}
+      f(x) = 0 \Rightarrow\ 
+      &
+        \omega_N^{0} \ket{x} \ket{0}
+        +
+        \omega_N^{k_x} \ket{x} \ket{1}
+      \\
+      f(x) = 1 \Rightarrow\ 
+      &
+        \omega_N^{0} \ket{x} \ket{1}
+        +
+        \omega_N^{k_x} \ket{x} \ket{0}
+      \\
+    \end{aligned}
+    }
+  \\
+  =
+  & \sum_{x \in \phi_n} \frac{1}{\sqrt{2^N}}
+    \brs{
+    \begin{aligned}
+      f(x) = 0 \Rightarrow\ 
+      &
+        \omega_N^{0} \ket{x} \ket{0}
+        +
+        \omega_N^{k_x} \ket{x} \ket{1}
+      \\
+      f(x) = 1 \Rightarrow\ 
+      &
+        \omega_N^{k_x} \ket{x}\ket{0}
+        +
+        \omega_N^{0} \ket{x} \ket{1}
+      \\
+    \end{aligned}
+    }
+  \\
+  =
+  & \sum_{x \in \phi_n} \frac{1}{\sqrt{2^N}}
+    \brs{
+    \begin{aligned}
+      f(x) = 0 \Rightarrow\ 
+      &
+        \omega_N^{k_x (0 + 0)} \ket{x} \ket{0}
+        +
+        \omega_N^{k_x (1 - 0)} \ket{x} \ket{1}
+      \\
+      f(x) = 1 \Rightarrow\ 
+      &
+        \omega_N^{k_x (0 + 1)} \ket{x}\ket{0}
+        +
+        \omega_N^{k_x (1 - 1)} \ket{x} \ket{1}
+      \\
+    \end{aligned}
+    }
+  \\
+  \equiv
+  & \sum_{x \in \phi_n} \frac{1}{\sqrt{2^N}} \omega_N^{k_x (0 + f(x))} \ket{x} \ket{0}
+    +
+    \sum_{x \in \phi_n} \frac{1}{\sqrt{2^N}} \omega_N^{k_x (1 - f(x))} \ket{x} \ket{1}
+  \\
+  =
+  & \sum_{x \in \phi_n} \frac{1}{\sqrt{2^N}} \omega_N^{k_x \cdot f(x)} \ket{x} \ket{0}
+    +
+    \sum_{x \in \phi_n} \frac{1}{\sqrt{2^N}} \omega_N^{k_x (1 - f(x))} \ket{x} \ket{1}
+\end{align}
 #+end_export
 #
-For \(\ket{+}\), take \(k = 0\), and the oracle operator is equivalent to
-identity.
-# 
 
+** Effects on Different Phase Degrees
+- Zeroth degree phase corresponds to \(k=0\).  For \(\ket{+}\) where \(k = 0\),
+  and the oracle operator is equivalent to identity.
+- 1st degree phases is exactly what's here.
+
+
+** Entanglement is a Must
 # 
 =Had= type requires the \(\ket{0}\) term to have the phase shift \(1\).
 #

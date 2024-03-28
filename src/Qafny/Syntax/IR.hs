@@ -1,5 +1,7 @@
 {-# LANGUAGE
-    FlexibleInstances
+    DataKinds
+  , FlexibleInstances
+  , GADTs
   , LambdaCase
   , TemplateHaskell
   , TypeApplications
@@ -17,10 +19,8 @@ import           Qafny.Partial
 import           Qafny.Syntax.AST
 import           Qafny.Syntax.EmitBinding
 
-import           Text.Printf
-    (printf)
-import Data.List.NonEmpty (NonEmpty)
-
+import           Data.List.NonEmpty
+    (NonEmpty)
 --------------------------------------------------------------------------------
 -- High-Order Types
 --------------------------------------------------------------------------------
@@ -147,9 +147,9 @@ initTState = TState
   }
 
 data SplitScheme = SplitScheme
-  { schEdAffected :: (Range, EmitData, EmitData)
+  { schEdAffected   :: (Range, EmitData, EmitData)
     -- ^ Both locus and range `EmitData` for the affected range
-  , schEdSplit   :: (Range, EmitData)
+  , schEdSplit      :: (Range, EmitData)
     -- ^ The range `EmitData` for the split range. The affected one shares the
     -- same locus as the split one.
   , schEdRemainders :: NonEmpty (Range, EmitData, EmitData)

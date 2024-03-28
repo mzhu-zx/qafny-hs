@@ -150,3 +150,22 @@ codegenApplyLambdaMany iVar vReprs vBinders eBodies =
 aenvWithIndex :: Exp' -> [Var] -> [Var] -> AEnv
 aenvWithIndex idx = zipWith go
   where go binder repr = (binder, repr >:@: idx)
+
+
+-- | Phase Kickback semantics for (Had, En) Locus
+-- Given an En-typed locus formed by entangling a Had locus with a En locus and
+-- an oracle function of shape
+-- @
+--   f(x, y) = (x, y + f(x))
+-- @
+-- where `y` points to the prior Had locus.
+--  
+-- The function takes the ket variable to the non-Had range and the phase
+-- reference to the casted state and generates statements representing phase
+-- kickback.
+--
+-- See [proposal/phaseful-had] for the math.
+codegenPhaseKickback :: Var -> PhaseRef -> Int -> [Stmt']
+codegenPhaseKickback vKet pRef = go
+  where
+    go 0 = []

@@ -158,8 +158,8 @@ codegenSpecExpHad :: PhaseRef -> (Var -> Exp') -> SpecHad -> [Exp']
 codegenSpecExpHad pr pred SpecHadF{hadVar, hadPhase} =
   codegenPhaseSpec pr hadVar pred hadPhase
 
-codegenSpecExpEn :: Var -> Maybe PhaseRef -> [(Range, Maybe Var)] -> SpecEn
-                 -> [Exp']
+codegenSpecExpEn
+  :: Var -> Maybe PhaseRef -> [(Range, Maybe Var)] -> SpecEn -> [Exp']
 codegenSpecExpEn vAmp prMaybe rvKets
   SpecEnF{enVarSup, enIntvSup, enAmpCoef, enPhaseCoef, enKets} =
   ampPred ++ phasePreds ++ ketPreds
