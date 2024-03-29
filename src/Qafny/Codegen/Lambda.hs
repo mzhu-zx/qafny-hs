@@ -121,8 +121,7 @@ codegenUnaryLambda rLhs rResolved locus qtLambda
 
     lamSansPhase = lambdaUnphase lam
 
-
--- Codegen lambda that takes multiple inputs.
+-- | Codegen lambda that takes multiple inputs.
 codegenLambdaEntangle
   :: GensymEmitterWithStateError sig m => [Range] -> Lambda -> m [Stmt']
 codegenLambdaEntangle rs (LambdaF{ bBases, eBases }) = do
@@ -160,12 +159,25 @@ aenvWithIndex idx = zipWith go
 -- @
 -- where `y` points to the prior Had locus.
 --  
--- The function takes the ket variable to the non-Had range and the phase
--- reference to the casted state and generates statements representing phase
--- kickback.
+-- The function takes the ket variable to the non-Had range, the phase reference
+-- to the En-like state and kickback, and a reference to the 1-qubit Had state.
+--
+-- Assumption: All PhaseRef must be in the first degree. 
 --
 -- See [proposal/phaseful-had] for the math.
-codegenPhaseKickback :: Var -> PhaseRef -> Int -> [Stmt']
-codegenPhaseKickback vKet pRef = go
+codegenPhaseKickback
+  :: Foldable t
+  => Var -> Var -> Exp' -> t (PhaseRef, PhaseRef, PhaseRef) -> [Stmt']
+codegenPhaseKickback idV vKet eFx = concatMap go
   where
-    go 0 = []
+    go (prNow, prEn, prHad) =
+      [ prRepr prNow ::=:
+        funAdd0 (prRepr prEn) + funAdd1 (prRepr prEn)
+      , SAssert $ prBase prEn `eEq` prBase prHad
+      , prBase prNow ::=: EVar (prBase prEn)
+      ]
+      where
+        -- Phase of the original Had 
+        k = prRepr prHad >:@: (0 :: Exp')
+        funAdd0 = callMap (simpleLambda idV (idV >+ (k * eFx)))
+        funAdd1 = callMap (simpleLambda idV (idV >+ (k * (1 - eFx))))
