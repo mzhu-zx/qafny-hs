@@ -107,48 +107,15 @@ codegenSpecExp locusEd rangesEd = go
       let refMaybe = fst <$> evPhaseRef locusEd
           rvKets = second ((fst <$>) . evBasis) <$> rangesEd
       return $ concatMap (codegenSpecExpEn vAmp refMaybe rvKets . seEn) specs
+    go TEn01 specs = do
+      (vAmp, _) <- visitEm evAmp locusEd
+      let refMaybe = fst <$> evPhaseRef locusEd
+          rvKets = second ((fst <$>) . evBasis) <$> rangesEd
+      return $ concatMap (codegenSpecExpEn01 vAmp refMaybe rvKets . seEn01) specs
+  
     predFromRange r =
       let bound = Intv 0 (rangeSize r)
       in predFromIntv  bound
-
-  --   specPerPartition
-  --     TEn01
-  --     (SESpecEn01 idxSum (Intv lSum rSum) idxTen (Intv lTen rTen) eValues)
-  --     pspec
-  --      = do
-  --     -- In x[l .. r]
-  --     -- @
-  --     --   forall idxS | lS <= idxS < rS ::
-  --     --   forall idxT | 0 <= idxT < rT - lT ::
-  --     --   xEmit[idxS][idxT] == eBody
-  --     -- @
-  --     -- todo: also emit bounds!
-  --     haveSameLength vrs eValues
-  --     pty <- onlyOne throwError' ptys
-  --     let eBoundSum = Just $ eIntv idxSum lSum rSum
-  --         eSizeSum = reduce (rSum - lSum)
-  --         eForallSum = EForall (natB idxSum) eBoundSum . ($ idxSum)
-  --     ePSpec <- codegenPhaseSpec eForallSum eSizeSum pty pspec
-  --     return . (ePSpec ++) . concat $ do
-  --       (((vE, _), Range _ el er), eV) <- bimap (second reduce) reduce<$> zip vrs eValues
-  --       when (eV == EWildcard) mzero
-  --       let cardSum = eSizeSum `eEq` ECard (EVar vE)
-  --       let rTen' = reduce (er - el)
-  --       let eBoundTen = Just $ eIntv idxTen 0 rTen'
-  --       let cardTen = rTen' `eEq` ECard (vE >:@: idxSum)
-  --       let eForallTen = EForall (natB idxTen) eBoundTen
-  --       let eSel = vE >:@: idxSum >:@: idxTen
-  --       let eBodys = [ cardTen
-  --                    , EOp2 OEq eSel eV
-  --                    ]
-  --       return $  cardSum : (eForallSum . const . eForallTen <$> eBodys)
-  --   specPerPartition _ e _ = throwError' $
-  --     printf "%s is not compatible with the specification %s"
-  --        (show p) (show e)
-
-  --   errIncompatibleSpec e = throwError' $
-  --     printf "%s is not compatible with the specification %s"
-  --     (show p) (show e)
 
 codegenSpecExpNor :: Var -> (Var -> Exp') -> SpecNor -> Exp'
 codegenSpecExpNor vKet pred SpecNorF{norVar, norKet} =
@@ -175,6 +142,29 @@ codegenSpecExpEn vAmp prMaybe rvKets
     perKetExp (_, v) EWildcard = EBool True
     perKetExp (_, Nothing) _   = EBool False -- EMMMMM, I should warn instead
     perKetExp (_, Just v) eKet = mkForallEq enVarSup predIntv v eKet
+
+codegenSpecExpEn01
+  :: Var -> Maybe PhaseRef -> [(Range, Maybe Var)] -> SpecEn01 -> [Exp']
+codegenSpecExpEn01 vAmp prMaybe rvKets
+  SpecEn01F{en01VarSup, en01IntvSup, en01AmpCoef, en01PhaseCoef
+           ,en01VarQbit, en01Kets, en01IntvQbit} =
+  ampPred ++ phasePreds ++ ketPreds
+  where
+    predIntv = predFromIntv en01IntvSup
+    predIntvQ = predFromIntv en01IntvQbit
+
+    ampPred = [ vAmp `eEq` codegenAmpExp en01AmpCoef]
+    phasePreds = concat $ prMaybe <&> \pr ->
+      codegenPhaseSpec pr en01VarSup predIntv en01PhaseCoef
+    ketPreds = -- TODO: generate mod using Range
+      zipWith perKetExp rvKets en01Kets
+
+    perKetExp (_, v) EWildcard = EBool True
+    perKetExp (_, Nothing) _   = EBool False -- EMMMMM, I should warn instead
+    perKetExp (_, Just v) eKet =
+      mkForallEq2 en01VarSup predIntv en01VarQbit predIntvQ v eKet
+
+
 
 codegenAmpExp :: AmpExp -> Exp'
 codegenAmpExp = undefined

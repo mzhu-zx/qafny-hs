@@ -283,7 +283,7 @@ data SpecEn01F f =
             , en01PhaseCoef :: PhaseExpF f
             , en01VarQbit   :: Var
             , en01IntvQbit  :: Intv
-            , en01          :: f
+            , en01Kets      :: [f]
             }
   deriving (Functor, Foldable, Traversable)
 

@@ -214,7 +214,7 @@ qspec ::  { SpecExp }
   | "Σ" id "∈" intv '.'               {- 5  -}
     ampExp pspec                      {- 7  -}
     "⊗" id "∈" intv '.'               {- 12 -}
-    expr
+    tuple(expr)
                                       { SESpecEn01 (SpecEn01F $2 $4 $6 $7 $9 $11 $13) }
   | '_'                               { SEWildcard }
 

@@ -282,7 +282,7 @@ instance (DafnyPrinter f, Show f) => DafnyPrinter (SpecExpF f) where
         SESpecEn01 (SpecEn01F v1 intv1 v2 intv2 a p e5) ->
           "Σ" <+> v1 <+> "∈" <+> intv1 <+> '.' <+>
           "⊗" <+> v2 <+> "∈" <+> intv2 <+> '.' <+>
-          a <+> p <+> withParen e5
+          a <+> p <+> withParen (byComma e5)
 
 instance DafnyPrinter f => DafnyPrinter (Maybe f) where
   build Nothing  = build "_"
