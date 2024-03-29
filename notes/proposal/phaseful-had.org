@@ -109,15 +109,20 @@ Generalizing to arbitrary =Had= type, we have
 #+begin_export latex
 \begin{align}
   & U_f \prs{
-    \sum_{x \in \phi_n} \frac{1}{\sqrt{2}} \omega_N^{0} \ket{x} \ket{0}
-    +
-    \sum_{x \in \phi_n} \frac{1}{\sqrt{2}} \omega_N^{k_x} \ket{x} \ket{1}
-    } 
+    \prs{
+    \sum_{x \in \phi_n} \alpha_x \omega_N^{k_x} \ket{x}
+    }
+    \otimes
+    \frac{1}{\sqrt{2}}
+    \prs {
+    \omega_N^{0} \ket{0} + \omega_N^{k} \ket{1}
+    }
+    }
   \\
   =
-  & \sum_{x \in \phi_n} \frac{1}{\sqrt{2}} \omega_N^{0} \ket{x} \ket{0 + f(x)}
+  & \sum_{x \in \phi_n} \alpha_x \omega_N^{k_x} \ket{x} \ket{0 + f(x)}
     +
-    \sum_{x \in \phi_n} \frac{1}{\sqrt{2}} \omega_N^{k_x} \ket{x} \ket{1 + f(x)}
+    \sum_{x \in \phi_n} \alpha_x \omega_N^{k + k_x} \ket{x} \ket{1 + f(x)}
   \\
   = 
   & \sum_{x \in \phi_n} \frac{1}{\sqrt{2^N}}
