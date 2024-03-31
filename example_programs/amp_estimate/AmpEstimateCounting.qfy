@@ -1,5 +1,6 @@
 // Amplitude estimation and counting
 // https://arxiv.org/pdf/quant-ph/0005055.pdf
+//https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&arnumber=4141242
 
 method {:axiom} uf(q: Q[n], r: Q[1], n:nat)
     ensure { p[0,n),r[0] : EN ↦ ∑ k ∈ [0, Pow2(n)) . (-| k , 0 ⟩, | k , 0 ⟩) }

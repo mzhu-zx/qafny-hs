@@ -32,7 +32,7 @@ method StateDist(r: Q[k][n], q: Q[k][n], p: Q[k][n], m:nat, n:nat) returns (y:na
     ensures { u = v ==> y == 1 ==> prob == 0 }
     ensures { u != v ==> y == 1 ==> prob = 1/2 - 1/2 * norm(u,v) } //we need to define norm of two states.
 {
-    permInit(r,n,k); //use another gate to do permutation 
+    permInit(r,n,k); //use another gate to do permutation this step will be very hard. Need to think of an implementation or assumption
 
     // controlled SWAP (controlled by first qubit of r)
    for t in [0,k)
