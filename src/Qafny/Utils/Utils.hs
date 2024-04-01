@@ -42,6 +42,11 @@ import           Qafny.Variable
 
 --------------------------------------------------------------------------------
 -- * 3-Tuples
+
+first3 :: (a -> d) -> (a, b, c) -> (d, b, c)
+first3 f (a, b, c) = (f a, b, c)
+
+
 uncurry3 ::  (a -> b -> c -> d) -> (a, b, c) -> d
 uncurry3 f (a, b, c) = f a b c
 
@@ -80,8 +85,10 @@ rethrowMaybe
   -> String
   -> m a
 rethrowMaybe mayFail err =
-  mayFail >>= maybe (throwError'' err) return
+  mayFail >>= fromMaybeM (throwError'' err)
 
+fromMaybeM :: Monad m => m a -> Maybe a -> m a
+fromMaybeM b = maybe b pure
 
 gensymLoc
   :: ( Has (Gensym String) sig m )
@@ -176,7 +183,7 @@ errTrace info m =
   catchError m (\e -> throwError (e ++ "\n↑ " ++ info))
 
 
--- * Pure functions 
+-- * Pure functions
 
 both :: Bifunctor f => (a -> b) -> f a a -> f b b
 both = join bimap

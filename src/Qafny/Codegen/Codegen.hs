@@ -35,12 +35,9 @@ import           Qafny.Gensym
 import           Control.Lens
     (at, non, (%~), (?~), (^.))
 import           Control.Monad
-    (forM, forM_, unless)
+    (forM_)
+import           Qafny.Utils.Common
 
-import           Data.Bifunctor
-import           Data.Functor
-    ((<&>))
-import           Data.Functor.Identity
 import           Data.List.NonEmpty
     (NonEmpty (..))
 import qualified Data.Map.Strict              as Map
@@ -66,10 +63,9 @@ import           Qafny.Syntax.Emit
 import           Qafny.Syntax.EmitBinding
 import           Qafny.Syntax.IR
 import           Qafny.Typing
-    (appkEnvWithBds, checkSubtype, checkSubtypeQ, collectConstraints,
+    (appkEnvWithBds, checkSubtype, collectConstraints,
     matchEmitStatesVars, matchStateCorrLoop, mergeCandidateHad, mergeLociHadEN,
-    mergeMatchedTState, mergeScheme, removeTStateByLocus, resolvePartition,
-    resolvePartition', resolvePartitions, retypePartition1, splitScheme,
+    mergeMatchedTState, mergeScheme, removeTStateByLocus, resolvePartition, resolvePartitions, retypePartition1, splitScheme,
     splitSchemePartition, splitThenCastScheme, tStateFromPartitionQTys,
     typingExp, typingGuard, typingPartition)
 import           Qafny.Typing.Utils
@@ -80,7 +76,8 @@ import           Data.Sum
 import           Qafny.Codegen.Common
     (codegenAssignEmitData)
 import           Qafny.Codegen.Lambda
-    (codegenLambdaEntangle, codegenUnaryLambda)
+import           Qafny.Codegen.Merge
+    (codegenMergeScheme)
 import           Qafny.Codegen.Method
     (codegenMethodParams, codegenMethodReturns, genEmitSt)
 import           Qafny.Codegen.Phase
@@ -95,16 +92,11 @@ import           Qafny.Typing.Method
     resolveMethodApplicationRets)
 import           Qafny.Typing.Predicates
     (dropSignatureSpecs, wfSignatureFromPredicates)
-import           Qafny.Typing.Range
-    (areRangesEquiv)
 import           Qafny.Utils.EmitBinding
 import           Qafny.Utils.TraceF
     (Traceable (tracef))
 import           Qafny.Utils.Utils
     (both, bothM, dumpSt, gensymLoc, getMethodType)
-
-first3 :: (a -> d) -> (a, b, c) -> (d, b, c)
-first3 f (a, b, c) = (f a, b, c)
 
 --------------------------------------------------------------------------------
 -- * Introduction
@@ -447,37 +439,14 @@ codegenStmt'Apply (s :*=: EHad) = do
   -- run split semantics here!
   (stSplit, ssMaybe) <- splitScheme st r
   let stmtsSplit = maybe [] codegenSplitEmit ssMaybe
-  (stmtsSplit ++) <$> castWithOp opCast stSplit THad
+  (stmtsSplit ++) . snd <$> castWithOp opCast stSplit THad
   where
     opCastHad TNor = return "CastNorHad"
     opCastHad t = throwError $ "type `" ++ show t ++ "` cannot be casted to Had type"
 
-codegenStmt'Apply
-  stmt@(s@(Partition {ranges}) :*=: (ELambda lam)) = do
+codegenStmt'Apply stmt@(s@(Partition{}) :*=: (ELambda lam)) =
+  codegenLambda s lam
 
-  -- FIXME: `resolve` fails on inter-locus ranges.
-  -- I should apply cast before the resolution occurs to entangle two
-  -- previously disjoint partitions.
-  (locusS, rMapS) <- resolvePartition' s
-
-  -- FIXME : qt' & qtLambda stuff should be turned into something better
-  qtLambda <- ask
-  checkSubtypeQ (qty locusS) qtLambda
-
-  -- ranges must be complete
-  case rMapS of
-    [] -> throwError' "The parition specified on the LHS is empty!"
-    [(rLhs, rResolved)] ->
-      codegenUnaryLambda rLhs rResolved locusS qtLambda lam
-    _ -> do
-      -- do the complicated case
-      unless (areRangesEquiv rMapS) $ throwError' (errRangesAreProper rMapS)
-      codegenLambdaEntangle ranges lam
-  where
-    errRangesAreProper :: [(Range, Range)] -> String
-    errRangesAreProper rMap = printf
-      "Ranges given on the LHS of the application contains some incomplete range(s).\n%s"
-      (showEmit0 $ byLineT rMap)
 
 codegenStmt'Apply (s :*=: (EQft b)) = codegenApplyQft s
 codegenStmt'Apply _ = throwError' "What could possibly go wrong?"
@@ -1026,79 +995,4 @@ codegenAlloc v e@(EOp2 ONor e1 e2) t@(TQReg _) = do
 codegenAlloc v e@(EOp2 ONor _ _) _ =
   throwError "Internal: Attempt to create a Nor partition that's not of nor type"
 codegenAlloc v e _ = return $ (::=:) v e
-
-
-
---------------------------------------------------------------------------------
--- * Merge Semantics
---------------------------------------------------------------------------------
--- | Merge semantics of a Had qubit into one EN emitted state
--- uses the name of the emitted seq as well as the index name
-addENHad1 :: Var -> Exp' -> Stmt'
-addENHad1 vEmit idx =
-  (::=:) vEmit $
-    EOp2 OAdd (EVar vEmit) (EEmit $ ECall "Map" [eLamPlusPow2, EVar vEmit])
-  where
-    vfresh = "x__lambda"
-    eLamPlusPow2 =
-      simpleLambda vfresh $
-        EOp2 OAdd (EVar vfresh) (EEmit (ECall "Pow2" [idx]))
-
-
--- | Multiply the Had coutner by 2
-doubleHadCounter :: Var -> Stmt'
-doubleHadCounter vCounter =
-  (::=:) vCounter $ EOp2 OMul (ENum 2) (EVar vCounter)
-
-
--- | Generate from the merge scheme statements to perform the merge and the
--- final result variable.
-codegenMergeScheme
-  :: ( Has (Gensym Emitter) sig m
-     , Has (Gensym String) sig m
-     , Has (State TState) sig m
-     , Has (Error String) sig m
-     )
-  => [MergeScheme] -> m [(Stmt', Var)]
-codegenMergeScheme = mapM $ \scheme -> do
-  case scheme of
-    MMove -> throwError' "I have no planning in solving it here now."
-    MJoin JoinStrategy { jsQtMain=qtMain, jsQtMerged=qtMerged
-                       , jsRResult=rResult, jsRMerged=rMerged, jsRMain=rMain
-                       } -> do
-      (vEmitMerged, _) <- findEmitBasisByRange rMerged
-      (vEmitMain, _)   <- findEmitBasisByRange rMain
-      deleteEms $ inj <$> [rMerged, rMain]
-      case (qtMain, qtMerged) of
-        (TEn01, TNor) -> do
-          -- append the merged value (ket) into each kets in the main value
-          -- TODO: use `genEmStFromLocus` for phase compatibility
-          (vEmitResult, _) <- genEmStByRange qtMain rResult >>= visitEmBasis
-          vBind <- gensym "lambda_x"
-          let stmt = vEmitResult ::=: callMap ef vEmitMain
-              ef   = simpleLambda vBind (EVar vBind + EVar vEmitMerged)
-          return (stmt, vEmitMain)
-        (TEn, THad) -> do
-          let (Range _ lBound rBound) = rMain
-          let stmtAdd = addENHad1 vEmitMain (reduce (rBound - lBound))
-          return (stmtAdd, vEmitMain)
-        _             -> throwError' $ printf "No idea about %s to %s conversion."
-    MEqual EqualStrategy { esRange = r, esQTy = qt
-                         , esVMain = (v1, _), esVAux = (v2, _) } -> do
-      -- This is all about "unsplit".
-      case qt of
-        TNor ->
-          -- no "unsplit" should happen here!
-          return (qComment "TNor has nothing to be merged!", v1)
-        THad ->
-          throwError' $ printf "This type (%s) cannot be handled: (%s)" (show qt) (show r)
-        _ | qt `elem` [ TEn01, TEn ] ->
-          -- TEn01 is emitted as seq<seq<nat>> representing Sum . Tensor,
-          -- TEn   is emitted as seq<nat>      representing Sum . Tensor,
-          -- It suffices to simply concat them
-          pure (merge3 v1 v1 v2, v1)
-        _ -> throwError' "This pattern shoule be complete!"
-  where
-    merge3 vS vRF vRT = vS ::=: (EVar vRF + EVar vRT)
-
 

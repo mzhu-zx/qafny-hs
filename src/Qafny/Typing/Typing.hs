@@ -1,11 +1,11 @@
 {-# LANGUAGE
     FlexibleContexts
   , FlexibleInstances
-  , ParallelListComp
   , LambdaCase
   , MultiParamTypeClasses
   , MultiWayIf
   , NamedFieldPuns
+  , ParallelListComp
   , ScopedTypeVariables
   , TupleSections
   , TypeApplications
@@ -18,8 +18,6 @@ module Qafny.Typing.Typing where
 -- | Typing though Fused Effects
 
 -- Effects
-import           Control.Carrier.State.Lazy
-    (execState)
 import           Control.Effect.NonDet
 import           Qafny.Effect
 
@@ -35,21 +33,19 @@ import           Qafny.Syntax.Emit
 import           Qafny.Syntax.EmitBinding
 import           Qafny.Syntax.IR
 import           Qafny.Typing.Utils
-import           Qafny.Typing.Phase         hiding
-    (throwError')
 import           Qafny.Utils.Utils
-    (errTrace, exp2AExp, gensymLoc, rethrowMaybe, uncurry3)
+    (errTrace, exp2AExp, fromMaybeM, gensymLoc, rethrowMaybe, uncurry3)
 
 import           Qafny.Typing.Partial
 import           Qafny.Utils.EmitBinding
 
 -- Utils
 import           Control.Carrier.State.Lazy
-    (evalState)
+    (evalState, execState)
 import           Control.Lens
     (at, (%~), (?~), (^.))
 import           Control.Monad
-    (forM, forM_, liftM2, unless, when, zipWithM, zipWithM_)
+    (forM, forM_, liftM2, unless, when, zipWithM, (>=>))
 import           Data.Bifunctor
     (Bifunctor (second))
 import           Data.Bool
@@ -129,6 +125,13 @@ resolvePartition
   => Partition -> m Locus
 resolvePartition = (fst <$>) . resolvePartition'
 
+-- | Look up the Locus record by the Loc reference in the session state.
+findLocusByLoc :: HasResolution sig m => Loc -> m Locus
+findLocusByLoc loc = do
+  (part, (qty, degrees)) <- use (sSt . at loc) `rethrowMaybe`
+    show (UnknownLocError loc)
+  return Locus {loc, part, qty, degrees}
+
 resolvePartition'
   :: HasResolution sig m => Partition -> m (Locus, [(Range, Range)])
 resolvePartition' se' = do
@@ -141,11 +144,9 @@ resolvePartition' se' = do
                 [ showRel r1 r2 b | (r1, r2, b, _) <- concat rsResolved ]
   trace $ printf "[resolvePartition] (%s) with %s %s" (show se) (show constraints) related
   case List.nub (snd <$> locs) of
-    [] ->  throwError $ errInternal related
-    [loc] -> do
-      (part, (qty, degrees)) <- use (sSt . at loc) `rethrowMaybe` (show . UnknownLocError) loc
-      trace (printf "Resolved: %s ∈ %s" (show se) (show part))
-      return (Locus{loc, part, qty, degrees}, fst <$> locs)
+    [] -> throwError $ errInternal related
+    [loc] ->
+      findLocusByLoc loc <&> (, fst <$> locs)
     ss -> throwError $ errNonunique ss related
   where
     se@(Partition rs) = reduce se'
@@ -204,6 +205,36 @@ resolveRange r@(Range name _ _) = do
   return [ (r, r', r ⊑// r', loc)
          | (r', loc) <- rlocs ]
 
+-- | Resolve the ranges using the Range name state and the current constraint
+-- environment.  It is strict in that the resolution is considered strict if all
+-- constraints are satisfied and the range is a sub-range of only one locus.
+resolveRangesStrict :: HasResolution sig m => [Range] -> m [(Range, Range, Loc)]
+resolveRangesStrict rs = do
+  (∀⊑//) <- (∀⊑/)
+  st <- use xSt
+  let rslocsM = rs <&> \r -> st Map.!? getRangeName r
+  rslocs <- zipWithM (fromMaybeM . errUnknownRange) rs rslocsM
+  zipWithM (go (∀⊑//)) rs rslocs
+  where
+    go cmp rGiven rlFound =
+      case filter (cmp rGiven . fst) rlFound of
+        [(rFound, lFound)] ->
+          pure (rGiven, rFound, lFound)
+        []    -> errUnknownRange rGiven
+        found -> errAmbiguousRange rGiven found
+    errUnknownRange = throwError' . show .UnknownRangeError
+    errAmbiguousRange rGiven found =
+      throwError' (show (AmbiguousRange rGiven found))
+
+-- | Resolve the ranges using the Range name state and the current constraint
+-- environment.  It is strict in that the resolution is considered strict if all
+-- constraints are satisfied and the range is a sub-range of only one locus.
+resolveRangesStrictIntoLoci ::
+  HasResolution sig m => [Range] -> m [(Range, Range, Locus)]
+resolveRangesStrictIntoLoci =
+  resolveRangesStrict >=> mapM go
+  where
+    go (r1, r2, l) = findLocusByLoc l <&> (r1, r2, )
 
 resolvePartitions
   :: ( Has (State TState) sig m
@@ -316,7 +347,7 @@ splitScheme' s@(Locus{loc, part, qty, degrees}) rSplitTo@(Range to rstL rstR) = 
     getRangeSplits s rSplitTo
   case NE.nonEmpty (rsRsRemainder rangeSplit) of
     Nothing -> -- | No split!
-      return (s, Nothing) 
+      return (s, Nothing)
 
     Just rsRemainder -> do
 
@@ -329,13 +360,13 @@ splitScheme' s@(Locus{loc, part, qty, degrees}) rSplitTo@(Range to rstL rstR) = 
 
       -- 1. Allocate partitions, break ranges and move them around
       lociRem <- mapM (gensymLoc . rangeVar) rsRemainder
-      -- Aux reuses the current loc 
+      -- Aux reuses the current loc
       sSt %= (at loc ?~ (pSplitInto, (qty, degrees)))
       sequence_ $ NE.zipWith
         (\locMain pMain -> sSt %= (at locMain ?~ (pMain, (qty, degrees))))
         lociRem psRemainder'
 
-      -- | retrieve all (range, loc) pair associated with the variable `x` 
+      -- | retrieve all (range, loc) pair associated with the variable `x`
       xRangeLocs <- use (xSt . at to) `rethrowMaybe` errXST
       let xrl =
             -- "split range -> old loc"
@@ -353,7 +384,7 @@ splitScheme' s@(Locus{loc, part, qty, degrees}) rSplitTo@(Range to rstL rstR) = 
       let locusSplitInto = s{part=pSplitInto}
           lociRemainder  = NE.zipWith updateLocPartOfS lociRem psRemainder
 
-      -- locate EmitData of both range and locus 
+      -- locate EmitData of both range and locus
       edRAffected@EmitData{evBasis=vEmitRMaybe} <- findEm (inj rsRAffected)
       edLAffected@EmitData{evPhaseRef=vPhaseMaybe
                           ,evAmp=vEmitAMaybe} <- findEm (inj loc)
@@ -405,10 +436,10 @@ data RangeSplits = RangeSplits
     -- ^ left remainder
   , rsRRight      :: Maybe Range
     -- ^ right remainder
-  , rsRSplitInto  :: Range 
+  , rsRSplitInto  :: Range
     -- ^ resulting range
   , rsRAffected   :: Range
-    -- ^ original range that is affected 
+    -- ^ original range that is affected
   , rsRsUnchanged :: [Range]
     -- ^ other ranges untouched
   , rsRsRemainder :: [Range]
@@ -881,8 +912,8 @@ collectConstraints es = (Map.mapMaybe glb1 <$>) . execState Map.empty $
     flipLOp _   = Nothing
 
 
--- | Given an Locus for a fragment of a Had guard match in the current
--- environment for a EN partition to be merged with this stuple.
+-- | Given an Locus for a fragment of a Had guard, match in the current
+-- environment for a EN partition to be merged with this Locus.
 mergeCandidateHad
   :: ( Has (State TState) sig m
      , Has (Error String) sig m

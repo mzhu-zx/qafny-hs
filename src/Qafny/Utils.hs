@@ -1,7 +1,9 @@
 module Qafny.Utils (
   module Qafny.Utils.EmitBinding,
-  module Qafny.Utils.Utils
+  module Qafny.Utils.Utils,
   ) where
 
-import Qafny.Utils.EmitBinding
-import Qafny.Utils.Utils
+-- re-export Functor miscs
+
+import           Qafny.Utils.EmitBinding
+import           Qafny.Utils.Utils

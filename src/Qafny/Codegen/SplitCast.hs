@@ -142,10 +142,10 @@ codegenCastEmit
 -- provided `op`
 castWithOp
   :: GensymEmitterWithStateError sig m
-  => String -> Locus -> QTy -> m [Stmt']
+  => String -> Locus -> QTy -> m (Locus, [Stmt'])
 castWithOp op s newTy = do
-  maySchemeC <- retypePartition s newTy
-  case maySchemeC of
+  (newLocus, maySchemeC) <- castScheme s newTy
+  (newLocus, ) <$> case maySchemeC of
        Nothing      -> return []
        Just schemeC -> go schemeC
   where
@@ -163,7 +163,13 @@ castWithOp op s newTy = do
 castPartitionEN
   :: GensymEmitterWithStateError sig m
   => Locus -> m [Stmt']
-castPartitionEN st@Locus{loc=locS, part=s, qty=qtS} = do
+castPartitionEN = (snd <$>) . castPartitionEN'
+
+-- | Cast the given partition to EN type!
+castPartitionEN'
+  :: GensymEmitterWithStateError sig m
+  => Locus -> m (Locus, [Stmt'])
+castPartitionEN' st@Locus{loc=locS, part=s, qty=qtS} = do
   case qtS of
     TNor -> castWithOp "CastNorEN" st TEn
     THad -> castWithOp "CastHadEN" st TEn

@@ -372,6 +372,9 @@ data Range = Range Var (Exp ()) (Exp ())
   deriving (Eq, Ord-- , Data, Typeable
            )
 
+getRangeName :: Range -> Var
+getRangeName (Range n _ _) = n
+
 instance Show Range where
   show (Range x y z) = printf "%s[%s .. %s]" x (showExp y) (showExp z)
 
