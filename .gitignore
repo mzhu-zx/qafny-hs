@@ -2,3 +2,4 @@
 *~
 qafny-hs.cabal
 stack.yaml.lock
+cherry.patch

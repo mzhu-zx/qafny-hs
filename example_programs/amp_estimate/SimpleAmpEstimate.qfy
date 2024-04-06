@@ -37,22 +37,22 @@ method qstep(p: Q[n], r: Q[1], f: [Bool] -> Bool, n: nat, t: nat)
   }
 }
 
-method AmplitudeEstimate(q: Q[n], r: Q[1], p: Q[n], f: [Bool] -> Bool, n: nat) returns (y: nat, prob: real)
+method AmplitudeEstimate(q: Q[m], r: Q[1], p: Q[n], f: [Bool] -> Bool, n: nat, m: nat) returns (y: nat, prob: real)
   requires { p[0 , n) : Nor ↦ |0⟩ }
   requires { r[0] : Nor ↦ |0⟩ }
-  requires { q[0 , n) : Nor ↦ |0⟩ } //L: unsure about notation
+  requires { q[0 , m) : Nor ↦ |0⟩ } //L: unsure about notation
   ensures prob >= 8 / pi^2
 {
   // induce superposition on the 2 q-bits
   p[0, n) *= H;
-  q[0, n) *= H;
+  q[0, m) *= H;
   r[0] *= r[0] + 1;
   r[0] *= H;
   //r[0] is turned to |-⟩
 
   //L: is this valid in Dafny?
   //L: have to find a way to prove termination
-  for j in [0, n) && q[j] //M: q[j] is the control for qstep for each j in [0, n). When this happens they become entangled.
+  for j in [0, m) && q[j] //M: q[j] is the control for qstep for each j in [0, n). When this happens they become entangled.
     invariant { q[0,j),p[0, n),r[0] : En ↦ ∑ v ∈ [0, 2^j) . 1/sqrt(2^j) |v⟩ part(2^n, sin (2*v+1) * theta : f(|k⟩) == 1, cos (2*v+1) * theta : f(|k⟩) == 0) |-⟩ }
   {
     qstep(p, r, f, n, 2^j);
@@ -62,6 +62,6 @@ method AmplitudeEstimate(q: Q[n], r: Q[1], p: Q[n], f: [Bool] -> Bool, n: nat) r
   assert { q[0,j),p[0, n),r[0] : En ↦ ∑ v ∈ [0, 2^j) . 1/sqrt(2^j) part(sin (2*v+1) * theta : |v⟩ f(|k⟩, 1) + cos (2*v+1) * theta : |v⟩ f(|k⟩, 0)) |-⟩ }
   assert { q[0,j),p[0, n),r[0] : En ↦ ∑ v ∈ [0, 2^j) . 1/sqrt(2^j) part(ω ((2 * v + 1) theta / pi, 1) |v⟩ f(|k⟩, 1) +  ω (- (2 * v + 1) theta / pi, 1) |v⟩ f(|k⟩, 1)) |-⟩ }
   
-  q[0, n) *= RQFT; //increase the measurement chance of number of element to phase, see theorem 11
+  q[0, m) *= RQFT; //increase the measurement chance of number of element to phase, see theorem 11
   y, prob := meas(q); //
 }

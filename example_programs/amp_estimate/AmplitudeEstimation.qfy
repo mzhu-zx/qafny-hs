@@ -16,6 +16,8 @@ method AmplitudeEstimation(q: Q[n], k : array<nat>, up : array<bool>, K: array<n
     Lmax := arcsin((2 / Nshots) * log(2 * T / a)) ^ (1/4);
 
     while ci_ub - ci_lb > 2 * eps
+        decreases ci_ub - ci_lb
+        invariant i < |K| && i < |k|
     {
         i := i + 1;
         k, up, K := FindNextK(k, up, K, n, i, ci_lb, ci_ub, 2);

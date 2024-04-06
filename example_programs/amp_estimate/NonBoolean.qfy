@@ -6,6 +6,7 @@ method {:axiom} uf(q: Q[n], n:nat)
     
     
 function {:axiom) inverse(uf : Q[n] -> nat -> Q[n]) //inverse function is always existed, so add to language op set.
+                                                     //the current implementation plan is to make the inverse function as built-in as ^{-1}
 
 
 method NonBoolean(q : Q[n], p : Q[1], n:nat, m:nat) returns (y: nat, prob: real)
