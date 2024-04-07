@@ -1,4 +1,4 @@
-
+%right '->'
 
 AST
   : toplevels
@@ -8,8 +8,11 @@ toplevels
 
 toplevel
   : dafny
-  | "method" id '(' bindings ')' "returns" '(' bindings ')' conds opt(block)
-  | "method" id '(' bindings ')' conds opt(block)
+  | "method" id parens(bindings) returns conds opt(block)
+
+returns
+  : {- empty -}
+  | "returns" '(' bindings ')'
 
 conds
   : many(cond)
@@ -27,8 +30,14 @@ binding
   : id ':' ty
 
 ty
+  : baseTy
+  | baseTy '->' ty
+  | tuple(ty) '->' ty %shift
+
+baseTy
   : "nat"
   | "int"
+  | "measured"
   | "bool"
   | "seq" '<' ty '>'
   | "qreg" '[' digits ']'
@@ -55,7 +64,7 @@ stmt
   | partition "*=" expr ';'
   | "if" '(' guardExpr ')' cond block
   | "for" id "in" '[' expr ".." expr ']' "with" guardExpr conds block
-  | id tuple(expr) ';'
+  | id tuple(argExpr) ';'
 
 splitAt
   : "split" "at" expr
@@ -70,34 +79,75 @@ range
   : id '[' expr ".." expr ']'
 
 spec
-  : '{' partition ':' qty "↦" qspec '}'
+  : '{' partition ':' qty "↦" list(qspec) '}'
+  | '{' partition ':' qty "↦" qspec '}'
+
+nullableId
+  : id
+  | {- empty -}
+
+intv
+  : '[' expr ".." expr ']'
 
 qspec
-  : "⊗" id '.' tuple(expr)
-  | "Σ" id "∈" '[' expr ".." expr ']' '.' tuple(expr)
-  | "Σ" id "∈" '[' expr ".." expr ']' '.' "⊗" id "∈" '[' expr ".." expr ']' '.' tuple(expr)
+  : "⊗" nullableId '.' pspec
+  | "⊗" nullableId '.' expr
+  | "Σ" id "∈" intv '.' ampExp pspec tuple(expr)
+  | "Σ" id "∈" intv '.' ampExp pspec "⊗" id "∈" intv '.' tuple(expr)
   | '_'
+
+ampExp
+  : {- empty -}
+  | "isqrt" '(' expr ',' expr ')'
+  | "sin" '(' expr ')'
+  | "cos" '(' expr ')'
+
+pspec
+  : {- empty -}
+  | "ω" '(' expr ',' expr ')' '~'
+  | "Ω" id "∈" '[' expr ".." expr ']' '.' '(' expr ',' expr ')' '~'
+
+pbinder
+  : '_'
+  | "ω" '(' id ',' id ')'
+  | "Ω" id "∈" '[' expr ".." expr ']' '.' '(' id ',' id ')'
+
+mayTuple
+  : p
+  | tuple(p)
 
 tuple
   : '(' manyComma(p) ')'
 
+list
+  : '[' manyComma(p) ']'
+
 expr
-  : atomic
-  | '_'
+  : '_'
   | spec
-  | partition
   | qops
-  | "meas" id
+  | "measure" partition
   | "not" atomic
   | "nor" '(' atomic ',' digits ')'
-  | "λ" '(' id "=>" expr ')'
-  | id tuple(expr)
+  | "repr" parens(range)
   | logicOrExp
+  | lamExpr
+
+argExpr
+  : expr
+  | range
+
+lamExpr
+  : "λ" lamBinder "=>" pspec tuple(expr)
+
+lamBinder
+  : pbinder '~' tuple(id)
+  | tuple(id)
 
 qops
   : "H"
-  | "QFT"
-  | "RQFT"
+  | "Qft"
+  | "iQft"
 
 logicOrExp
   : logicAndExp "||" logicOrExp
@@ -107,17 +157,18 @@ logicAndExp
   : cmpExpr "&&" logicAndExp
   | cmpExpr
 
-cmpPartial
-  : cmp arithExpr
-
 cmpExpr
   : arithExpr many(cmpPartial)
+
+cmpPartial
+  : cmp arithExpr
 
 cmp
   : '>'
   | '<'
   | ">="
   | "<="
+  | "=="
 
 arithExpr
   : atomic arith arithExpr
@@ -131,8 +182,15 @@ arith
 
 atomic
   : digits
+  | id tuple(expr)
   | id
   | '(' expr ')'
+
+parens
+  : '(' p ')'
+
+braces
+  : '{' p '}'
 
 many
   : many_(p)
@@ -142,12 +200,12 @@ many_
   | many_(p) p
 
 manyComma
-  : manyComma_(p)
+  : manyComma_(p) %shift
+  | {- empty -}
 
 manyComma_
-  : {- empty -}
+  : manyComma_(p) ',' p
   | p
-  | manyComma_(p) ',' p
 
 opt
   : {- empty -}

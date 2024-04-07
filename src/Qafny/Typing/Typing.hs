@@ -65,6 +65,7 @@ import qualified Data.Set                   as Set
 import           Data.Sum
 import           GHC.Stack
     (HasCallStack)
+import           Qafny.Typing.Cast
 import           Qafny.Typing.Error
     (SCError (SplitENError), failureAsSCError)
 import           Text.Printf
@@ -662,38 +663,46 @@ retypePartition1 st qtNow =
           (show vsPrev) (show vsNow)
 
 -- | Cast the type of a partition to a given qtype, modify the typing state and
--- emit variable.
+-- allocate emit variables.
 --
--- However, retyping doesn't generate a new meta variable
+-- Note: Retyping vs Cast
+-- Both retyping and cast converts the type of a locus to another, however cast
+-- generates new meta variables as well while retyping performs cast in place.
 castScheme
   :: ( Has (Error String) sig m
      , Has (State TState) sig m
      , Has (Gensym Emitter) sig m
      )
   => Locus -> QTy -> m (Locus, Maybe CastScheme)
-castScheme st qtNow = errTrace "`castScheme`" $ do
-  if qtNow == qtPrev
-    then return (st, Nothing)
-    else second Just <$> go
+castScheme locus@Locus{loc=locS, part=sResolved, qty, degrees} qtNow =
+  case castLocus locus qtNow of
+    Left ErrNoCast -> return (locus, Nothing)
+    Left ErrInvalidCast ->
+      throwError' $ printf "%s cannot be casted into %s." (showEmit0 qty) (showEmit0 qtNow)
+    Right locus' -> go locus' 
   where
-    go = do
-      let tOldEmit = tyKetByQTy qtPrev
-      let rsOld = unpackPart sResolved
-      vsOldEmit <- findVisitEms evBasis (inj <$> rsOld)
-      deleteEms (inj <$> rsOld)
-      let tNewEmit = tyKetByQTy qtNow
-      -- FIXME: Cast phases
-      sSt %= (at locS ?~ (sResolved, (qtNow, dgrs)))
-      rsEmsNew <- genEmStByRanges qtNow $ unpackPart sResolved
-      vsNewEmit <- mapM (visitEm evBasis . snd) rsEmsNew
-      return ( st { qty=qtNow }
-             , CastScheme { schVsOldEmit=vsOldEmit
-                          , schVsNewEmit=vsNewEmit
-                          , schQtOld=qtPrev
-                          , schQtNew=qtNow
-                          , schRsCast=unpackPart sResolved
-                          })
-    Locus{ loc=locS, part=sResolved, qty=qtPrev, degrees=dgrs } = st
+    go newLocus = undefined
+
+
+    --   case newLocus of
+
+    -- let tOldEmit = tyKetByQTy qtPrev
+    -- let rsOld = unpackPart sResolved
+    -- vsOldEmit <- findVisitEms evBasis (inj <$> rsOld)
+    -- deleteEms (inj <$> rsOld)
+    -- let tNewEmit = tyKetByQTy qtNow
+    -- -- FIXME: Cast phases
+    -- sSt %= (at locS ?~ (sResolved, (qtNow, degrees)))
+    -- rsEmsNew <- genEmStByRanges qtNow $ unpackPart sResolved
+    -- vsNewEmit <- mapM (visitEm evBasis . snd) rsEmsNew
+    -- return ( st { qty=qtNow }
+    --        , Just CastScheme { schVsOldEmit=vsOldEmit
+    --                          , schVsNewEmit=vsNewEmit
+    --                          , schQtOld=qtPrev
+    --                          , schQtNew=qtNow
+    --                          , schRsCast=unpackPart sResolved
+    --                          })
+
 
 -- | The same as 'castScheme', for compatibility
 retypePartition

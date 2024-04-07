@@ -443,11 +443,8 @@ codegenStmt'Apply (s :*=: EHad) = do
   where
     opCastHad TNor = return "CastNorHad"
     opCastHad t = throwError $ "type `" ++ show t ++ "` cannot be casted to Had type"
-
 codegenStmt'Apply stmt@(s@(Partition{}) :*=: (ELambda lam)) =
   codegenLambda s lam
-
-
 codegenStmt'Apply (s :*=: (EQft b)) = codegenApplyQft s
 codegenStmt'Apply _ = throwError' "What could possibly go wrong?"
 

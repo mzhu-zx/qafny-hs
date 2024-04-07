@@ -25,6 +25,7 @@ import           Data.Maybe
 
 %token
 digits                { ( _, L.TLitInt $$ ) }
+one                   { ( _, L.TLitInt 1  ) }
 dafny                 { ( _, L.TDafny $$  ) }
 "method"              { ( _, L.TMethod    ) }
 "ensures"             { ( _, L.TEnsures   ) }
@@ -229,13 +230,15 @@ ampExp :: { AmpExp }
 
 -- phase specification
 pspec :: { PhaseExp }
-  : {- empty -}                            { PhaseZ                 }
+  : {- empty -}                            { PhaseWildCard          }
+  | one                                    { PhaseZ                 }
   | "ω" '(' expr ',' expr ')' '~'          { PhaseOmega $3 $5       }
   | "Ω" id "∈" '[' expr ".." expr ']' '.' '(' expr ',' expr ')' '~'
                                            { PhaseSumOmega (Range $2 $5 $7) $11 $13 }
 
 pbinder :: { PhaseBinder }
   : '_'                                    { PhaseWildCard          }
+  | one                                    { PhaseZ                 }
   | "ω" '(' id ',' id ')'                  { PhaseOmega $3 $5       }
   | "Ω" id "∈" '[' expr ".." expr ']' '.' '(' id ',' id ')'
                                            { PhaseSumOmega (Range $2 $5 $7) $11 $13 }
@@ -272,10 +275,15 @@ lamExpr :: { Exp' }
     { let (bPhase, bBases) = $2
       in ELambda (LambdaF { bPhase, bBases, ePhase = $4, eBases = $5 })
     }
+  | "λ" '(' lamBinder "=>" pspec tuple(expr) ')'
+    { let (bPhase, bBases) = $3
+      in ELambda (LambdaF { bPhase, bBases, ePhase = $5, eBases = $6 })
+    }
 
 lamBinder :: { (PhaseBinder, [Var]) }
   : pbinder '~' tuple(id)             { ($1, $3)               }
   | tuple(id)                         { (PhaseWildCard, $1)    }
+  | id                                { (PhaseWildCard, [$1])  }
 
 qops
   : "H"                               { EHad                   }

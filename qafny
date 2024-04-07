@@ -1,0 +1,7 @@
+#!/bin/bash
+
+QAFNY_PATH=`dirname $(realpath "$0")`
+
+cd "$QAFNY_PATH"
+
+stack run -- $@

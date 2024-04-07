@@ -59,6 +59,8 @@ executables:
     - -with-rtsopts=-N
     dependencies:
     - qafny-hs
+    - directory
+    - filepath
 
 tests:
   qafny-hs-test:

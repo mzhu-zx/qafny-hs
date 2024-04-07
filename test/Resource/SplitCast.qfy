@@ -1,6 +1,6 @@
 method Test(q : qreg[10])
   requires { q [0 .. 10] : nor ↦ ⊗ i . (0) }
-  ensures  { q [0 .. 5] : en ↦ ∑ i ∈ [0 .. 1] . (1) }
+  ensures  { q [0 .. 5]  : en  ↦ ∑ i ∈ [0 .. 1] . (1) }
 {
-  q[0..5] *= λ(x => x + 1);
+  q[0..5] *= λ (x => (x + 1));
 }

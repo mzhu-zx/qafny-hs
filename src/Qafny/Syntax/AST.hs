@@ -24,6 +24,8 @@ module Qafny.Syntax.AST where
 import           Qafny.TTG
 
 --------------------------------------------------------------------------------
+import qualified Data.Text.Lazy as L
+
 import           Data.Bifunctor
 -- import           Data.Data
 import           Data.Functor.Foldable

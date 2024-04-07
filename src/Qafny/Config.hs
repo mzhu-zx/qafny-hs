@@ -1,15 +1,19 @@
 module Qafny.Config where
 
-import           Control.Lens.TH
+data Mode
+  = Verify
+  | Format
 
 data Configs = Configs
   { stdlibPath :: String --
-  , depth :: Int         -- the relative depth between the root and the file
+  , depth      :: Int    -- the relative depth between the root and the file
+  , mode       :: Mode
   }
 
 defaultConfigs :: Configs
 defaultConfigs = Configs
   { stdlibPath = "../../external/"
-  , depth = 0
+  , depth      = 0
+  , mode       = Verify
   }
 

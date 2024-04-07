@@ -3,6 +3,8 @@
   , FlexibleInstances
   , GeneralizedNewtypeDeriving
   , NamedFieldPuns
+  , OverloadedStrings
+  , TypeFamilies
   #-}
 
 module Qafny.Syntax.Emit where
@@ -16,12 +18,20 @@ import           Control.Monad.Reader
 import qualified Data.Map.Strict        as Map
 import           Data.Maybe
     (maybeToList)
+import           Data.String
+    (IsString)
 import           Data.Sum
+import qualified Data.Text              as TS
 import           Data.Text.Lazy
     (Text, unpack)
+import           Data.Text.Lazy.Builder
+    (fromLazyText, fromString, fromText)
 import qualified Data.Text.Lazy.Builder as TB
+import           Data.Type.Equality
 
 -------------------- Builder --------------------
+default (TB.Builder)
+
 
 newtype Builder_ a = Builder { doBuild :: Reader (Int, Bool) a }
   deriving (Functor, Applicative, Monad, (MonadReader (Int, Bool)))
@@ -45,7 +55,7 @@ withIncr2 = local (first (+ 2))
 
 indent :: Builder
 indent = do (n, _) <- ask
-            build $ replicate n ' '
+            return $ TB.fromText (TS.replicate n " ")
 
 
 withParen :: DafnyPrinter a => a -> Builder
@@ -55,7 +65,7 @@ withBracket :: Builder -> Builder
 withBracket b = build '[' <> b <> build ']'
 
 withBrace :: Builder -> Builder
-withBrace b = indent <> build "{\n" <> b <> indent <> build "}\n"
+withBrace b = indent <> "{\n" <> b <> indent <> build "}\n"
 
 
 -- | Build and separate by 'op' but without leading or trailing separator
@@ -87,7 +97,7 @@ lineHuh a = if null a then mempty else line
 debugOnly :: (Show e, DafnyPrinter a) => e -> a -> Builder
 debugOnly e d = do
   (_, b) <- ask
-  if b then build d else build $ "// (DEBUG)" ++ show e
+  if b then build d else build $ "// (DEBUG)" <> TB.fromString (show e)
 
 infixr 6 <!>
 
@@ -107,14 +117,17 @@ instance DafnyPrinter Builder where
   build = id
   {-# INLINE build #-}
 
+instance (s ~ TB.Builder) => DafnyPrinter s where
+  build = return
+
 instance DafnyPrinter Int where
   build = return . TB.fromString . show
 
 instance DafnyPrinter Char where
   build = return . TB.singleton
 
-instance DafnyPrinter String where
-  build = return . TB.fromString
+-- instance DafnyPrinter String where
+--   build = return . TB.fromString
 
 instance DafnyPrinter AST where
   build = by line
@@ -128,7 +141,7 @@ instance DafnyPrinter Ty where
   build TMeasured          = build  "measured"
   build (TQReg n)          = "qreg" <+> n
   build (TSeq t)           = "seq<" <!> t <!> ">"
-  build t@(TEmit (TAny s)) = debugOnly t $ build s
+  build t@(TEmit (TAny s)) = debugOnly t $ TB.fromString s
 
 instance DafnyPrinter MethodType where
   build t@MethodType {mtSrcParams=ts, mtSrcReturns=ts'} = debugOnly t $
@@ -137,28 +150,29 @@ instance DafnyPrinter MethodType where
 instance DafnyPrinter MethodElem where
   build t = debugOnly t $ buildSub t
     where
-      buildSub (MTyPure x ty)   = debugOnly t $ x <+> ":" <+> ty
-      buildSub (MTyQuantum x e) = x <!> "[" <!> e <!> "]"
+      buildSub (MTyPure x ty)   = debugOnly t $ fromString x <+> ":" <+> ty
+      buildSub (MTyQuantum x e) = fromString x <!> "[" <!> e <!> "]"
 
 instance DafnyPrinter AExp where
   build (ANat n) = build n
-  build (AVar v) = build v
+  build (AVar v) = build $ fromString v
 
 instance DafnyPrinter QTy where
   build TNor  = build "nor"
   build THad  = build "had"
-  build TEn   = build "ch"
-  build TEn01 = build "ch01"
+  build TEn   = build "en"
+  build TEn01 = build "en01"
+  build TQft  = build "qft"
 
 instance DafnyPrinter (Binding ()) where
-  build (Binding x t) = x <+>  ":" <+> t
+  build (Binding x t) = fromString x <+>  ":" <+> t
 
 instance DafnyPrinter QDafny where
-  build (QDafny s) = indent <> build s
+  build (QDafny s) = indent <!> fromString s
 
 instance DafnyPrinter (QMethod ()) where
   build (QMethod idt bds rets reqs ens blockHuh) =
-    indent <> "method " <!> idt
+    indent <> "method " <!> fromString idt
     <+> withParen (byComma bds) <> buildRets rets
     <!> lineHuh reqEns
     <!> (withIncr2 . by line $ (indent <!>) <$> reqEns)
@@ -167,7 +181,7 @@ instance DafnyPrinter (QMethod ()) where
     <!> by line (maybeToList blockHuh)
     where buildRets [] = mempty
           buildRets r  = " returns" <+> withParen (byComma r)
-          reqEns = buildConds "requires" reqs ++ buildConds "ensures" ens
+          reqEns = buildConds "requires" reqs <> buildConds "ensures" ens
 
 instance DafnyPrinter (Block ()) where
   build = withBrace . withIncr2 . byLineT . inBlock
@@ -184,18 +198,18 @@ instance DafnyPrinter (Stmt ()) where
     indent <> buildFor
     where
       buildFor =
-        "for " <!> idf <!> " := " <!> initf <!> " to " <!> bound
+        "for " <!> fromString idf <!> " := " <!> initf <!> " to " <!> bound
           <!> "\n"
           <!> buildInvs
           <!> b
       buildInvs = withIncr2 . byLineT $
         map (((indent <!> "invariant") <+>) . build) invs
 
-  build (SDafny s') = indent <> build s'
+  build (SDafny s') = indent <!> fromString s'
 
   build s@(SFor idx boundl boundr eG invs seps body) = debugOnly s $
     indent <> "for"
-    <+> idx <+> "∈" <+> withBracket (boundl <+> ".." <+> boundr)
+    <+> fromString idx <+> "∈" <+> withBracket (boundl <+> ".." <+> boundr)
     <+> "with" <+> eG <!> line
     <!> body
 
@@ -210,13 +224,13 @@ instance DafnyPrinter (Stmt ()) where
       buildStmt :: Stmt' -> Builder
       buildStmt (SVar bd Nothing) = "var " <!> bd
       buildStmt (SVar bd (Just e)) = "var " <!> bd <!> " := " <!> e
-      buildStmt (v ::=: e) = v <!> " := " <!> e
-      buildStmt (SCall e es) = e <!> withParen (byComma es)
+      buildStmt (v ::=: e) = fromString v <!> " := " <!> e
+      buildStmt (SCall v es) = fromString v <!> withParen (byComma es)
       buildStmt (SEmit s') = buildEmit s'
       buildStmt (SAssert e) = "assert " <!> e
       buildStmt (e1 :*=: e2) = debugOnly s $
         e1 <+> "*=" <+> λHuh e2
-      buildStmt e = "// undefined builder for Stmt : " <!> show e
+      buildStmt e = "// undefined builder for Stmt : " <!> fromString (show e)
 
       λHuh e@(ELambda {}) = "λ" <+> e
       λHuh e              = build e
@@ -225,7 +239,7 @@ instance DafnyPrinter (Stmt ()) where
       buildEmit (SVars bds e) = "var" <+> byComma bds <+> ":=" <+> e
       buildEmit (vs :*:=: rhs)  = case rhs of
         [] -> mempty
-        _  -> byComma vs <+> ":=" <+> byComma (withParen <$> rhs)
+        _  -> byComma (fromString <$> vs) <+> ":=" <+> byComma (withParen <$> rhs)
       -- buildEmit (SIfDafny e b) = "if " <!> withParen (build e) <!> b
       buildEmit _             = error "Should have been handled!!"
 
@@ -233,8 +247,8 @@ instance DafnyPrinter GuardExp where
   build (GEPartition p _) = build p
 
 instance DafnyPrinter (Exp ()) where
-  build (ENum n) = build $ show n
-  build (EVar v) = build v
+  build (ENum n) = build n
+  build (EVar v) = build (fromString v)
   build (EBool b) = build $ if b then "true" else "false"
   build (EEmit e) = build e
   build (EOp1 ONeg e1) = "-" <+> e1
@@ -248,20 +262,20 @@ instance DafnyPrinter (Exp ()) where
   build e@EHad = debugOnly e "H"
   build e@(ESpec p qt specs) = debugOnly e $
     "{" <+> p <+> ":" <+> qt  <+> "↦" <+> byComma specs <+> "}"
-  build e@(EApp v es) = v <!> withParen (byComma es)
+  build e@(EApp v es) = fromString v <!> withParen (byComma es)
   build e@(EMeasure s) = debugOnly e $
     "measure" <+> s
   build EWildcard = build "_"
   build (ELambda el) = build el
-  build e = "//" <!> show e <!> build " should not be in emitted form!"
+  build e = "//" <!> fromString (show e) <!> " should not be in emitted form!"
 
 instance (Show f, DafnyPrinter f) => DafnyPrinter (LambdaF f) where
   build e@(LambdaF{ bPhase, bBases, ePhase, eBases }) =
     case (bPhase, ePhase) of
       (PhaseWildCard, PhaseWildCard) ->
-        tupleLike bBases <+> "=>" <+> tupleLike eBases
+        tupleLike (fromString <$> bBases) <+> "=>" <+> tupleLike eBases
       (_, _) -> debugOnly e $
-        bPhase <+> "~" <+> tupleLike bBases <+>
+        bPhase <+> "~" <+> tupleLike (fromString <$> bBases) <+>
         "=>" <+>
         ePhase <+> "~" <+> tupleLike eBases
 
@@ -274,14 +288,14 @@ instance (DafnyPrinter f, Show f) => DafnyPrinter (SpecExpF f) where
     where
       buildSubterm = case s of
         SEWildcard -> build "_"
-        SESpecNor (SpecNorF v1 e2) -> "⊗" <+> v1 <+> '.' <+> e2
-        SESpecHad (SpecHadF v1 p) -> "⊗" <+> v1 <+> '.' <+> p
+        SESpecNor (SpecNorF v1 e2) -> "⊗" <+> fromString v1 <+> '.' <+> e2
+        SESpecHad (SpecHadF v1 p) -> "⊗" <+> fromString v1 <+> '.' <+> p
         SESpecEn (SpecEnF v1 intv a p es) ->
-          "Σ" <+> v1 <+> "∈" <+> intv <+> '.' <+> a <+> p <+> 
+          "Σ" <+> fromString v1 <+> "∈" <+> intv <+> '.' <+> a <+> p <+>
           withParen (byComma es)
-        SESpecEn01 (SpecEn01F v1 intv1 v2 intv2 a p e5) ->
-          "Σ" <+> v1 <+> "∈" <+> intv1 <+> '.' <+>
-          "⊗" <+> v2 <+> "∈" <+> intv2 <+> '.' <+>
+        SESpecEn01 (SpecEn01F v1 intv1 a p v2 intv2 e5) ->
+          "Σ" <+> fromString v1 <+> "∈" <+> intv1 <+> '.' <+>
+          "⊗" <+> fromString v2 <+> "∈" <+> intv2 <+> '.' <+>
           a <+> p <+> withParen (byComma e5)
 
 instance DafnyPrinter f => DafnyPrinter (Maybe f) where
@@ -309,12 +323,12 @@ instance DafnyPrinter EmitExp where
   build EMtSeq = build "[]"
   build (EMakeSeq ty e ee) =
     "seq<" <!> ty <!> ">" <!> withParen (e <!> ", " <!> ee)
-  build (EDafnyVar s) = build s
+  build (EDafnyVar s) = build (fromString s)
   build (EOpChained e eos) =
     foldl (\el (op, er) -> buildOp2 op el (build er)) (build e) eos
   build (ECard e) = "|" <!> e <!> build "|"
-  build (ECall e es) = e <!> withParen (byComma es)
-  build (EMultiLambda vs e) = withParen (byComma vs) <+> "=>" <+> e
+  build (ECall v es) = fromString v <!> withParen (byComma es)
+  build (EMultiLambda vs e) = withParen (byComma (fromString <$> vs)) <+> "=>" <+> e
 
 instance DafnyPrinter Range where
   build rr@(Range v l r) = debugOnly rr $ build (EVar v :@@: (l, r))
@@ -323,7 +337,7 @@ instance DafnyPrinter Partition where
   build pp@(Partition p) = debugOnly pp $ byComma p
 
 instance DafnyPrinter Loc where
-  build = build . deref
+  build = build . fromString . deref
 
 instance DafnyPrinter Locus where
   build st@(Locus {loc=l, part=p, qty, degrees=dgrs}) = debugOnly st $
@@ -364,6 +378,7 @@ instance DafnyPrinter MTy where
 -- on this function not to be parenthesized
 -- TODO: I want to get the precedence right here.
 buildOp2 :: Op2 -> Builder -> Builder -> Builder
+buildOp2 ONor b1 b2 =  "nor" <!> withParen (byComma [b1, b2])
 buildOp2 op b1 b2 =  parenOpt b1 <!> opSign <!> parenOpt b2
   where
     parenOpt :: Builder -> Builder
@@ -374,7 +389,7 @@ buildOp2 op b1 b2 =  parenOpt b1 <!> opSign <!> parenOpt b2
         OMod -> withParen -- mod is a fragile operator
         _    -> id
 
-    opSign :: String
+    opSign :: TB.Builder
     opSign =
       case op of
         OAnd -> " && "
@@ -388,9 +403,9 @@ buildOp2 op b1 b2 =  parenOpt b1 <!> opSign <!> parenOpt b2
         OLe  -> " <= "
         OGt  -> " > "
         OGe  -> " >= "
-        _    -> "\\ unsupprted " ++ show op
+        -- _    -> "\\ unsupprted " <> show op
 
-buildConds :: String -> [Exp'] -> [Builder]
+buildConds :: TB.Builder -> [Exp'] -> [Builder]
 buildConds s = map ((s <!> " ") <!>)
 
 runBuilder :: DafnyPrinter a => Int -> Bool -> a -> Text

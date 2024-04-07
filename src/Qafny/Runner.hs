@@ -1,13 +1,23 @@
 module Qafny.Runner where
-import           Control.Algebra                 (run)
-import           Control.Carrier.Reader          (runReader)
-import           Control.Carrier.Trace.Returning (runTrace)
-import           Data.Maybe                      (catMaybes)
-import           Qafny.Codegen                   (codegenAST)
-import           Qafny.Config                    (Configs)
+import           Control.Algebra
+    (run)
+import           Control.Carrier.Reader
+    (runReader)
+import           Control.Carrier.Trace.Returning
+    (runTrace)
+import           Data.Maybe
+    (catMaybes)
+import           Qafny.Codegen
+    (codegenAST)
+import           Qafny.Config
+    (Configs)
+import           Qafny.Syntax.AST
+    (AST, Toplevel', Var)
+import           Qafny.Syntax.Emit
+    (prettyIO)
 import           Qafny.Syntax.IR
-import           Qafny.Syntax.AST                (AST, Toplevel', Var)
-import           Qafny.Syntax.Parser             (scanAndParse)
+import           Qafny.Syntax.Parser
+    (scanAndParse)
 
 --------------------------------------------------------------------------------
 -- Wrapper
@@ -29,19 +39,6 @@ collectErrors Production{ pDetail=detail, pState=st } = catMaybes $ do
 --------------------------------------------------------------------------------
 -- | Runner
 --------------------------------------------------------------------------------
--- debugCodegen :: Configs -> AST -> Production AST
--- debugCodegen conf ast =
---   let (tr, (st, a)) = run . run' $ codegenAST ast
---   in (Right a, st, [], tr)
---   where
---     run' =
---       runTrace .
---       runReader conf .
---       runReader initTEnv .
---       runState initTState .
---       ErrC.runError error return
-
-
 runCodegen
   :: Configs -> AST
   -> ([String], ([((Var, TState), Either String Toplevel')], Either String AST))
@@ -71,3 +68,8 @@ loadFileIO :: String -> IO AST
 loadFileIO prog = do
   file <- readFile $ "./test/Resource/" ++ prog ++ ".qfy"
   either fail return $ scanAndParse file
+
+formatProg :: String -> IO ()
+formatProg s = case scanAndParse s of
+  Left parseErr -> putStrLn parseErr
+  Right ast     -> prettyIO ast
