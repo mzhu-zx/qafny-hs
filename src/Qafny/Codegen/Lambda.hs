@@ -8,9 +8,6 @@ module Qafny.Codegen.Lambda(codegenLambda) where
 
 import           Control.Exception
     (assert)
-
-import           Control.Lens
-    (locus)
 import           Data.Sum
     (Injection (inj))
 import           Qafny.Codegen.Merge

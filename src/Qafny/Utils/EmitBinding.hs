@@ -12,6 +12,7 @@ module Qafny.Utils.EmitBinding
   , genEmStUpdatePhase, genEmStByRange, genEmStByRanges, genEmStFromLocus
   , genEmStUpdatePhaseFromLocus
   , genEmStUpdateKets
+  , regenEmStByLocus
     -- * Gensyms w/o State
   , genEmByRange
     -- * Query
@@ -42,6 +43,8 @@ import           Text.Printf
     (printf)
 
 import           Control.Effect.Lens
+import           Data.Foldable
+    (Foldable (toList))
 import           Data.Maybe
     (catMaybes)
 import           Qafny.Effect
@@ -121,7 +124,7 @@ genEmByRange qt r = do
                      }
   return ed
 
--- | Generate EmitData for a list of ranges and manage it in state. 
+-- | Generate EmitData for a list of ranges and manage it in state.
 genEmStByRanges
   :: ( GensymEmitterWithState sig m
      , Traversable t
@@ -131,8 +134,17 @@ genEmStByRanges qt = mapM go
   where
     go r = (r,) <$> genEmStByRange qt r
 
+
+-- | Remove the previous EmitData, and generate an `EmitData` from a Locus
+-- including both amplitude, range and phase.
+regenEmStByLocus
+  :: ( GensymEmitterWithState sig m, Traversable t)
+  => LocusT t -> LocusT t -> m (EmitData, t (Range, EmitData))
+regenEmStByLocus prevLocus newLocus =
+  deleteEmByLocus prevLocus >> genEmStFromLocus newLocus
+
 -- | Generate an `EmitData` from a Locus including both amplitude, range and
--- phase.
+-- phase. The newly generated entries simply overwrites the previous ones.
 genEmStFromLocus
   :: ( GensymEmitterWithState sig m
      , Traversable t
@@ -146,6 +158,9 @@ genEmStFromLocus Locus{loc, part=Partition{ranges}, qty, degrees} = do
   emitSt %= (at (inj loc) ?~ edL)
   return ( edL , rEms )
 
+{-# DEPRECATED genEmStUpdatePhaseFromLocus
+    "What's the differnce between update and overwrite?"
+  #-}
 -- | Update existing `EmitData` based on degree information from a Locus.
 genEmStUpdatePhaseFromLocus
   :: ( GensymEmitterWithState sig m
@@ -163,6 +178,9 @@ appendEmSt rl ed = do
   emitSt %= Map.adjust (<> ed) rl
   findEm rl
 
+{-# DEPRECATED genEmStUpdatePhase
+    "What's the differnce between update and overwrite?"
+  #-}
 -- | Update an existing `EmitData` by generating a phase from a given degree.
 genEmStUpdatePhase
   :: GensymEmitterWithStateError sig m
@@ -171,6 +189,9 @@ genEmStUpdatePhase qt i l  = errTrace "`genEmStUpdatePhase`" $ do
   evPhaseRef  <- genPhase qt i l
   appendEmSt (inj l) (mtEmitData {evPhaseRef})
 
+{-# DEPRECATED genEmStUpdateKets
+    "What's the differnce between update and overwrite?"
+  #-}
 genEmStUpdateKets
   :: GensymEmitterWithStateError sig m
   => QTy -> [Range] -> m [Var]
@@ -251,12 +272,22 @@ findEmitBasesByRanges = findVisitEms evBasis . (inj <$>)
 deleteEm :: (Has (State TState) sig m) => RangeOrLoc -> m ()
 deleteEm rl = emitSt %= sans rl
 
-deleteEms :: (Has (State TState) sig m) => [RangeOrLoc] -> m ()
-deleteEms s = emitSt %= (`Map.withoutKeys` Set.fromList s)
+deleteEmByLocus
+  :: (Has (State TState) sig m, Traversable t)
+  => LocusT t -> m ()
+deleteEmByLocus Locus{loc, part=Partition{ranges}} =
+  deleteEmPartition loc ranges
 
-deleteEmPartition :: (Has (State TState) sig m) => Loc -> [Range] -> m ()
+deleteEms
+  :: (Has (State TState) sig m, Traversable t) => t RangeOrLoc -> m ()
+deleteEms s = emitSt %= (`Map.withoutKeys` Set.fromList (toList s))
+
+deleteEmPartition
+  :: (Has (State TState) sig m, Traversable t)
+  => Loc -> t Range -> m ()
 deleteEmPartition l rs =
-  deleteEms (inj l : (inj <$> rs))
+  deleteEm (inj l) >>
+  deleteEms (inj <$> rs)
 
 -- ** Helpers
 fsts :: [(a, b)] -> [a]

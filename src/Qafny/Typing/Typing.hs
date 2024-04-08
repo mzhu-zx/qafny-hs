@@ -669,19 +669,19 @@ retypePartition1 st qtNow =
 -- Both retyping and cast converts the type of a locus to another, however cast
 -- generates new meta variables as well while retyping performs cast in place.
 castScheme
-  :: ( Has (Error String) sig m
-     , Has (State TState) sig m
-     , Has (Gensym Emitter) sig m
-     )
+  :: GensymEmitterWithStateError sig m
   => Locus -> QTy -> m (Locus, Maybe CastScheme)
 castScheme locus@Locus{loc=locS, part=sResolved, qty, degrees} qtNow =
   case castLocus locus qtNow of
     Left ErrNoCast -> return (locus, Nothing)
     Left ErrInvalidCast ->
       throwError' $ printf "%s cannot be casted into %s." (showEmit0 qty) (showEmit0 qtNow)
-    Right locus' -> go locus' 
+    Right locus' -> go locus'
   where
-    go newLocus = undefined
+    go newLocus = do
+      oldEms <- findEmsByLocus locus
+      newEms <- regenEmStByLocus locus newLocus
+      undefined
 
 
     --   case newLocus of

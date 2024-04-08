@@ -25,11 +25,13 @@ dependencies:
 - fused-effects
 - fused-effects-lens
 - recursion-schemes
+- prettyprinter
 
 language: GHC2021
 
 ghc-options:
 - -Wall
+# - -Werror=deprecations
 - -Wcompat
 - -Widentities
 - -Wincomplete-record-updates
