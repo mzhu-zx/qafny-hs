@@ -219,7 +219,7 @@ instance DafnyPrinter (Stmt ()) where
       buildStmt (v ::=: e) = fromString v <!> " := " <!> e
       buildStmt (SCall v es) = fromString v <!> withParen (byComma es)
       buildStmt (SEmit s') = buildEmit s'
-      buildStmt (SAssert e) = "assebuild " <!> e
+      buildStmt (SAssert e) = "assert " <!> e
       buildStmt (e1 :*=: e2) = debugOnly s $
         e1 <+> "*=" <+> λHuh e2
       buildStmt e = "// undefined builder for Stmt : " <!> fromString (show e)
