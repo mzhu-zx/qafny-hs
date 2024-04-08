@@ -99,7 +99,9 @@ withProg srcFile config@Configs{mode=Format} = do
   src <- readFile srcFile
   case scanAndParse src of
     Left s  -> pError s
-    Right p -> prettyIO p
+    Right p ->
+      putStrLn "============================================================"
+      >> prettyIO p
 
 withProg srcFile config@Configs{mode=Verify} = do
   printf "[Info] verify %s\n" srcFile
