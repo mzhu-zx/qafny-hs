@@ -70,6 +70,7 @@ import           Qafny.Typing.Error
     (SCError (SplitENError), failureAsSCError)
 import           Text.Printf
     (printf)
+import Qafny.Typing.Locus (updateMetaStByLocus)
 
 throwError'
   :: ( Has (Error String) sig m )
@@ -672,14 +673,19 @@ castScheme locus@Locus{loc=locS, part=sResolved, qty, degrees} qtNow =
     Left ErrNoCast -> return (locus, Nothing)
     Left ErrInvalidCast ->
       throwError' $ printf "%s cannot be casted into %s." (showEmit0 qty) (showEmit0 qtNow)
-    Right locus' -> go locus'
-  where
-    go newLocus = do
-      schEdsFrom <- findEmsByLocus locus
-      schEdsTo   <- regenEmStByLocus locus newLocus
-      return ( newLocus
-             , Just CastScheme { schEdsFrom, schEdsTo
-                               , schQtFrom=qty, schQtTo=qtNow })
+    Right locus' -> (locus,) . Just <$> castSchemeUnchecked locus locus'
+
+-- | Calculate the cast scheme between two loci.
+-- The cast will happen for sure even if there's actually no cast relation
+-- between those two Loci.
+castSchemeUnchecked
+  :: GensymEmitterWithStateError sig m
+  => Locus -> Locus ->m CastScheme
+castSchemeUnchecked locus@Locus{qty=schQtFrom} newLocus@Locus{qty=schQtTo} = do
+  updateMetaStByLocus newLocus
+  schEdsFrom <- findEmsByLocus locus
+  schEdsTo   <- regenEmStByLocus locus newLocus
+  return CastScheme{schEdsFrom,schEdsTo,schQtFrom,schQtTo}
 
 -- | The same as 'castScheme', for compatibility
 retypePartition
@@ -973,3 +979,4 @@ extendState p@Partition{ranges} qt dgrs = do
   xSt %= Map.unionWith (++) (Map.fromListWith (++) xMap)
   let sLocus = Locus{loc=sLoc, qty=qt, part=p, degrees=dgrs}
   genEmStFromLocus sLocus
+

@@ -17,7 +17,7 @@ import           Qafny.FileUtils
 import           Qafny.Runner
     (Production (..), collectErrors, produceCodegen)
 import           Qafny.Syntax.Emit
-    (prettyIO, texify)
+    (prettyIO, texify, showEmitI)
 import           Qafny.Syntax.Parser
     (scanAndParse)
 import           System.Directory
@@ -128,7 +128,7 @@ withProg srcFile config@Configs{mode=Verify} = do
 
     formatMethodError (m, e) = printf "(\ESC[3m%s\ESC[0m\ESC[93m): %s" m e
     showEachSt (v, st) =
-      printf "\nThe final state of the method `%s`:\n%s\n" v (show st)
+      printf "\nThe final state of the method `%s`:\n%s\n" v (showEmitI 2 st)
     tgtFile = srcFile -<.> "dfy"
 
 

@@ -56,7 +56,11 @@ withBracket :: Builder -> Builder
 withBracket b = build '[' <> b <> build ']'
 
 withBrace :: Builder -> Builder
-withBrace b = indent <> build "{\n" <> b <> indent <> build "}\n"
+withBrace b =
+  indent <> build "{"
+  <> line <!> b <> line
+  <> indent <!> "}"
+  <!> line
 
 
 -- | Build and separate by 'op' but without leading or trailing separator
@@ -65,7 +69,7 @@ by op []     = mempty
 by op (x:xs) = foldl (\ys y -> ys <!> op <!> build y) (build x) xs
 
 byComma :: DafnyPrinter a => [a] -> Builder
-byComma = by (", ")
+byComma = by ", "
 
 tupleLike :: DafnyPrinter a => [a] -> Builder
 tupleLike []  = mempty
@@ -74,7 +78,7 @@ tupleLike xs  = withParen . byComma $ xs
 
 -- | Build and separate by line but with a trailing newline
 byLineT :: DafnyPrinter a => [a] -> Builder
-byLineT = foldr (\y ys -> y <!> line <!> ys) mempty
+byLineT a = by (line <> indent) a <!> line
 
 -- | Build each element and separate them by a newline without producing any
 -- newline in the end but with a leading newline if the list is nonempty
@@ -133,8 +137,8 @@ instance DafnyPrinter AST where
   build = by line
 
 instance DafnyPrinter Ty where
-  build TNat               = build "na"
-  build TInt               = build "in"
+  build TNat               = build "nat"
+  build TInt               = build "int"
   build TBool              = build "bool"
   build (TArrow tys ty)    =
     withBracket (byComma tys) <+> "->" <+> ty
@@ -168,7 +172,7 @@ instance DafnyPrinter (Binding ()) where
   build (Binding x ty) = fromString x <+> ":" <+> ty
 
 instance DafnyPrinter QDafny where
-  build (QDafny s) = indent <!> fromString s
+  build (QDafny s) = build s
 
 instance DafnyPrinter (QMethod ()) where
   build (QMethod idt bds rets reqs ens blockHuh) =
@@ -184,7 +188,7 @@ instance DafnyPrinter (QMethod ()) where
           reqEns = buildConds "requires" reqs <> buildConds "ensures" ens
 
 instance DafnyPrinter (Block ()) where
-  build = withBrace . withIncr2 . byLineT . inBlock
+  build = withBrace . withIncr2 . (indent <>) . by (line <> indent) . inBlock
 
 instance DafnyPrinter (Toplevel ()) where
   build ty = case unTop ty of
@@ -195,31 +199,27 @@ instance DafnyPrinter (Toplevel ()) where
 instance DafnyPrinter (Stmt ()) where
   build (SEmit (SBlock b)) = build b
   build (SEmit f@(SForEmit idf initf bound invs b)) =
-    indent <> buildFor
-    where
-      buildFor =
-        "for " <!> fromString idf <!> " := " <!> initf <!> " to " <!> bound
-          <!> "\n"
-          <!> buildInvs
-          <!> b
-      buildInvs = withIncr2 . byLineT $
-        map (((indent <!> "invarian") <+>) . build) invs
+    "for " <!> fromString idf <!> " := " <!> initf <!> " to " <!> bound
+      <!> "\n"
+      <!> withIncr2 (indent <> byLineT (("invariant" <+>) <$> invs))
+      <!> b
 
-  build (SDafny s') = indent <!> fromString s'
+  build (SDafny s') = build s'
 
   build s@(SFor idx boundl boundr eG invs seps body) = debugOnly s $
-    indent <> "for"
+    "for"
     <+> fromString idx <+> "∈" <+> withBracket (boundl <+> ".." <+> boundr)
     <+> "with" <+> eG <!> line
+    <!> withIncr2 (indent <> byLineT (("invariant" <+>) <$> invs))
     <!> body
 
   -- Statements that end with a SemiColon
   build s@(SIf eg sep block) = debugOnly s $
-    indent <!> "if" <+> withParen eg <!> line <!>
-    indent <!> "  " <!> "seperates" <+> sep <!> line <!>
+    "if" <+> withParen eg <!> line <!>
+    indent <!> "seperates" <+> sep <!> line <!>
     block
 
-  build s = indent <> buildStmt s <> build ';'
+  build s = buildStmt s <> build ';'
     where
       buildStmt :: Stmt' -> Builder
       buildStmt (SVar bd Nothing) = "var " <!> bd
@@ -352,7 +352,7 @@ instance DafnyPrinter PhaseRef where
     prRepr <+> "/" <+> prBase
 
 instance DafnyPrinter EmitData where
-  build EmitData{evPhaseRef, evBasis, evAmp} = byLineT $
+  build EmitData{evPhaseRef, evBasis, evAmp} = byComma $
     [ "phase:" <+> evPhaseRef
     , "ket:"   <+> evBasis
     , "amp:"   <+> evAmp
@@ -373,10 +373,9 @@ instance ( DafnyPrinter a
 --     amp <+> phase <+> "~" <+> spec
 
 
-instance ( Show k, Show v
-         , DafnyPrinter k, DafnyPrinter v
+instance ( DafnyPrinter k, DafnyPrinter v
          ) => DafnyPrinter (Map.Map k v) where
-  build m' = debugOnly m $
+  build m' = debugOnly' $
     byLineT ((indent <>) . row <$> m)
     where
       m = Map.toList m'
@@ -444,3 +443,24 @@ showEmit0 = showEmitI 0
 
 -- Regex for OverloadedStrings
 -- \(\"[^\"]+?\"\) → t\1
+
+--------------------------------------------------------------------------------
+-- Debugging Instances
+--------------------------------------------------------------------------------
+
+instance DafnyPrinter [Int] where
+  build = withBracket . byComma
+
+instance DafnyPrinter TState where
+  build TState{_sSt, _xSt, _emitSt} = byLineT $
+    [ build "Partition Reference State:"
+    , build (byLineT <$> _xSt)
+    , build "Partition State:"
+    , build _sSt
+    , build "Renaming State:"
+    , build _emitSt
+    ]
+
+instance (DafnyPrinter a, DafnyPrinter b) => DafnyPrinter (a :+: b) where
+  build (Inl a) = build a 
+  build (Inr b) = build b

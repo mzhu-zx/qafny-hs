@@ -42,7 +42,7 @@ import           Data.List.NonEmpty
     (NonEmpty (..))
 import qualified Data.Map.Strict              as Map
 import           Data.Maybe
-    (mapMaybe)
+    (mapMaybe, fromMaybe)
 import qualified Data.Sum                     as Sum
 import           Text.Printf
     (printf)
@@ -97,6 +97,7 @@ import           Qafny.Utils.TraceF
     (Traceable (tracef))
 import           Qafny.Utils.Utils
     (both, bothM, dumpSt, gensymLoc, getMethodType)
+import Qafny.Codegen.Had (codegenNorToHad)
 
 --------------------------------------------------------------------------------
 -- * Introduction
@@ -431,18 +432,21 @@ codegenStmt'Apply
   => Stmt'
   -> m [Stmt']
 codegenStmt'Apply (s :*=: EHad) = do
-  r <- case unpackPart s of
-    [r] -> return r
-    _   -> throwError' "TODO: support non-singleton partition in `*=`"
-  st@Locus{qty=qt} <- resolvePartition s
-  opCast <- opCastHad qt
-  -- run split semantics here!
-  (stSplit, ssMaybe) <- splitScheme st r
-  let stmtsSplit = maybe [] codegenSplitEmit ssMaybe
-  (stmtsSplit ++) . snd <$> castWithOp opCast stSplit THad
+  st@Locus{qty, part=Partition{ranges}} <- resolvePartition s
+  go st
   where
-    opCastHad TNor = return "CastNorHad"
-    opCastHad t = throwError $ "type `" ++ show t ++ "` cannot be casted to Had type"
+    go l@Locus{qty, part=Partition [r]} = do
+      (lSplit, splitMaybe) <- splitScheme l r
+      (lCasted, castMaybe) <- castScheme lSplit THad
+      cast <- maybe
+        (throwError' "Applying H over a Had locus is unimplemented.")
+        pure castMaybe
+      stmtsCast <- codegenNorToHad cast
+      return $ codegenSplitEmitMaybe splitMaybe ++ stmtsCast
+    go l = throwError' $ printf
+      "H may not be applied to locus %s" (showEmit0 l)
+
+
 codegenStmt'Apply stmt@(s@(Partition{}) :*=: (ELambda lam)) =
   codegenLambda s lam
 codegenStmt'Apply (s :*=: (EQft b)) = codegenApplyQft s

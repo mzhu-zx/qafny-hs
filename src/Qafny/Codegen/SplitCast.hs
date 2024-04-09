@@ -121,6 +121,11 @@ codegenCastEmitMaybe =
   maybe (return []) codegenCastEmit
 
 
+
+-- | Generate statements to cast the type of a locus into a given one.
+--
+-- A cast doesn't change the meaning of the representation while a promotion
+-- does.
 codegenCastEmit
   :: ( Has (Error String) sig m)
   => CastScheme -> m [Stmt']
@@ -138,13 +143,6 @@ codegenCastEmit
   where
     rules :: QTy -> QTy -> Maybe [Stmt']
     -- "nor < *"
-    rules TNor THad = do
-      -- | Cast Nor to first degree Had
-      -- No amplitude is involved
-      (PhaseRef vBase vRepr, TSeqNat) <- evPhaseRef lEdTo
-      [(vKet, TSeqNat)]               <- (evBasis . snd) `mapM` rsEdFrom
-      return $ SEmit <$>
-        [[vBase, vRepr] :*:=: ["CastNorHad" >$ vKet]]
     rules TNor TEn = do
       -- | Cast Nor to 0th degree En
       (vAmpE, TSeqReal)  <- evAmp lEdTo
@@ -201,6 +199,7 @@ codegenCastEmit
         [ vKetE ::=: app
         , vAmpE ::=: ampFromRepr vKetE ]
     rules _ _ = Nothing
+
 
 -- | Convert quantum type of `s` to `newTy` and emit a cast statement with a
 -- provided `op`
