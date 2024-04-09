@@ -1,6 +1,6 @@
 --------------------------------------------------------------------------------
 -- |
--- Code generation of qunatum state predicates and specifications.
+-- Code generation of quantum state predicates and specifications.
 --------------------------------------------------------------------------------
 
 {-# LANGUAGE

@@ -145,7 +145,7 @@ lambdaUnphase l = ELambda
   l{ bPhase = PhaseWildCard, ePhase = PhaseWildCard }
 
 tySr :: Ty
-tySr = TSeq tyReal
+tySr = TSeq TReal
 
 tySn :: Ty
 tySn = TSeq TNat
@@ -182,3 +182,7 @@ mkForallEq2 x p y q v e =
   EForall (Binding y TNat) (Just (q y))
   ((v >:@: x >:@: y) `eEq` e)
 
+
+(>//) :: (AstInjection a Exp', AstInjection b Exp') => a -> b -> Exp'
+e1 >// e2 =
+  EOp2 ODiv (injAst (EAsReal (injAst e1))) (injAst (EAsReal (injAst e2)))

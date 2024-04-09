@@ -15,7 +15,11 @@ import           Data.List
 import qualified Data.List.NonEmpty       as NE
 import           Data.Maybe
     (maybeToList)
+import           Qafny.Codegen.Amplitude
+    (ampFromRepr)
 import           Qafny.Effect
+import           Qafny.Partial
+    (Reducible (reduce))
 import           Qafny.Syntax.AST
 import           Qafny.Syntax.ASTFactory
 import           Qafny.Syntax.Emit
@@ -29,7 +33,6 @@ import           Qafny.Utils.Utils
     (both)
 import           Text.Printf
     (printf)
-import Qafny.Partial (Reducible(reduce))
 
 
 
@@ -144,16 +147,18 @@ codegenCastEmit
         [[vBase, vRepr] :*:=: ["CastNorHad" >$ vKet]]
     rules TNor TEn = do
       -- | Cast Nor to 0th degree En
-      -- FIXME: amplitude?
+      (vAmpE, TSeqReal)  <- evAmp lEdTo
       [(vKetN, TSeqNat)] <- mapM (evBasis . snd) rsEdFrom
       [(vKetE, TSeqNat)] <- mapM (evBasis . snd) rsEdTo
-      return [ vKetE ::=: ("CastNorEn_Ket" >$ vKetN) ]
+      return [ vKetE ::=: ("CastNorEn_Ket" >$ vKetN)
+             , vAmpE ::=: ampFromRepr vKetE ]
     rules TNor TEn01 = do
       -- | Cast Nor to 0th degree En
-      -- FIXME: amplitude?
-      [(vKetN, TSeqNat)] <- mapM (evBasis . snd) rsEdFrom
+      (vAmpE, TSeqReal)     <- evAmp lEdTo
+      [(vKetN, TSeqNat)]    <- mapM (evBasis . snd) rsEdFrom
       [(vKetE, TSeqSeqNat)] <- mapM (evBasis . snd) rsEdTo
-      return [ vKetE ::=: ("CastNorEn01_Ket" >$ vKetN) ]
+      return [ vKetE ::=: ("CastNorEn01_Ket" >$ vKetN)
+             , vAmpE ::=: ampFromRepr vKetE ]
 
     -- "had < *"
     rules THad TEn = do
@@ -168,28 +173,33 @@ codegenCastEmit
         _ -> Nothing
       [(Range _ left right, rEdTo)] <- return rsEdTo
       (vKetE, TSeqNat)              <- evBasis rEdTo
+      (vAmpE, TSeqReal)             <- evAmp lEdTo
       return $
-        [vKetE ::=: ("CastHadEn_Ket" >$ right - left)] ++ phaseStmts
+        phaseStmts ++
+        [ vKetE ::=: ("CastHadEn_Ket" >$ right - left)
+        , vAmpE ::=: ampFromRepr vKetE ]
 
     rules THad TEn01 = do
       -- | Cast a 0th/1st degree Had to 0th/1st degree En
-      -- No amplitude is involved
       phaseStmts <- case (evPhaseRef lEdFrom, evPhaseRef lEdTo) of
         (Nothing, Nothing) -> Just []
         (Just (PhaseRef pvReprH pvBaseH, TSeqNat),
          Just (PhaseRef pvReprE pvBaseE, TSeqNat)) -> Just
           [ pvBaseE >::=: pvBaseH
-          , pvReprE  ::=: ("CastHadEn_Phase_1st" >$* [pvReprH, pvBaseH])]
+          , pvReprE  ::=: ("CastHadEn_Phase_1st" >$* [pvReprH, pvBaseH]) ]
         _ -> Nothing
       [(Range _ left right, rEdTo)] <- return rsEdTo
       (vKetE, TSeqSeqNat)           <- evBasis rEdTo
+      (vAmpE, TSeqReal)             <- evAmp lEdTo
       let card = reduce $ right - left
       let app :: Exp' = if card == 1
             -- specialized instance
             then EEmit $ "CastHadEn01_Ket1" `ECall` []
             else "CastHadEn01_Ket" >$ right - left
       return $
-        [vKetE ::=: app] ++ phaseStmts
+        phaseStmts ++
+        [ vKetE ::=: app
+        , vAmpE ::=: ampFromRepr vKetE ]
     rules _ _ = Nothing
 
 -- | Convert quantum type of `s` to `newTy` and emit a cast statement with a

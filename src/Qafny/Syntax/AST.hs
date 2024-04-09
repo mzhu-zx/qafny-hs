@@ -99,15 +99,17 @@ pattern TSeqNat :: Ty
 pattern TSeqNat = TSeq TNat
 
 pattern TSeqSeqNat :: Ty
-pattern TSeqSeqNat = TSeq (TSeq TNat)
+pattern TSeqSeqNat = TSeq TSeqNat
+
+pattern TReal :: Ty
+pattern TReal = TEmit (TAny "real")
+
+pattern TSeqReal :: Ty
+pattern TSeqReal = TSeq TReal
 
 -- | EmitExp : Unchecked Types for Codegen Only
-data EmitTy
-  = TAny String
+newtype EmitTy = TAny String
   deriving (Show, Eq, Ord)
-
-tyReal :: Ty
-tyReal = TEmit $ TAny "real"
 
 data QTy
   = TNor
@@ -119,9 +121,7 @@ data QTy
 
 type Var = String
 
-
-data Binding x
-  = Binding (XRec x Var) Ty
+data Binding x = Binding (XRec x Var) Ty
 
 deriving instance (Show (XRec x Var), Show (XRec x Ty)) => Show (Binding x)
 deriving instance (Eq (XRec x Var), Eq (XRec x Ty)) => Eq (Binding x)
@@ -136,6 +136,7 @@ data Op2
   = OAnd
   | OOr
   | OAdd
+  | ODiv
   | OSub
   | OMul
   | OMod
@@ -331,6 +332,7 @@ data EmitExp
   | EDafnyVar Var
   | EMultiLambda [Var] (Exp ())
   | EOpChained (Exp ()) [(Op2, Exp ())]
+  | EAsReal (Exp ())
   deriving  (Show, Eq, Ord-- , Data, Typeable
             )
 

@@ -330,6 +330,8 @@ instance DafnyPrinter EmitExp where
   build (ECard e) = "|" <!> e <!> "|"
   build (ECall v es) = fromString v <!> withParen (byComma es)
   build (EMultiLambda vs e) = withParen (byComma (fromString <$> vs)) <+> "=>" <+> e
+  build (EAsReal e) =
+    withParen (withParen e <+> "as real")
 
 instance DafnyPrinter Range where
   build rr@(Range v l r) = debugOnly rr $ build (EVar v :@@: (l, r))
@@ -398,6 +400,7 @@ buildOp2 op b1 b2 =  parenOpt b1 <!> opSign <!> parenOpt b2
         OAnd -> withParen
         OOr  -> withParen
         OMod -> withParen -- mod is a fragile operator
+        ODiv -> withParen
         _    -> id
 
     opSign :: TB.Builder
@@ -409,6 +412,7 @@ buildOp2 op b1 b2 =  parenOpt b1 <!> opSign <!> parenOpt b2
         OSub -> " - "
         OMul -> " * "
         OMod -> " % "
+        ODiv -> " / "
         OEq  -> " == "
         OLt  -> " < "
         OLe  -> " <= "
