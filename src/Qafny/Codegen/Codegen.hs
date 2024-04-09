@@ -63,11 +63,11 @@ import           Qafny.Syntax.Emit
 import           Qafny.Syntax.EmitBinding
 import           Qafny.Syntax.IR
 import           Qafny.Typing
-    (appkEnvWithBds, checkSubtype, collectConstraints,
-    matchEmitStatesVars, matchStateCorrLoop, mergeCandidateHad, mergeLociHadEN,
-    mergeMatchedTState, mergeScheme, removeTStateByLocus, resolvePartition, resolvePartitions, retypePartition1, splitScheme,
-    splitSchemePartition, splitThenCastScheme, tStateFromPartitionQTys,
-    typingExp, typingGuard, typingPartition)
+    (appkEnvWithBds, checkSubtype, collectConstraints, matchEmitStatesVars,
+    matchStateCorrLoop, mergeCandidateHad, mergeLociHadEN, mergeMatchedTState,
+    mergeScheme, removeTStateByLocus, resolvePartition, resolvePartitions,
+    splitScheme, splitSchemePartition, splitThenCastScheme,
+    tStateFromPartitionQTys, typingExp, typingGuard, typingPartition, castScheme)
 import           Qafny.Typing.Utils
     (emitTypeFromDegree, isEn)
 
@@ -912,12 +912,12 @@ mergeHadGuardWith
      )
   => Exp' -> Locus -> Locus -> Exp' -> Exp' -> m [Stmt']
 mergeHadGuardWith eBase stG' stB cardBody cardStashed =
-  retypePartition1 stG' TEn >>= maybe (return []) go
-  where
-    go (_, _, vGENow, tGENow) = do
-      stG <- resolvePartition (part stG')
-      mergeLociHadEN stB stG
-      return $ hadGuardMergeExp vGENow tGENow cardBody cardStashed eBase
+  castScheme stG' TEn >>= undefined -- maybe (return []) go
+  -- where
+    -- go (_, _, vGENow, tGENow) = do
+    --   stG <- resolvePartition (part stG')
+    --   mergeLociHadEN stB stG
+    --   return $ hadGuardMergeExp vGENow tGENow cardBody cardStashed eBase
 
 hadGuardMergeExp :: Var -> Ty -> Exp' -> Exp' -> Exp' -> [Stmt']
 hadGuardMergeExp vEmit tEmit cardMain cardStash eBase =

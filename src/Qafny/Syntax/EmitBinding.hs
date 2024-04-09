@@ -1,6 +1,7 @@
 {-# LANGUAGE
     FlexibleInstances
   , TypeOperators
+  , PatternSynonyms
   #-}
 
 module Qafny.Syntax.EmitBinding where
@@ -84,3 +85,18 @@ data Emitter
   | EmAmplitude Loc QTy              -- ^ Amplitude?
   | EmAnyBinding Var Ty              -- ^ Anything like a binding
   deriving (Show)
+
+-- pattern PhaseEm :: Var -> Var -> Ty -> EmitData
+-- pattern PhaseEm{pvRepr, pvBase, pvPhaseTy} =
+--   EmitData { evPhaseRef = Just (PhaseRef{prBase=pvRepr, prRepr=pvBase}, pvPhaseTy)
+--            , evBasis = Nothing
+--            , evAmp = Nothing
+--            } 
+
+-- pattern RangeEm :: Range -> Var -> Ty -> (Range, EmitData)
+-- pattern RangeEm{prRange, pvKet, pvKetTy} =
+--   ( prRange
+--   , EmitData { evPhaseRef = Nothing
+--              , evBasis = Just (pvKet, pvKetTy)
+--              , evAmp = Nothing
+--              })

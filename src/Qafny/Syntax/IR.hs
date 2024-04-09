@@ -158,11 +158,11 @@ data SplitScheme = SplitScheme
   deriving Show
 
 data CastScheme = CastScheme
-  { schVsOldEmit :: [(Var, Ty)]
-  , schVsNewEmit :: [(Var, Ty)]
-  , schQtOld     :: QTy
-  , schQtNew     :: QTy
-  , schRsCast    :: [Range] -- | casted ranges
+  { schEdsFrom :: (EmitData, [(Range, EmitData)])
+  , schEdsTo   :: (EmitData, [(Range, EmitData)])
+  , schQtFrom  :: QTy
+  , schQtTo    :: QTy
+  -- , schRsCast  :: [Range] -- | casted ranges
   }
   deriving Show
 

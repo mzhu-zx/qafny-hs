@@ -644,30 +644,26 @@ checkSubtypeQ t1 t2 =
 -------------------------------------------------------------------------------
 -- | Type Manipulation
 --------------------------------------------------------------------------------
-retypePartition1
-  :: ( Has (Error String) sig m
-     , Has (State TState) sig m
-     , Has (Gensym Emitter) sig m
-     )
-  => Locus -> QTy -> m (Maybe (Var, Ty, Var, Ty))
-retypePartition1 st qtNow =
-  retypePartition st qtNow >>= maybe (return Nothing) go
-  where
-    go CastScheme{ schVsOldEmit=vsPrev
-                 , schVsNewEmit=vsNow} =
-      case (vsPrev, vsNow) of
-        ([(vPrev, tPrev)], [(vNow, tNow)]) ->
-          return $ pure (vPrev, tPrev, vNow, tNow)
-        _ ->
-          throwError @String $ printf "%s and %s contains more than 1 partition!"
-          (show vsPrev) (show vsNow)
+-- retypePartition1
+--   :: ( Has (Error String) sig m
+--      , Has (State TState) sig m
+--      , Has (Gensym Emitter) sig m
+--      )
+--   => Locus -> QTy -> m (Maybe (Var, Ty, Var, Ty))
+-- retypePartition1 st qtNow =
+--   retypePartition st qtNow >>= maybe (return Nothing) go
+--   where
+--     go CastScheme{ schVsOldEmit=vsPrev
+--                  , schVsNewEmit=vsNow} =
+--       case (vsPrev, vsNow) of
+--         ([(vPrev, tPrev)], [(vNow, tNow)]) ->
+--           return $ pure (vPrev, tPrev, vNow, tNow)
+--         _ ->
+--           throwError @String $ printf "%s and %s contains more than 1 partition!"
+--           (show vsPrev) (show vsNow)
 
 -- | Cast the type of a partition to a given qtype, modify the typing state and
 -- allocate emit variables.
---
--- Note: Retyping vs Cast
--- Both retyping and cast converts the type of a locus to another, however cast
--- generates new meta variables as well while retyping performs cast in place.
 castScheme
   :: GensymEmitterWithStateError sig m
   => Locus -> QTy -> m (Locus, Maybe CastScheme)
@@ -679,30 +675,11 @@ castScheme locus@Locus{loc=locS, part=sResolved, qty, degrees} qtNow =
     Right locus' -> go locus'
   where
     go newLocus = do
-      oldEms <- findEmsByLocus locus
-      newEms <- regenEmStByLocus locus newLocus
-      undefined
-
-
-    --   case newLocus of
-
-    -- let tOldEmit = tyKetByQTy qtPrev
-    -- let rsOld = unpackPart sResolved
-    -- vsOldEmit <- findVisitEms evBasis (inj <$> rsOld)
-    -- deleteEms (inj <$> rsOld)
-    -- let tNewEmit = tyKetByQTy qtNow
-    -- -- FIXME: Cast phases
-    -- sSt %= (at locS ?~ (sResolved, (qtNow, degrees)))
-    -- rsEmsNew <- genEmStByRanges qtNow $ unpackPart sResolved
-    -- vsNewEmit <- mapM (visitEm evBasis . snd) rsEmsNew
-    -- return ( st { qty=qtNow }
-    --        , Just CastScheme { schVsOldEmit=vsOldEmit
-    --                          , schVsNewEmit=vsNewEmit
-    --                          , schQtOld=qtPrev
-    --                          , schQtNew=qtNow
-    --                          , schRsCast=unpackPart sResolved
-    --                          })
-
+      schEdsFrom <- findEmsByLocus locus
+      schEdsTo   <- regenEmStByLocus locus newLocus
+      return ( newLocus
+             , Just CastScheme { schEdsFrom, schEdsTo
+                               , schQtFrom=qty, schQtTo=qtNow })
 
 -- | The same as 'castScheme', for compatibility
 retypePartition

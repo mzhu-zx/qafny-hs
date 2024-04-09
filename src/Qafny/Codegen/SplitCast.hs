@@ -1,17 +1,25 @@
 {-# LANGUAGE
-    TypeFamilies
+    PartialTypeSignatures
+  , TypeFamilies
   #-}
 
 module Qafny.Codegen.SplitCast where
 
 
+import           Control.Arrow
+    (Arrow (second))
 import           Control.Monad
     (liftM2)
+import           Data.List
+    (uncons)
 import qualified Data.List.NonEmpty       as NE
+import           Data.Maybe
+    (maybeToList)
 import           Qafny.Effect
-import           Qafny.Partial
 import           Qafny.Syntax.AST
 import           Qafny.Syntax.ASTFactory
+import           Qafny.Syntax.Emit
+    (byLineT, showEmit0)
 import           Qafny.Syntax.EmitBinding
 import           Qafny.Syntax.IR
 import           Qafny.Typing
@@ -21,7 +29,7 @@ import           Qafny.Utils.Utils
     (both)
 import           Text.Printf
     (printf)
-import Data.Maybe (maybeToList)
+
 
 
 
@@ -113,30 +121,59 @@ codegenCastEmit
   :: ( Has (Error String) sig m)
   => CastScheme -> m [Stmt']
 codegenCastEmit
-  CastScheme{ schVsOldEmit=vsOldEmits
-            , schVsNewEmit=vsNewEmit
-            , schQtNew=qtNew
-            , schQtOld=qtOld
-            , schRsCast=rsCast
-            } = do
-  op <- mkOp qtOld qtNew
-  return . concat $
-      [ [ qComment $ "Cast " ++ show qtOld ++ " ==> " ++ show qtNew
-        , (::=:) vNew $ EEmit (op rCast  `ECall` [EEmit $ EDafnyVar vOld])
-        ]
-      | ((vOld, tyOld), (vNew, tyNew), rCast) <- zip3 vsOldEmits vsNewEmit rsCast ]
+  CastScheme{ schEdsFrom=edsFrom@(lEdFrom, rsEdFrom), schEdsTo=edsTo@(lEdTo, rsEdTo)
+            , schQtFrom , schQtTo
+            } =
+  case rules schQtFrom schQtTo of
+    Nothing -> throwError' $ printf
+      "%s cannot be casted into %s:\n%s\n%s\n"
+      (showEmit0 schQtFrom) (showEmit0 schQtTo)
+      (showEmit0 (second byLineT edsFrom))
+      (showEmit0 (second byLineT edsTo))
+    Just s  -> return s
   where
-    -- | Consume /from/ and /to/ types and return a function that consumes a
-    -- range and emit a specialized cast operator based on the property of the
-    -- range passed in
-    mkOp TNor TEn   = return $ const "CastNorEN"
-    mkOp TNor TEn01 = return $ const "CastNorEN01"
-    mkOp TNor THad  = return $ const "CastNorHad"
-    mkOp THad TEn01 = return $ \r -> case sizeOfRangeP r of
-      Just 1 -> "CastHadEN01'1"
-      _      -> "CastHadEN01"
-    mkOp _    _     = throwError err
-    err :: String = printf "Unsupport cast from %s to %s." (show qtOld) (show qtNew)
+    rules :: QTy -> QTy -> Maybe [Stmt']
+    rules TNor THad = do
+      -- cast Nor to first degree Had
+      (PhaseRef vBase vRepr, _) <- evPhaseRef lEdTo
+      [(vKet, _)]               <- (evBasis . snd) `mapM` rsEdFrom
+      return $ SEmit <$>
+        [[vBase, vRepr] :*:=: ["CastNorHad" >$ vKet]]
+    rules THad TEn = do
+      -- cast a 0th/1st degree Had to 0th/1st degree En
+      phaseStmts <- case (evPhaseRef lEdFrom, evPhaseRef lEdTo) of
+        (Nothing, Nothing) -> Just []
+        (Just (PhaseRef pvReprH pvBaseH, TSeqNat),
+         Just (PhaseRef pvReprE pvBaseE, TSeqNat)) -> Just
+          [ pvBaseE >::=: pvBaseH
+          , pvReprE  ::=: ("CastHadEn_Phase_1st" >$* [pvReprH, pvBaseH])]
+        _ -> Nothing
+      [(Range _ left right, rEdTo)] <- return rsEdTo
+      (vKetE, TSeqNat)              <- evBasis rEdTo
+      return $
+        [vKetE ::=: ("CastHadEn_Ket" >$ right - left)] ++ phaseStmts
+
+      -- (RangeEm{pvKet}, [])    <- uncons rsEdFrom
+      -- return [SEmit ([pvBase, pvRepr] :*:=: ["CastNorHad" >& pvKet])]
+    rules _ _ = Nothing
+  -- op <- mkOp qtOld qtNew
+  -- return . concat $
+  --     [ [ qComment $ "Cast " ++ show qtOld ++ " ==> " ++ show qtNew
+  --       , (::=:) vNew $ EEmit (op rCast  `ECall` [EEmit $ EDafnyVar vOld])
+  --       ]
+  --     | ((vOld, tyOld), (vNew, tyNew), rCast) <- zip3 vsOldEmits vsNewEmit rsCast ]
+  -- where
+  --   -- | Consume /from/ and /to/ types and return a function that consumes a
+  --   -- range and emit a specialized cast operator based on the property of the
+  --   -- range passed in
+  --   mkOp TNor TEn   = return $ const "CastNorEN"
+  --   mkOp TNor TEn01 = return $ const "CastNorEN01"
+  --   mkOp TNor THad  = return $ const "CastNorHad"
+  --   mkOp THad TEn01 = return $ \r -> case sizeOfRangeP r of
+  --     Just 1 -> "CastHadEN01'1"
+  --     _      -> "CastHadEN01"
+  --   mkOp _    _     = throwError err
+  --   err :: String = printf "Unsupport cast from %s to %s." (show qtOld) (show qtNew)
 
 -- | Convert quantum type of `s` to `newTy` and emit a cast statement with a
 -- provided `op`
@@ -149,14 +186,15 @@ castWithOp op s newTy = do
        Nothing      -> return []
        Just schemeC -> go schemeC
   where
-    go CastScheme{ schVsOldEmit=vsOldEmits, schVsNewEmit=vsNewEmit} = do
-      let partitionTy = (qty s, degrees s)
-      -- assemble the emitted terms
-      return . concat $
-        [ [ qComment $ "Cast " ++ show partitionTy ++ " ==> " ++ show newTy
-          , (::=:) vNew $ EEmit (op `ECall` [EEmit $ EDafnyVar vOld])
-          ]
-        | ((vOld, _), (vNew, _)) <- zip vsOldEmits vsNewEmit ]
+    go = undefined
+    -- go CastScheme{ schVsOldEmit=vsOldEmits, schVsNewEmit=vsNewEmit} = do
+    --   let partitionTy = (qty s, degrees s)
+    --   -- assemble the emitted terms
+    --   return . concat $
+    --     [ [ qComment $ "Cast " ++ show partitionTy ++ " ==> " ++ show newTy
+    --       , (::=:) vNew $ EEmit (op `ECall` [EEmit $ EDafnyVar vOld])
+    --       ]
+    --     | ((vOld, _), (vNew, _)) <- zip vsOldEmits vsNewEmit ]
 
 
 -- | Cast the given partition to EN type!

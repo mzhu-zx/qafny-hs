@@ -106,6 +106,15 @@ infixl 6 >:@@:
   injAst e1 :@@: (reduce (injAst e2),  reduce (injAst e3))
 
 
+infixr 1 >$
+(>$) :: (AstInjection b Exp') => Var -> b -> Exp'
+f >$ e = injAst $ f `ECall` [injAst e]
+
+infixr 1 >$*
+(>$*) :: (AstInjection b Exp') => Var -> [b] -> Exp'
+f >$* es = injAst $ f `ECall` (injAst <$> es)
+
+
 callMap :: (AstInjection a Exp', AstInjection b Exp')
         => a -> b -> Exp'
 callMap f e = injAst $ ECall "Map" [injAst f, injAst e]
@@ -119,6 +128,9 @@ mkCard = injAst . ECard . injAst
 
 rangeSize :: Range -> Exp'
 rangeSize (Range _ l r) = r - l
+
+(>::=:) ::  (AstInjection a Exp') => Var -> a -> Stmt'
+v1 >::=: v2 = v1 ::=: injAst v2
 
 mkAssignment ::  Var -> Var -> Stmt'
 mkAssignment v1 v2 = v1 ::=: EVar v2

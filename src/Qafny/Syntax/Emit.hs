@@ -12,20 +12,21 @@ import           Control.Arrow
 import           Control.Monad.Reader
 import           Data.Array.IArray
     (Array, array, (!))
-import qualified Data.Map.Strict        as Map
+import qualified Data.Map.Strict          as Map
 import           Data.Maybe
     (maybeToList)
 import           Data.Sum
-import qualified Data.Text              as TS
+import qualified Data.Text                as TS
 import           Data.Text.Lazy
     (Text, unpack)
 import           Data.Text.Lazy.Builder
     (fromString)
-import qualified Data.Text.Lazy.Builder as TB
-import qualified Data.Text.Lazy.IO      as TIO
+import qualified Data.Text.Lazy.Builder   as TB
+import qualified Data.Text.Lazy.IO        as TIO
     (putStrLn)
 import           Qafny.Syntax.AST
 import           Qafny.Syntax.Builder
+import           Qafny.Syntax.EmitBinding
 import           Qafny.Syntax.IR
 
 -------------------- Builder --------------------
@@ -84,6 +85,13 @@ lineHuh :: Foldable t => t a -> Builder
 lineHuh a = if null a then mempty else line
 
 -- FIXME : raise an error if a DEBUG mode term is emitted
+debugOnly' :: DafnyPrinter a => a -> Builder
+debugOnly' a = do
+  (_, b) <- ask
+  if b
+    then build a
+    else build "/* (DEBUG) */"
+
 debugOnly :: (Show e, DafnyPrinter a) => e -> a -> Builder
 debugOnly e d = do
   (_, b) <- ask
@@ -337,15 +345,25 @@ instance DafnyPrinter Locus where
     l <+> "↦" <+> p <+> "::" <+> qty <+> withBracket (byComma dgrs)
 
 
-instance ( Show a, Show b
-         , DafnyPrinter a, DafnyPrinter b
-         ) => DafnyPrinter (a, b) where
-  build t'@(a, b) = debugOnly t' $ withParen . byComma $ [build a, build b]
+instance DafnyPrinter PhaseRef where
+  build PhaseRef{prBase, prRepr} =
+    prRepr <+> "/" <+> prBase
 
-instance ( Show a, Show b, Show c
-         , DafnyPrinter a, DafnyPrinter b, DafnyPrinter c
-         ) => DafnyPrinter (a, b, c) where
-  build t'@(a, b, c) = debugOnly t' $
+instance DafnyPrinter EmitData where
+  build EmitData{evPhaseRef, evBasis, evAmp} = byLineT $
+    [ "phase:" <+> evPhaseRef
+    , "ket:"   <+> evBasis
+    , "amp:"   <+> evAmp
+    ]
+
+
+instance (DafnyPrinter a, DafnyPrinter b) => DafnyPrinter (a, b) where
+  build t'@(a, b) = withParen . byComma $ [build a, build b]
+
+instance ( DafnyPrinter a
+         , DafnyPrinter b
+         , DafnyPrinter c) => DafnyPrinter (a, b, c) where
+  build t'@(a, b, c) =
     withParen . byComma $ [build a, build b, build c]
 
 -- instance (Show f, DafnyPrinter f) => DafnyPrinter (QSpecF f) where

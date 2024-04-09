@@ -4,6 +4,7 @@
   , DeriveFunctor
   , DeriveGeneric
   , DeriveTraversable
+  , PatternSynonyms
   , FlexibleContexts
   , FlexibleInstances
   , GADTs
@@ -93,6 +94,12 @@ data Ty
   -- | TMethod [Ty] [Ty] -- parameter and return types
   | TEmit EmitTy
   deriving (Show, Eq, Ord)
+
+pattern TSeqNat :: Ty
+pattern TSeqNat = TSeq TNat
+
+pattern TSeqSeqNat :: Ty
+pattern TSeqSeqNat = TSeq (TSeq TNat)
 
 -- | EmitExp : Unchecked Types for Codegen Only
 data EmitTy
@@ -312,6 +319,7 @@ showExp e = show e
 
 infixl 5 :@@:
 infixl 5 :@:
+infixr 1 `ECall`
 -- | EmitExp : Unsafe Expressions for Codegen Only
 data EmitExp
   = EMtSeq
