@@ -1,4 +1,5 @@
 // TODO: study what the `LittleEndianNatConversions` is
+// TODO: Prove the prelude in Coq
 // include "libraries/src/Collections/Sequences/LittleEndianNatConversions.dfy"
 include "libraries/src/Collections/Sequences/LittleEndianNat.dfy"
 include "libraries/src/Collections/Sequences/Seq.dfy"
@@ -9,7 +10,9 @@ abstract module {:options "-functionSyntax:4"} QPreludeUntyped {
   import opened Power2
   import opened Seq
 
-  // cast the ket reprs of a nor basis into 
+  // Cast functions
+  /* Cast ketful Nor into phaseful Had
+   */
   function CastNorHad(kets : seq<nat>) : (pb : (seq<nat>, nat)) 
     requires forall k : nat | k < |kets| :: kets[k] == 0 || kets[k] == 1
     ensures pb.1 == 2 
@@ -18,7 +21,16 @@ abstract module {:options "-functionSyntax:4"} QPreludeUntyped {
       ((kets[i] == 0) ==> (pb.0[i] == 0)) &&
       ((kets[i] == 1) ==> (pb.0[i] == 1))
 
-  // Cast functions
+  function {:opaque} CastNorEN_Ket(q : seq<nat>) : (c : seq<nat>)
+    requires forall k : nat | k < |q| :: q[k] == 0 || q[k] == 1
+    ensures (forall k : nat | k < |q| :: q[k] == 0) ==> c == [0]
+    ensures c == [LittleEndianNat.ToNatRight(q)]
+  {
+    if q == SeqZero(|q|)
+      then [LittleEndianNat.ToNatRight(q)]
+      else [LittleEndianNat.ToNatRight(q)]
+  }
+
 
   /* Cast a Had basis-ket to En by its cardinality only
    */
@@ -33,7 +45,7 @@ abstract module {:options "-functionSyntax:4"} QPreludeUntyped {
     if |p| == 0 then
       []
     else
-      var p'' := CastHadEn_Phase_(p[1..]);
+      var p'' := CastHadEn_Phase_1st_(p[1..]);
       var now := p[0];
       p'' + seq(|p''|, i requires 0 <= i < |p''| => now + p''[i])
   }
@@ -46,31 +58,34 @@ abstract module {:options "-functionSyntax:4"} QPreludeUntyped {
             then p' == seq(Pow2(|p|), _ => 0)
             else p' == CastHadEn_Phase_1st_(p)
 
-  function CastNorEN01(q : seq<nat>) : (c : seq<seq<nat>>)
+  /* Cast by lifting the ket sequence into a sequence of a sequence 
+   */
+  function CastNorEn01_Ket(q : seq<nat>) : (c : seq<seq<nat>>)
     requires forall k : nat | k < |q| :: q[k] == 0 || q[k] == 1
     ensures c == [q]
 
 
-  // (|0⟩ + α|1⟩) ⊗ (|0⟩ + α|1⟩) ⊗ (|0⟩ + β|1⟩)
-  // |0, 0, 0⟩ + α|1, 0, 0⟩ + ...
-  //
-  function CastHadEN01(q : seq<int>) : (c : seq<seq<nat>>)
-    requires forall k : nat | k < |q| :: q[k] == 1 || q[k] == -1
-    ensures |c| == Pow2(|q|) && forall i : nat | i < |c| :: |c[i]| == |q|
-    ensures forall i : nat | i < Pow2(|q|) :: 
-            forall j : nat | j < |q| :: Locate(i, j) == c[i][j]
-
-
-  function CastHadEN01'1(q : seq<int>) : (c : seq<seq<nat>>)
-    requires |q| == 1
-    requires forall k : nat | k < |q| :: q[k] == 1 || q[k] == -1
-    ensures c == [[0], [1]]
-
-
+  /* Cast a Had basis-ket to En01 by its cardinality only
+   *
+   * (|0⟩ + α|1⟩) ⊗ (|0⟩ + α|1⟩) ⊗ (|0⟩ + β|1⟩)
+   * |0, 0, 0⟩ + α|1, 0, 0⟩ + ...
+   *
+   */
+  function CastHadEn01_Ket(card : nat) : (c : seq<seq<nat>>)
+    ensures |c| == Pow2(card) && forall i : nat | i < |c| :: |c[i]| == card
+    ensures
+      forall i : nat | i < Pow2(card) :: 
+      forall j : nat | j < card :: Locate(i, j) == c[i][j]
 
   function Locate(i : nat, j : nat) : nat
   {
     if i % Pow2(j + 1) < Pow2(j) then 0 else 1
   }
+
+  /* If the cardinality is one, this is immediately [[0], [1]]
+   */
+  function CastHadEn01'1_Ket() : (c : seq<seq<nat>>)
+    ensures c == [[0], [1]]
+
 
 }

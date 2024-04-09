@@ -29,6 +29,7 @@ import           Qafny.Utils.Utils
     (both)
 import           Text.Printf
     (printf)
+import Qafny.Partial (Reducible(reduce))
 
 
 
@@ -133,14 +134,31 @@ codegenCastEmit
     Just s  -> return s
   where
     rules :: QTy -> QTy -> Maybe [Stmt']
+    -- "nor < *"
     rules TNor THad = do
-      -- cast Nor to first degree Had
-      (PhaseRef vBase vRepr, _) <- evPhaseRef lEdTo
-      [(vKet, _)]               <- (evBasis . snd) `mapM` rsEdFrom
+      -- | Cast Nor to first degree Had
+      -- No amplitude is involved
+      (PhaseRef vBase vRepr, TSeqNat) <- evPhaseRef lEdTo
+      [(vKet, TSeqNat)]               <- (evBasis . snd) `mapM` rsEdFrom
       return $ SEmit <$>
         [[vBase, vRepr] :*:=: ["CastNorHad" >$ vKet]]
+    rules TNor TEn = do
+      -- | Cast Nor to 0th degree En
+      -- FIXME: amplitude?
+      [(vKetN, TSeqNat)] <- mapM (evBasis . snd) rsEdFrom
+      [(vKetE, TSeqNat)] <- mapM (evBasis . snd) rsEdTo
+      return [ vKetE ::=: ("CastNorEn_Ket" >$ vKetN) ]
+    rules TNor TEn01 = do
+      -- | Cast Nor to 0th degree En
+      -- FIXME: amplitude?
+      [(vKetN, TSeqNat)] <- mapM (evBasis . snd) rsEdFrom
+      [(vKetE, TSeqSeqNat)] <- mapM (evBasis . snd) rsEdTo
+      return [ vKetE ::=: ("CastNorEn01_Ket" >$ vKetN) ]
+
+    -- "had < *"
     rules THad TEn = do
-      -- cast a 0th/1st degree Had to 0th/1st degree En
+      -- | Cast a 0th/1st degree Had to 0th/1st degree En
+      -- No amplitude is involved
       phaseStmts <- case (evPhaseRef lEdFrom, evPhaseRef lEdTo) of
         (Nothing, Nothing) -> Just []
         (Just (PhaseRef pvReprH pvBaseH, TSeqNat),
@@ -153,27 +171,26 @@ codegenCastEmit
       return $
         [vKetE ::=: ("CastHadEn_Ket" >$ right - left)] ++ phaseStmts
 
-      -- (RangeEm{pvKet}, [])    <- uncons rsEdFrom
-      -- return [SEmit ([pvBase, pvRepr] :*:=: ["CastNorHad" >& pvKet])]
+    rules THad TEn01 = do
+      -- | Cast a 0th/1st degree Had to 0th/1st degree En
+      -- No amplitude is involved
+      phaseStmts <- case (evPhaseRef lEdFrom, evPhaseRef lEdTo) of
+        (Nothing, Nothing) -> Just []
+        (Just (PhaseRef pvReprH pvBaseH, TSeqNat),
+         Just (PhaseRef pvReprE pvBaseE, TSeqNat)) -> Just
+          [ pvBaseE >::=: pvBaseH
+          , pvReprE  ::=: ("CastHadEn_Phase_1st" >$* [pvReprH, pvBaseH])]
+        _ -> Nothing
+      [(Range _ left right, rEdTo)] <- return rsEdTo
+      (vKetE, TSeqSeqNat)           <- evBasis rEdTo
+      let card = reduce $ right - left
+      let app :: Exp' = if card == 1
+            -- specialized instance
+            then EEmit $ "CastHadEn01_Ket1" `ECall` []
+            else "CastHadEn01_Ket" >$ right - left
+      return $
+        [vKetE ::=: app] ++ phaseStmts
     rules _ _ = Nothing
-  -- op <- mkOp qtOld qtNew
-  -- return . concat $
-  --     [ [ qComment $ "Cast " ++ show qtOld ++ " ==> " ++ show qtNew
-  --       , (::=:) vNew $ EEmit (op rCast  `ECall` [EEmit $ EDafnyVar vOld])
-  --       ]
-  --     | ((vOld, tyOld), (vNew, tyNew), rCast) <- zip3 vsOldEmits vsNewEmit rsCast ]
-  -- where
-  --   -- | Consume /from/ and /to/ types and return a function that consumes a
-  --   -- range and emit a specialized cast operator based on the property of the
-  --   -- range passed in
-  --   mkOp TNor TEn   = return $ const "CastNorEN"
-  --   mkOp TNor TEn01 = return $ const "CastNorEN01"
-  --   mkOp TNor THad  = return $ const "CastNorHad"
-  --   mkOp THad TEn01 = return $ \r -> case sizeOfRangeP r of
-  --     Just 1 -> "CastHadEN01'1"
-  --     _      -> "CastHadEN01"
-  --   mkOp _    _     = throwError err
-  --   err :: String = printf "Unsupport cast from %s to %s." (show qtOld) (show qtNew)
 
 -- | Convert quantum type of `s` to `newTy` and emit a cast statement with a
 -- provided `op`
