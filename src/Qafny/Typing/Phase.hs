@@ -21,10 +21,13 @@ import           Qafny.Effect
 
 -- Qafny
 import           Qafny.Syntax.AST
+import           Qafny.Syntax.Emit
 import           Qafny.Syntax.EmitBinding
 import           Qafny.Syntax.IR
 import           Qafny.Typing.Utils
 import           Qafny.Utils
+import           Qafny.Typing.Locus
+    (updateMetaStByLocus)
 
 -- Utils
 import           Control.Monad
@@ -35,17 +38,13 @@ import           Data.Maybe
     (catMaybes, mapMaybe)
 import           Data.Sum
     (Injection (inj))
-import           Qafny.Syntax.Emit
-    (showEmitI)
-import           Qafny.Typing.Locus
-    (updateMetaStByLocus)
 import           Text.Printf
     (printf)
 
 throwError'
-  :: ( Has (Error String) sig m )
-  => String -> m a
-throwError' = throwError @String . ("[Phase Typing] " ++)
+  :: ( Has (Error Builder) sig m )
+  => Builder -> m a
+throwError' = throwError @Builder . ("[Phase Typing]" <+>)
 
 -------------------------------------------------------------------------------
 -- | Promotion Scheme
@@ -98,7 +97,7 @@ promotionScheme st@Locus{loc, part, qty, degrees=dgrsSt} pb pe = do
     promote'0'1
       :: ( Has (Gensym Emitter) sig m'
          , Has (State TState) sig m'
-         , Has (Error String) sig m'
+         , Has (Error Builder) sig m'
          , Has Trace sig m'
          )
       => PhaseExp -> m' (Maybe PromotionScheme)
@@ -117,14 +116,16 @@ promotionScheme st@Locus{loc, part, qty, degrees=dgrsSt} pb pe = do
 
 
     -- Promote 1 to 2
-    errDgrMismatch dSt dbinder =
-      printf "Degree %d doesn't match the degree of the binder %s : %d"
-      dSt (showEmitI 4 dbinder) dbinder
+    errDgrMismatch dSt dbinder = vsep
+      [ "Degree " <!> dSt <!> " doesn't match the degree of the binder."
+      , incr4 dbinder
+      ]
+
     promote'1'2 = undefined
     errDemotion i j = throwError' $
-      printf "Demote %d to %d is not allowed." i j
+      "Demote " <!> i <!> " to " <!> j <!> " is not allowed."
     errUnimplementedPrompt i j =  throwError' $
-      printf "Promoting %d to %d is undefined." i j
+      "Promoting " <!> i <!> " to " <!> j <!> " is undefined."
 
 
 --------------------------------------------------------------------------------
@@ -144,7 +145,7 @@ promotionScheme st@Locus{loc, part, qty, degrees=dgrsSt} pb pe = do
 --   deriving (Functor, Foldable, Traversable)
 
 -- | Compute phase degree information from a specification
-analyzeSpecDegree :: SpecExpF f -> Maybe Int 
+analyzeSpecDegree :: SpecExpF f -> Maybe Int
 analyzeSpecDegree (SESpecHad SpecHadF{hadPhase})=
   return (analyzePhaseSpecDegree hadPhase)
 analyzeSpecDegree (SESpecEn SpecEnF{enPhaseCoef})=
@@ -164,7 +165,7 @@ analyzePhaseSpecDegree PhaseSumOmega{} = 2
 allocAndUpdatePhaseType
   :: ( Has (Gensym Emitter) sig m
      , Has (State TState) sig m
-     , Has (Error String) sig m
+     , Has (Error Builder) sig m
      )
   => Locus -> m [Maybe (PhaseRef, Ty)]
 allocAndUpdatePhaseType s@Locus{loc, part=Partition{ranges}, qty, degrees} = do
@@ -174,7 +175,7 @@ allocAndUpdatePhaseType s@Locus{loc, part=Partition{ranges}, qty, degrees} = do
 -- | Query in the emit state the phase types of the given Locus
 queryPhase
   :: ( Has (State TState) sig m
-     , Has (Error String) sig m
+     , Has (Error Builder) sig m
      )
   => Locus -> m [Maybe (PhaseRef, Ty)]
 queryPhase Locus{loc, part=Partition{ranges}, qty, degrees}
@@ -188,7 +189,7 @@ queryPhase Locus{loc, part=Partition{ranges}, qty, degrees}
 -- | Query in the emit state the phase types of the given Locus
 queryPhaseRef
   :: ( Has (State TState) sig m
-     , Has (Error String) sig m
+     , Has (Error Builder) sig m
      )
   => Locus -> m [Maybe (PhaseRef, Ty)]
 queryPhaseRef Locus{loc, part=Partition{ranges}, qty, degrees}

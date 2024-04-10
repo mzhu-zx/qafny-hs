@@ -25,13 +25,14 @@ import           Qafny.Syntax.IR
 
 import           Data.Sum
     (Injection (inj))
+import           Qafny.Syntax.Emit
 import           Qafny.Utils.EmitBinding
 
 
 throwError'
-  :: ( Has (Error String) sig m )
-  => String -> m a
-throwError' = throwError @String . ("[Codegen/Merge] " ++)
+  :: ( Has (Error Builder) sig m )
+  => Builder -> m a
+throwError' = throwError . ("[Codegen/Merge] " <+>)
 
 
 
@@ -63,12 +64,12 @@ codegenMergeScheme
   :: ( Has (Gensym Emitter) sig m
      , Has (Gensym String) sig m
      , Has (State TState) sig m
-     , Has (Error String) sig m
+     , Has (Error Builder) sig m
      )
   => [MergeScheme] -> m [(Stmt', Var)]
 codegenMergeScheme = mapM $ \scheme -> do
   case scheme of
-    MMove -> throwError' "I have no planning in solving it here now."
+    MMove -> throwError' (pp "I have no planning in solving it here now.")
     MJoin JoinStrategy { jsQtMain=qtMain, jsQtMerged=qtMerged
                        , jsRResult=rResult, jsRMerged=rMerged, jsRMain=rMain
                        } -> do
@@ -88,7 +89,8 @@ codegenMergeScheme = mapM $ \scheme -> do
           let (Range _ lBound rBound) = rMain
           let stmtAdd = addENHad1 vEmitMain (reduce (rBound - lBound))
           return (stmtAdd, vEmitMain)
-        _             -> throwError' $ printf "No idea about %s to %s conversion."
+        _             -> throwError' $
+          "No idea about " <!> qtMain <!> " to " <!> qtMerged <!> " conversion."
     MEqual EqualStrategy { esRange = r, esQTy = qt
                          , esVMain = (v1, _), esVAux = (v2, _) } -> do
       -- This is all about "unsplit".
@@ -96,13 +98,13 @@ codegenMergeScheme = mapM $ \scheme -> do
         TNor ->
           -- no "unsplit" should happen here!
           return (qComment "TNor has nothing to be merged!", v1)
-        THad ->
-          throwError' $ printf "This type (%s) cannot be handled: (%s)" (show qt) (show r)
+        THad -> throwError' $
+          "This type (" <!> qt <!> ") cannot be handled: (" <!> r <!> ")"
         _ | qt `elem` [ TEn01, TEn ] ->
           -- TEn01 is emitted as seq<seq<nat>> representing Sum . Tensor,
           -- TEn   is emitted as seq<nat>      representing Sum . Tensor,
           -- It suffices to simply concat them
           pure (merge3 v1 v1 v2, v1)
-        _ -> throwError' "This pattern shoule be complete!"
+        _ -> throwError' (pp "This pattern shoule be complete!")
   where
     merge3 vS vRF vRT = vS ::=: (EVar vRF + EVar vRT)

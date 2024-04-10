@@ -67,27 +67,25 @@ import           GHC.Stack
 import           Qafny.Typing.Cast
 import           Qafny.Typing.Error
     (SCError (SplitENError), failureAsSCError)
-import           Text.Printf
-    (printf)
-import Qafny.Typing.Locus (updateMetaStByLocus)
-import Data.Text.Prettyprint.Doc (punctuate)
+import           Qafny.Typing.Locus
+    (updateMetaStByLocus)
 
 throwError'
-  :: ( Has (Error String) sig m )
-  => String -> m a
-throwError' = throwError @String . ("[Typing] " ++)
+  :: ( Has (Error Builder) sig m, DafnyPrinter s )
+  => s -> m a
+throwError' = throwError . ("[Typing] " <!>)
 
 -- | Compute the simple type of the given expression
 typingExp
   :: ( Has (Reader TEnv) sig m
-     , Has (Error String) sig m
+     , Has (Error Builder) sig m
      , HasCallStack
      )
   => Exp' -> m Ty
 typingExp (ENum _)  = return TNat
 typingExp (EVar x)  = do
   env <- view kEnv
-  return ((env ^. at x) >>= projTy) `rethrowMaybe` (show $ UnknownVariableError x env)
+  return ((env ^. at x) >>= projTy) `rethrowMaybe` UnknownVariableError x env
 typingExp (EMeasure p) = return TMeasured
 typingExp (EOp2 op2 e1 e2) =
   do top <- typingOp2 op2
@@ -107,7 +105,7 @@ typingExp (EOp2 op2 e1 e2) =
     typingOp2 OLe  = return (TNat, TNat, TBool)
     typingOp2 ONor = exp2AExp e1 >>= \ae -> return (TNat, TNat, TQReg ae)
 typingExp e = throwError' $
-  printf "Expression %s has no proper type." (showEmitI 0 e)
+  "Expression " <!> e <!> " has no proper type."
 
 
 -- | Compute the quantum type of a given (possibly incomplete) partition
@@ -120,7 +118,7 @@ typingExp e = throwError' $
 -- Examine each Range in a given Partition and resolve to a Locus
 resolvePartition
   :: ( Has (State TState) sig m
-     , Has (Error String) sig m
+     , Has (Error Builder) sig m
      , Has (Reader IEnv) sig m
      , Has Trace sig m
      )
@@ -130,8 +128,8 @@ resolvePartition = (fst <$>) . resolvePartition'
 -- | Look up the Locus record by the Loc reference in the session state.
 findLocusByLoc :: HasResolution sig m => Loc -> m Locus
 findLocusByLoc loc = do
-  (part, (qty, degrees)) <- use (sSt . at loc) `rethrowMaybe`
-    show (UnknownLocError loc)
+  (part, (qty, degrees)) <-
+    use (sSt . at loc) `rethrowMaybe` (UnknownLocError loc)
   return Locus {loc, part, qty, degrees}
 
 resolvePartition'
@@ -142,9 +140,11 @@ resolvePartition' se' = do
   let locs = [ ((rSe, rSt), loc)
              | (rSe, rSt, ans, loc) <- concat rsResolved, included ans ]
   constraints <- ask @IEnv
-  let related = concatMap ("\n\t" ++) . concat $
-                [ showRel r1 r2 b | (r1, r2, b, _) <- concat rsResolved ]
-  trace $ printf "[resolvePartition] (%s) with %s %s" (show se) (show constraints) related
+  let related = vsep [ showRel r1 r2 b | (r1, r2, b, _) <- concat rsResolved ]
+  trace . showEmit0 $ vsep
+    [ "[resolvePartition] resolve (" <!> se
+    , incr2 $ "within" <+> ppIEnv constraints
+    , incr2 $ line <!> related ]
   case List.nub (snd <$> locs) of
     [] -> throwError $ errInternal related
     [loc] ->
@@ -159,27 +159,26 @@ resolvePartition' se' = do
     included = all ((== Just True) . fst)
 
     -- Format
-    errNonunique :: [Loc] -> String -> String
-    errNonunique ss = printf
-      ("Type Error: " ++
-       "`%s` is not the sub-partition of a unique partition.\n" ++
-       "Counterexample: %s\n%s")
-        (show se) (show ss)
-    errInternal :: String -> String
-    errInternal = printf
-      ("Type Error: " ++
-       "The partition `%s` is not a sub-partition of any existing ones!\n%s")
-      (showEmitI 2 se)
-    mkRelOp :: Maybe Bool -> String
+    errNonunique :: [Loc] -> Builder -> Builder
+    errNonunique ss related = vsep
+      [ "Type Error:"
+        <+> "`" <!> se <!> "` is not the sub-partition of a unique partition."
+      , incr2 "Counterexample: " <!> list ss
+      , incr2 related
+      ]
+    errInternal related =
+      "Type Error:" <+>
+      "The partition `" <!> se <!> "` is not a sub-partition of any existing ones!"
+      <!> line <!> related
+
     mkRelOp (Just True)  = " ⊑ "
     mkRelOp (Just False) = " ⋢ "
     mkRelOp Nothing      = "?⊑?"
-    showRel :: Range -> Range -> NonEmpty (Maybe Bool, AEnv) -> [String]
-    showRel r1 r2 ne = NE.toList $ ne
-      <&> \(rel, env) ->
-            printf "%s %s %s at %s" (showEmitI 0 r1) (mkRelOp rel)
-            (showEmitI 0 r2) (showEmitI 0 $ byComma env)
 
+    showRel :: Range -> Range -> NonEmpty (Maybe Bool, AEnv) -> Builder
+    showRel r1 r2 ne = vsep . NE.toList $ ne
+      <&> \(rel, env) ->
+            r1 <!> " " <!> mkRelOp rel <!> " " <!> r2 <!> " at " <!> byComma env
 
 removeTStateByLocus
   :: (Has (State TState) sig m)
@@ -197,13 +196,13 @@ removeTStateByLocus st@(Locus{loc, part=p, qty}) = do
 -- FIXME: provide "resolveRanges" that instantiates the predicate only once!
 resolveRange
   :: ( Has (State TState) sig m
-     , Has (Error String) sig m
+     , Has (Error Builder) sig m
      , Has (Reader IEnv) sig m
      )
   => Range -> m [(Range, Range, NonEmpty (Maybe Bool, AEnv), Loc)]
 resolveRange r@(Range name _ _) = do
   (⊑//) <- (⊑/) -- specialize the predicate using the current constraints
-  rlocs <- use (xSt . at name) `rethrowMaybe` (show . UnknownRangeError) r
+  rlocs <- use (xSt . at name) `rethrowMaybe` UnknownRangeError r
   return [ (r, r', r ⊑// r', loc)
          | (r', loc) <- rlocs ]
 
@@ -224,9 +223,9 @@ resolveRangesStrict rs = do
           pure (rGiven, rFound, lFound)
         []    -> errUnknownRange rGiven
         found -> errAmbiguousRange rGiven found
-    errUnknownRange = throwError' . show .UnknownRangeError
+    errUnknownRange = throwError' . pp .UnknownRangeError
     errAmbiguousRange rGiven found =
-      throwError' (show (AmbiguousRange rGiven found))
+      throwError' (pp (AmbiguousRange rGiven found))
 
 -- | Resolve the ranges using the Range name state and the current constraint
 -- environment.  It is strict in that the resolution is considered strict if all
@@ -240,7 +239,7 @@ resolveRangesStrictIntoLoci =
 
 resolvePartitions
   :: ( Has (State TState) sig m
-     , Has (Error String) sig m
+     , Has (Error Builder) sig m
      , Has (Reader IEnv) sig m
      , Has Trace sig m
      )
@@ -251,7 +250,7 @@ resolvePartitions =
 
 inferRangeTy
   :: ( Has (State TState) sig m
-     , Has (Error String) sig m
+     , Has (Error Builder) sig m
      , Has (Reader IEnv) sig m
      , Has Trace sig m)
   => Range -> m (QTy, [Int])
@@ -271,7 +270,7 @@ inferRangeTy r =
 -- For the optional return value, return 'Nothing' if no split needs **on a specific
 -- range** needs to be performed, i.e. no codegen needs to be done.
 splitScheme
-  :: ( Has (Error String) sig m
+  :: ( Has (Error Builder) sig m
      , Has (Gensym String) sig m
      , Has (State TState) sig m
      , Has (Gensym Emitter) sig m
@@ -287,7 +286,7 @@ splitScheme s r = errTrace "`splitScheme`" $ do
 -- | Rationale: there's no good reason to split a partition with multiple ranges
 -- in entanglement. So, we're safe to reject non-singleton partitions for now.
 splitSchemePartition
-  :: ( Has (Error String) sig m
+  :: ( Has (Error Builder) sig m
      , Has (Gensym String) sig m
      , Has (State TState) sig m
      , Has (Gensym Emitter) sig m
@@ -301,12 +300,12 @@ splitSchemePartition st p =
   case unpackPart p of
     [r] -> splitScheme st r
     _   -> throwError' $
-      printf "Partition %s contains multiple ranges for split, which is likely to be a bug!" (showEmitI 0 p)
+      "Partition" <+> p <+> "contains multiple ranges for split, which is likely to be a bug!"
 
 
 -- | Remove range if it is equivalent to the bottom
 contractRange
-  :: ( Has (Error String) sig m
+  :: ( Has (Error Builder) sig m
      , Has (Reader IEnv) sig m
      )
   => Range -> m (Maybe Range)
@@ -321,14 +320,16 @@ contractRange r = do
   where
     err reason = do
       ienv <- ask @IEnv
-      throwError' $ printf "Cannot decide if %s is empty; context: %s"
-        (show r) (show ienv)
+      throwError' $ vsep
+        ["Cannot decide if " <!> r <!> " is empty"
+        ,"context: " <!> ppIEnv ienv
+        ]
 
 -- TODO1: Pass in an environment and perform substitution before doing value
 -- checking
 -- TODO2: Use 'NonDeterm' effects instead.
 splitScheme'
-  :: ( Has (Error String) sig m
+  :: ( Has (Error Builder) sig m
      , Has (Gensym String) sig m
      , Has (State TState) sig m
      , Has (Gensym Emitter) sig m
@@ -409,16 +410,15 @@ splitScheme' s@(Locus{loc, part, qty, degrees}) rSplitTo@(Range to rstL rstR) = 
     updateLocPartOfS l p = s{loc=l, part=p}
     rangeVar (Range x _ _) = x
     -- infoSS :: String = printf
-    --   "[splitScheme] from (%s) to (%s)" (show s) (show rSplitTo)
-    throwError'' = throwError' . ("[split] " ++)
+    --   "[splitScheme] from (" <!> X <!> ") to (" <!> X <!> ")" (show s) (show rSplitTo)
+    throwError'' s' = throwError' ("[split]" <+> s')
     -- errUnsupprtedTy = printf
-    --   "Splitting a %s partition is unsupported." (show qty)
-    errXST = printf
-      "No range beginning with %s cannot be found in `xSt`" to
+    --   "Splitting a " <!> X <!> " partition is unsupported." (show qty)
+    errXST =
+      "No range beginning with " <!> to <!> " cannot be found in `xSt`"
     errSplitEN = "Splitting an EN partition is disallowed!"
-    errInconsistentRemainder = printf
-      "Splittable partition %s should not include more than one range."
-      (showEmit0 part)
+    errInconsistentRemainder =
+      "Splittable partition" <!> part <!> "should not include more than one range."
 
 -- | Duplicate a phase type by allocating a new reference to its Repr if
 -- necessary.
@@ -458,7 +458,7 @@ data RangeSplits = RangeSplits
 -- partitions regardless of the number of ranges in the partition.
 -- Ranges that are kept as is will be put in `rsRsUnchanged`
 getRangeSplits
-  :: ( Has (Error String) sig m
+  :: ( Has (Error Builder) sig m
      , Has (Reader IEnv) sig m
      , Has Trace sig m
      )
@@ -471,9 +471,9 @@ getRangeSplits s@(Locus{loc, part=p, degrees}) rSplitTo@(Range to rstL rstR) = d
     _ | all (== Just True)  botHuh -> throwError' errBotRx
     _ | all (== Just False) botHuh -> return ()
     _ -> do ienv <- ask @IEnv
-            throwError' $ printf
-              "Cannot decide if %s is empty.\nEnv: %s"
-              (show rSplitTo) (show ienv)
+            throwError' $ vsep
+              [ "Cannot decide if" <+> rSplitTo <+> "is empty."
+              , "Env:" <+> ppIEnv ienv ]
   (⊑??) <- (∀⊑/)
   case matched (⊑??) of
     Nothing -> throwError' errImproperRx
@@ -491,9 +491,9 @@ getRangeSplits s@(Locus{loc, part=p, degrees}) rSplitTo@(Range to rstL rstR) = d
         }
   where
     removeNth n l = let (a, b) = splitAt n l in a ++ tail b
-    errBotRx = printf "The range %s contains no qubit!" $ show rSplitTo
-    errImproperRx = printf
-      "The range %s is not a part of the partition %s!" (show rSplitTo) (show s)
+    errBotRx = "The range " <!> rSplitTo <!> " contains no qubit!"
+    errImproperRx =
+      "The range " <!> rSplitTo <!> " is not a part of the partition " <!> s <!> "!"
     matched (⊑??) = listToMaybe -- logically, there should be at most one partition!
       [ (Range y yl rstL, rSplitTo, Range y rstR yr, rRef, idx)
       | (rRef@(Range y yl yr), idx) <- zip (unpackPart p) [0..]
@@ -544,10 +544,8 @@ splitThenCastScheme s'@Locus{ loc, part, qty=qt1, degrees } qt2 rSplitTo =
     _ ->
       throwError' errUndef
    where
-     errUndef :: String = printf
-       "split-then-cast-scheme is undefined for %s to %s type"
-       (show qt1) (show qt2)
-
+     errUndef =
+       "split-then-cast-scheme is undefined for " <!> qt1 <!> " to " <!> qt2 <!> " type"
 
 --------------------------------------------------------------------------------
 -- * Aux Typing
@@ -556,7 +554,7 @@ splitThenCastScheme s'@Locus{ loc, part, qty=qt1, degrees } qt2 rSplitTo =
 -- | Extract relevant partitions from guard expression and resolve its type.
 typingGuard
   :: ( Has (State TState) sig m
-     , Has (Error String) sig m
+     , Has (Error Builder) sig m
      , Has (Reader IEnv) sig m
      , Has Trace sig m
      )
@@ -566,7 +564,7 @@ typingGuard (GEPartition s' _) = resolvePartition s' <&> (,s')
 -- | Type check if the given partition exists in the context
 typingPartitionQTy
   :: ( Has (State TState)  sig m
-     , Has (Error String) sig m
+     , Has (Error Builder) sig m
      , Has (Reader IEnv) sig m
      , Has Trace sig m
      )
@@ -576,13 +574,13 @@ typingPartitionQTy s qt = do
   when (qt /= qty st) $ throwError' (errTypeMismatch st)
   return st
   where
-    errTypeMismatch st =
-      printf "The partition %s is not of type %s.\nResolved: %s"
-      (show s) (show qt) (show st)
+    errTypeMismatch st = vsep
+      [ "The partition" <+> s <+> "is not of type" <+> qt <!> "."
+      , "Resolved:" <+> st ]
 
 typingPartition
   :: ( Has (State TState)  sig m
-     , Has (Error String) sig m
+     , Has (Error Builder) sig m
      , Has (Reader IEnv) sig m
      , Has Trace sig m
      )
@@ -594,33 +592,26 @@ typingPartition s = do
   return st
   where
     errIncompletePartition st@(Locus{part=p}) =
-      printf "The partition %s is a sub-partition of %s.\nResolved: %s"
-      (show s) (show p) (show st)
+      "The partition " <!> s <!> " is a sub-partition of " <!> p <!> ".\nResolved: " <!> st
 
 --------------------------------------------------------------------------------
 -- * Subtyping
 --------------------------------------------------------------------------------
 checkTypeEq
-  :: Has (Error String) sig m
+  :: Has (Error Builder) sig m
   => Ty -> Ty -> m ()
 checkTypeEq t1 t2 =
-  unless (t1 == t2)
-    (throwError @String $
-      printf "Type mismatch: `%s` is not a subtype of `%s`"
-      (showEmitI 0 t1)
-      (showEmitI 0 t2))
+  unless (t1 == t2) $ throwError
+    ("Type mismatch: `" <!> t1 <!> "` is not a subtype of `" <!> t2 <!> "`")
 
 checkSubtype
-  :: Has (Error String) sig m
+  :: Has (Error Builder) sig m
   => Ty -> Ty -> m ()
 checkSubtype t1 t2 =
-  unless (sub t1 t2)
-    (throwError @String $
-      printf "Type mismatch: `%s` is not a subtype of `%s`"
-      (show t1)
-      (show t2))
+  unless (sub t1 t2) $ throwError
+    ("Type mismatch: `" <!> t1 <!> "` is not a subtype of `" <!> t2 <!> "`")
 checkSubtype2
-  :: Has (Error String) sig m
+  :: Has (Error Builder) sig m
   => (Ty, Ty, Ty) -> Ty -> Ty -> m Ty
 checkSubtype2 (top1, top2, tret) t1 t2 =
   do checkSubtype top1 t1
@@ -642,34 +633,15 @@ subQ TNor TNor  = True
 subQ _     _    = False
 
 checkSubtypeQ
-  :: Has (Error String) sig m
+  :: Has (Error Builder) sig m
   => QTy -> QTy -> m ()
 checkSubtypeQ t1 t2 =
-  unless (subQ t1 t2) $
-  throwError $
-  "Type mismatch: `" ++ show t1 ++ "` is not a subtype of `" ++ show t2 ++ "`"
+  unless (subQ t1 t2) . throwError $
+    "Type mismatch: `" <!> t1 <!> "` is not a subtype of `" <!> t2 <!> "`"
 
 -------------------------------------------------------------------------------
 -- | Type Manipulation
 --------------------------------------------------------------------------------
--- retypePartition1
---   :: ( Has (Error String) sig m
---      , Has (State TState) sig m
---      , Has (Gensym Emitter) sig m
---      )
---   => Locus -> QTy -> m (Maybe (Var, Ty, Var, Ty))
--- retypePartition1 st qtNow =
---   retypePartition st qtNow >>= maybe (return Nothing) go
---   where
---     go CastScheme{ schVsOldEmit=vsPrev
---                  , schVsNewEmit=vsNow} =
---       case (vsPrev, vsNow) of
---         ([(vPrev, tPrev)], [(vNow, tNow)]) ->
---           return $ pure (vPrev, tPrev, vNow, tNow)
---         _ ->
---           throwError @String $ printf "%s and %s contains more than 1 partition!"
---           (show vsPrev) (show vsNow)
-
 -- | Cast the type of a partition to a given qtype, modify the typing state and
 -- allocate emit variables.
 castScheme
@@ -679,7 +651,7 @@ castScheme locus@Locus{loc=locS, part=sResolved, qty, degrees} qtNow =
   case castLocus locus qtNow of
     Left ErrNoCast -> return (locus, Nothing)
     Left ErrInvalidCast ->
-      throwError' $ printf "%s cannot be casted into %s." (showEmit0 qty) (showEmit0 qtNow)
+      throwError' $ qty <!> "cannot be casted into" <!> qtNow <!> "."
     Right locus' -> (locus,) . Just <$> castSchemeUnchecked locus locus'
 
 -- | Calculate the cast scheme between two loci.
@@ -696,7 +668,7 @@ castSchemeUnchecked locus@Locus{qty=schQtFrom} newLocus@Locus{qty=schQtTo} = do
 
 -- | The same as 'castScheme', for compatibility
 retypePartition
-  :: ( Has (Error String) sig m
+  :: ( Has (Error Builder) sig m
      , Has (State TState) sig m
      , Has (Gensym Emitter) sig m
      )
@@ -719,7 +691,7 @@ matchEmitStates es1 es2 =
     (em1, em2) = (reduceMap es1, reduceMap es2)
 
 matchEmitStatesVars
-  :: Has (Error String) sig m
+  :: Has (Error Builder) sig m
   => EmitState -> EmitState -> m [(Range, ((Var, Ty), (Var, Ty)))]
 matchEmitStatesVars es1 es2 =
   sequence [ (r,) <$> liftM2 (,) (byBasis ed1) (byBasis ed2)
@@ -733,7 +705,7 @@ matchEmitStatesVars es1 es2 =
 -- states where 'tsInit' refers to the state before iteration starts and
 -- 'tsLoop' is for the state during iteration.
 matchStateCorrLoop
-  :: Has (Error String) sig m
+  :: Has (Error Builder) sig m
   => TState -> TState -> AEnv -> m [((Var, Ty), (Var, Ty))]
 matchStateCorrLoop tsInit tsLoop env =
   (snd <$>) <$> matchEmitStatesVars esLoop esInit
@@ -745,7 +717,7 @@ matchStateCorrLoop tsInit tsLoop env =
 -- | Take 2 type states, match emit variables by their ranges and output
 -- merge scheme for each of them.
 mergeMatchedTState
-  :: ( Has (Error String) sig m
+  :: ( Has (Error Builder) sig m
      , Has (Reader IEnv) sig m
      , Has Trace sig m)
   => TState -> TState -> m [MergeScheme]
@@ -775,7 +747,7 @@ mergeMatchedTState
 -- FIXME: Check if phase type is correct!
 mergeScheme
   :: ( Has (State TState) sig m
-     , Has (Error String) sig m
+     , Has (Error Builder) sig m
      , Has (Reader IEnv) sig m
      )
   => Locus -- ^ Main
@@ -842,7 +814,7 @@ lookupAdjacentRange rs r@(Range _ el er) = do
 --
 mergeLociHadEN
   :: ( Has (State TState) sig m
-     , Has (Error String) sig m
+     , Has (Error Builder) sig m
      )
   => Locus -> Locus -> m ()
 mergeLociHadEN
@@ -851,8 +823,7 @@ mergeLociHadEN
   do
     -- Sanity Check
     unless (qtMain == qtAux && qtAux == TEn) $
-      throwError @String $ printf "%s and %s have different Q types!"
-        (show stM) (show stA)
+      throwError $ stM <+> "and" <+> stA <!> "have different Q types!"
 
     -- start merge
     let newPartition = Partition $ rsMain ++ rsAux
@@ -873,7 +844,7 @@ mergeLociHadEN
 -- | Collect constraints from specification expressions. Return collected
 -- variables as well as interval information associated with.
 collectConstraints
-  :: ( Has (Error String) sig m
+  :: ( Has (Error Builder) sig m
      , Has (Reader TEnv) sig m
      )
   => [Exp'] -> m (Map.Map Var (Interval Exp'))
@@ -891,11 +862,12 @@ collectConstraints es = (Map.mapMaybe glb1 <$>) . execState Map.empty $
       when (ty /= TNat) $ throwError' (errNotScalar v1 ty)
       modify $ Map.insertWith (++) v1 [intv]
 
-    errNotScalar v ty = printf "%s : %s is not a scalar variable."  v (show ty)
+    errNotScalar v ty =  v <!> " : " <!> ty <+> "is not a scalar variable."
     -- pick 100 here to avoid overflow in computation
     maxE = fromInteger $ toInteger (maxBound @Int - 100)
 
-    failUninterp e = throwError' $ printf "(%s) is left uninterpreted" (show e)
+    failUninterp e = throwError' $
+      "(" <!> viaShow e <!> ") is left uninterpreted"
 
     normalize e@(EOp2 op (EVar v1) e2) = pure (op , v1, e2)
     normalize (EOp2 op e2 (EVar v1))   = (, v1, e2) <$> flipLOp op
@@ -914,7 +886,7 @@ collectConstraints es = (Map.mapMaybe glb1 <$>) . execState Map.empty $
 -- environment for a EN partition to be merged with this Locus.
 mergeCandidateHad
   :: ( Has (State TState) sig m
-     , Has (Error String) sig m
+     , Has (Error Builder) sig m
      , Has (Reader IEnv) sig m
      , Has Trace sig m
      )
@@ -933,14 +905,11 @@ mergeCandidateHad st@(Locus{part, qty=THad, degrees}) = do
         [] -> Nothing
         _  -> Just p'
     matchMergeable _ = pure Nothing
-
-    ambiguousCandidates matched = printf
-      "There're more than one merge candidate for %s.\n%s"
-      (show st) (showEmit0 $ vsep matched)
-
-
+    ambiguousCandidates matched = vsep
+      [ "There're more than one merge candidate for " <!> st <!> "."
+      , incr4 (vsep matched) ]
 mergeCandidateHad st =
-  throwError' $ printf "%s may not be a Had guard partition." (show st)
+  throwError' $ st <!> " may not be a Had guard partition."
 
 --------------------------------------------------------------------------------
 -- | Helpers
@@ -958,7 +927,7 @@ bdTypes b = [t | Binding _ t <- b]
 tStateFromPartitionQTys
   :: ( Has (Gensym Emitter) sig m
      , Has (Gensym Var) sig m
-     , Has (Error String) sig m
+     , Has (Error Builder) sig m
      , Has Trace sig m
      )
   => [(Partition, QTy, [Int])] -> m TState

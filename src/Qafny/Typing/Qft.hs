@@ -6,6 +6,7 @@ import           Data.List
     (delete)
 import           Qafny.Effect
 import           Qafny.Syntax.AST
+import           Qafny.Syntax.Emit
 import           Qafny.Syntax.IR
 import           Qafny.Typing.Locus
     (updateMetaStByLocus)
@@ -13,16 +14,16 @@ import           Qafny.Typing.Phase
     (enDegree)
 
 throwError'
-  :: ( Has (Error String) sig m )
-  => String -> m a
-throwError' = throwError @String . ("[Qft Typing] " ++)
+  :: ( Has (Error Builder) sig m )
+  => Builder -> m a
+throwError' = throwError . ("[Qft Typing] " <!>)
 
 typingQft
   :: GensymEmitterWithStateError sig m
   => Range -> Locus -> m Locus
 typingQft rApplied locus = do
   let newLocusMaybe = locusAfterQftPure rApplied locus
-  newLocus <- maybe (throwError' "Internal error!") return newLocusMaybe
+  newLocus <- maybe (throwError' (pp "Internal error!")) return newLocusMaybe
   updateMetaStByLocus newLocus
   return newLocus
 

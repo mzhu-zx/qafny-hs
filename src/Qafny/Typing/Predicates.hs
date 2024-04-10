@@ -16,7 +16,6 @@ import           Data.Maybe
     (catMaybes, listToMaybe)
 import           Qafny.Syntax.AST
 import           Qafny.Syntax.Emit
-    (showEmit0)
 import           Qafny.Typing.Phase hiding
     (throwError')
 import           Qafny.Typing.Utils
@@ -27,9 +26,9 @@ import           Text.Printf
 
 
 throwError'
-  :: ( Has (Error String) sig m )
-  => String -> m a
-throwError' = throwError @String . ("[Typing/Predicates] " ++)
+  :: ( Has (Error Builder) sig m, DafnyPrinter s )
+  => s -> m a
+throwError' = throwError . ("[Typing/Predicates] " <!>)
 
 --------------------------------------------------------------------------------
 -- | Check if a specification expression has correct corresponding types.
@@ -45,11 +44,11 @@ assertSpecWf _     _            = False
 -- without checking the well-formedness of the predicate.
 -- Return Nothing if the expression doesn't contain any predicates.
 wfSignatureFromPredicate'
-  :: Has (Error String) sig m
+  :: Has (Error Builder) sig m
   => Exp' -> m (Maybe (Partition, QTy, Maybe Int, [SpecExp]))
 wfSignatureFromPredicate' e@(ESpec part qty es) = do
   unless isWf $
-    throwError' (printf "Specification is not well formed.\n%s" (showEmit0 e))
+    throwError' ("Specification is not well formed.\n" <!> e)
   return $ Just (part, qty, degree, es)
   where
     degrees = analyzeSpecDegree <$> es
@@ -64,7 +63,7 @@ wfSignatureFromPredicate' _ = return Nothing
 -- without checking the well-formedness of the predicate.
 -- Return Nothing if the expression doesn't contain any predicates.
 wfSignatureFromPredicate
-  :: Has (Error String) sig m
+  :: Has (Error Builder) sig m
   => Exp' -> m (Maybe (Partition, QTy, Maybe Int))
 wfSignatureFromPredicate =
   ((strip4 <$>) <$>) . wfSignatureFromPredicate'
@@ -72,7 +71,7 @@ wfSignatureFromPredicate =
     strip4 (a, b, c, d) = (a, b, c)
 
 wfSignatureFromPredicates
-  :: Has (Error String) sig m
+  :: Has (Error Builder) sig m
   => [Exp'] -> m [(Partition, QTy, Maybe Int, [SpecExp])]
 wfSignatureFromPredicates = (catMaybes <$>) .  mapM wfSignatureFromPredicate'
 

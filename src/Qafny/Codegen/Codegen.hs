@@ -113,7 +113,7 @@ import Qafny.Codegen.Had (codegenNorToHad)
 
 
 throwError'
-  :: ( Has (Error String) sig m )
+  :: ( Has (Error Builder) sig m )
   => String -> m a
 throwError' = throwError @String . ("[Codegen] " ++)
 
@@ -186,7 +186,7 @@ codegenToplevel t = case unTop t of
 codegenToplevel'Method
   :: ( Has (Reader TEnv) sig m
      , Has (State TState)  sig m
-     , Has (Error String) sig m
+     , Has (Error Builder) sig m
      , Has Trace sig m
      )
   => QMethod ()
@@ -288,7 +288,7 @@ codegenToplevel'Method q@(QMethod vMethod bds rts rqs ens (Just block)) = runWit
 codegenBlock
   :: ( Has (Reader TEnv) sig m
      , Has (State TState)  sig m
-     , Has (Error String) sig m
+     , Has (Error Builder) sig m
      , Has (Gensym String) sig m
      , Has (Gensym Emitter) sig m
      , Has (Reader Bool) sig m
@@ -304,7 +304,7 @@ codegenBlock (Block stmts) =
 codegenStmts
   :: ( Has (Reader TEnv) sig m
      , Has (State TState)  sig m
-     , Has (Error String) sig m
+     , Has (Error Builder) sig m
      , Has (Reader Bool) sig m
      , Has (Gensym String) sig m
      , Has (Gensym Emitter) sig m
@@ -331,7 +331,7 @@ codegenStmt
      , Has (Reader QTy) sig m
      , Has (Reader Bool) sig m
      , Has (State TState)  sig m
-     , Has (Error String) sig m
+     , Has (Error Builder) sig m
      , Has (Gensym String) sig m
      , Has (Gensym Emitter) sig m
      , Has Trace sig m
@@ -346,7 +346,7 @@ codegenStmt'
      , Has (Reader IEnv) sig m
      , Has (Reader QTy) sig m
      , Has (State TState)  sig m
-     , Has (Error String) sig m
+     , Has (Error Builder) sig m
      , Has (Gensym String) sig m
      , Has (Gensym Emitter) sig m
      , Has Trace sig m
@@ -423,7 +423,7 @@ codegenStmt'Apply
      , Has (Reader IEnv) sig m
      , Has (Reader QTy) sig m
      , Has (State TState)  sig m
-     , Has (Error String) sig m
+     , Has (Error Builder) sig m
      , Has (Gensym String) sig m
      , Has (Gensym Emitter) sig m
      , Has Trace sig m
@@ -462,7 +462,7 @@ codegenStmt'If
      , Has (Reader IEnv) sig m
      , Has (Reader QTy) sig m
      , Has (State TState)  sig m
-     , Has (Error String) sig m
+     , Has (Error Builder) sig m
      , Has (Gensym String) sig m
      , Has (Gensym Emitter) sig m
      , Has Trace sig m
@@ -493,7 +493,7 @@ codegenStmt'If _ = throwError' "What could go wrong?"
 codegenStmt'If'Had
   :: ( Has (Reader TEnv) sig m
      , Has (State TState)  sig m
-     , Has (Error String) sig m
+     , Has (Error Builder) sig m
      , Has (Gensym String) sig m
      , Has (Gensym Emitter) sig m
      , Has (Reader IEnv) sig m
@@ -535,7 +535,7 @@ codegenStmt'For
      , Has (Reader IEnv) sig m
      , Has (Reader QTy) sig m
      , Has (State TState)  sig m
-     , Has (Error String) sig m
+     , Has (Error Builder) sig m
      , Has (Gensym String) sig m
      , Has (Gensym Emitter) sig m
      , Has Trace sig m
@@ -671,7 +671,7 @@ codegenFor'Body
      , Has (Reader QTy) sig m
      , Has (Reader Bool) sig m
      , Has (State TState)  sig m
-     , Has (Error String) sig m
+     , Has (Error Builder) sig m
      , Has (Gensym String) sig m
      , Has (Gensym Emitter) sig m
      , Has Trace sig m
@@ -851,7 +851,7 @@ codegenStmt'For'Had
      , Has (Reader QTy) sig m
      , Has (Reader Bool) sig m
      , Has (State TState)  sig m
-     , Has (Error String) sig m
+     , Has (Error Builder) sig m
      , Has (Gensym String) sig m
      , Has (Gensym Emitter) sig m
      , Has Trace sig m
@@ -890,7 +890,7 @@ codegenStmt'For'Had stB stG vIdx b = do
 
 mergeHadGuard
   :: ( Has (State TState) sig m
-     , Has (Error String) sig m
+     , Has (Error Builder) sig m
      , Has (Gensym Emitter) sig m
      , Has (Reader IEnv) sig m
      , Has Trace sig m
@@ -910,7 +910,7 @@ mergeHadGuard = mergeHadGuardWith (ENum 0)
 --
 mergeHadGuardWith
   :: ( Has (State TState) sig m
-     , Has (Error String) sig m
+     , Has (Error Builder) sig m
      , Has (Gensym Emitter) sig m
      , Has (Reader IEnv) sig m
      , Has Trace sig m
@@ -936,7 +936,7 @@ hadGuardMergeExp vEmit tEmit cardMain cardStash eBase =
 
 -- codegenMergePhase
 --   :: ( Has (Gensym Emitter) sig m
---      , Has (Error String) sig m
+--      , Has (Error Builder) sig m
 --      )
 --   => PhaseTy -> PhaseTy -> m (PhaseTy, [Stmt'])
 -- codegenMergePhase p PT0 = return (p, [])
@@ -956,7 +956,7 @@ hadGuardMergeExp vEmit tEmit cardMain cardStash eBase =
 -- | Emit two expressions representing the number of kets in two states in
 -- correspondence
 codegenEnReprCard2
-  :: ( Has (Error String) sig m )
+  :: ( Has (Error Builder) sig m )
   => [((Var, Ty), (Var, Ty))]
   -> m (Exp', Exp')
 codegenEnReprCard2 (((vStash, _) ,(vMain, _)) : _) =
@@ -980,7 +980,7 @@ codegenAlloc
   :: ( Has (Gensym Emitter) sig m
      , Has (Gensym String) sig m
      , Has (State TState)  sig m
-     , Has (Error String) sig m
+     , Has (Error Builder) sig m
      )
   => Var -> Exp' -> Ty -> m Stmt'
 codegenAlloc v e@(EOp2 ONor e1 e2) t@(TQReg _) = do

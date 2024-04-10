@@ -14,15 +14,12 @@ import           Control.Effect.Reader
 import           Control.Effect.State
 import           Control.Effect.Trace
 import           Control.Lens
-    (at, (?~), (^.))
+    (at, (^.))
 import           Control.Monad
-    (forM, join, unless)
+    (join, unless)
 
 import           Data.Bifunctor
 import           Data.Sum
-import           Text.Printf
-    (PrintfType, printf)
-
 --
 import           Effect.Gensym
     (Gensym, gensym)
@@ -30,15 +27,17 @@ import           Effect.Gensym
 --
 import           Control.Applicative
     (Applicative (liftA2))
+
+-- Qafny
 import           Qafny.Error
     (QError (UnknownVariableError))
 import           Qafny.Syntax.AST
 import           Qafny.Syntax.Emit
-    (showEmitI)
 import           Qafny.Syntax.IR
+import           Qafny.Utils.TraceF
+    (Traceable (tracef))
 import           Qafny.Variable
     (Variable (variable))
-
 
 --------------------------------------------------------------------------------
 -- * 3-Tuples
@@ -64,28 +63,22 @@ third f (a, b, c) = (a, b, f c)
 --------------------------------------------------------------------------------
 
 onlyOne
-  :: ( Has (Error String) sig m
-     , Show a
+  :: ( Has (Error Builder) sig m
+     , DafnyPrinter a
      )
-  => (String -> m a) -> [a] -> m a
+  => (Builder -> m a) -> [a] -> m a
 onlyOne throw v =
   case v of
     [v'] -> return v'
-    _    -> throw $ printf "Expecting only one element, but given: %s!" (show v)
-
-throwError''
-  :: ( Has (Error String) sig m )
-  => String -> m a
-throwError'' = throwError @String
+    _    -> throw $
+      "Expecting only one element, but given:" <+> list v <+> "!"
 
 -- | Catch the error in the Maybe and rethrow it as an Error
 rethrowMaybe
-  :: ( Has (Error String) sig m )
-  => m (Maybe a)
-  -> String
-  -> m a
+  :: ( Has (Error Builder) sig m, DafnyPrinter s )
+  => m (Maybe a) -> s -> m a
 rethrowMaybe mayFail err =
-  mayFail >>= fromMaybeM (throwError'' err)
+  mayFail >>= fromMaybeM (throwError (pp err))
 
 fromMaybeM :: Monad m => m a -> Maybe a -> m a
 fromMaybeM b = maybe b pure
@@ -121,12 +114,12 @@ gensymLoc = (Loc <$>) . gensym . variable . Loc
 
 --------------------------------------------------------------------------------
 exp2AExp
-  :: (Has (Error String) sig m)
+  :: (Has (Error Builder) sig m)
   => Exp' -> m AExp
 exp2AExp (EVar v) = return $ AVar v
 exp2AExp (ENum n) = return $ ANat n
-exp2AExp e = throwError @String $
-  printf "%s cannot be projected to an AExp." (show e)
+exp2AExp e = throwError $
+  e <+> "cannot be projected to an AExp."
 
 dumpSt
   :: ( Has (State TState) sig m
@@ -135,7 +128,7 @@ dumpSt
   => String -> m ()
 dumpSt str = do
   s <- get @TState
-  trace $ printf "[info] The state after (%s) is:\n%s" str (show s)
+  tracef "[info] The state after (%s) is:\n%s" str (show s)
 
 dumpSSt
   :: ( Has (State TState) sig m
@@ -144,14 +137,14 @@ dumpSSt
   => String -> m ()
 dumpSSt str = do
   s <- use sSt
-  trace $ printf "[info] Dumped sSt (%s):%s" str (show s)
+  tracef "[info] Dumped sSt (%s):%s" str (show s)
 
 --------------------------------------------------------------------------------
 -- * Method Types
 
 -- | Retrive the type of the given formal variable from the environment
 getMethodType
-  :: ( Has (Error String) sig m
+  :: ( Has (Error Builder) sig m
      , Has (Reader TEnv) sig m
      )
   => Var -> m MethodType
@@ -160,30 +153,29 @@ getMethodType v = do
   case tyM of
     Just mty ->
       case unMTy mty of
-        Inl ty -> throwError'' $ printf "%s is not a method but a %s" v (showEmitI 0 ty)
+        Inl ty -> throwError $ v <+> "is not a method but a" <+> ty
         Inr mty -> pure mty
-    _             -> asks (^. kEnv) >>= throwError'' . show . UnknownVariableError v
+    _             -> asks (^. kEnv) >>= throwError . pp . UnknownVariableError v
 
 haveSameLength
-  :: ( Has (Error String) sig m
-     , Show a
-     , Show b
+  :: ( Has (Error Builder) sig m
+     , DafnyPrinter a
+     , DafnyPrinter b
      )
   => [a] -> [b] -> m ()
 haveSameLength vsEmit eValues =
   unless (length vsEmit == length eValues) $
-    throwError @String $ printf
-      "the number of elements doesn't agree with each other: %s %s"
-      (show vsEmit) (show eValues)
+    throwError @Builder $
+      "the number of elements doesn't agree with each other:"
+      <!> vsep [ pp (byComma vsEmit), pp (byComma eValues) ]
 
 --------------------------------------------------------------------------------
 -- | Catch error and add information to it
-errTrace :: (Has (Error String) sig m) => String -> m a ->  m a
+errTrace :: (Has (Error Builder) sig m, DafnyPrinter s) => s -> m a ->  m a
 errTrace info m =
-  catchError m (\e -> throwError (e ++ "\n↑ " ++ info))
+  catchError m (\e -> throwError (e <> line <> "↑ " <+> info))
 
 
--- * Pure functions
 
 both :: Bifunctor f => (a -> b) -> f a a -> f b b
 both = join bimap

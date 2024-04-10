@@ -22,12 +22,13 @@ import           Control.Effect.Lens
 import           Control.Effect.Reader
 import           Control.Effect.State
 import           Control.Effect.Trace
+
 import           Effect.Gensym
     (Gensym, gensym)
 import           Qafny.Syntax.AST
 import           Qafny.Syntax.EmitBinding
 import           Qafny.Syntax.IR
-
+import           Qafny.Syntax.Emit
 
 -- TODO: Separate EmitStates from MetaStates on the type level.
 
@@ -37,13 +38,13 @@ type GensymEmitterWithState sig m =
 
 -- | May mangae and generate emitted symbols, may fail.
 type GensymEmitterWithStateError sig m =
-  (GensymEmitterWithState sig m, Has (Error String) sig m)
+  (GensymEmitterWithState sig m, Has (Error Builder) sig m)
 
 type GensymMeta sig m =
   Has (Gensym Var) sig m
 
 type StateMayFail sig m =
-  (Has (Error String) sig m , Has (State TState) sig m)
+  (Has (Error Builder) sig m , Has (State TState) sig m)
 
 -- | May perform type resolution.
 type HasResolution sig m =
@@ -55,4 +56,4 @@ type GenConditionally sig m =
   Has (Reader Bool) sig m
 
 type MayFail sig m =
-  Has (Error String) sig m
+  Has (Error Builder) sig m

@@ -1,19 +1,31 @@
-{-# LANGUAGE FlexibleContexts, FlexibleInstances, GADTs,
-             GeneralizedNewtypeDeriving, MultiParamTypeClasses,
-             ScopedTypeVariables, TupleSections, TypeOperators,
-             UndecidableInstances #-}
+{-# LANGUAGE
+    FlexibleContexts
+  , FlexibleInstances
+  , GADTs
+  , GeneralizedNewtypeDeriving
+  , MultiParamTypeClasses
+  , ScopedTypeVariables
+  , TupleSections
+  , TypeOperators
+  , UndecidableInstances
+  #-}
 
 module Carrier.Cache.One where
 
 -- | A carrier for 'Cache' effect, extract the cached value
 
 import           Control.Algebra
-import           Control.Carrier.State.Church (StateC, evalState, runState)
-import           Control.Effect.Error         (Error, throwError)
-import           Control.Effect.State         (get, put)
-import           Data.Functor                 (($>), (<&>))
+import           Control.Carrier.State.Church
+    (StateC, evalState, runState)
+import           Control.Effect.Error
+    (Error, throwError)
+import           Control.Effect.State
+    (get, put)
+import           Data.Functor
+    (($>), (<&>))
+import           Data.Maybe
+    (fromJust)
 import           Effect.Cache
-import Data.Maybe (fromJust)
 
 newtype CacheC s m a = CacheC { runCacheC :: StateC (Maybe s) m a }
   deriving (Applicative, Functor, Monad)
@@ -47,7 +59,7 @@ dropCache_
   => CacheC s m a -> m a
 dropCache_ = evalState Nothing . runCacheC
 
--- | 
+-- |
 dropCache
   :: forall s a m .
      Applicative m

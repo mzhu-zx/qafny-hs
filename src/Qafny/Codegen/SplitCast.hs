@@ -37,7 +37,7 @@ import           Text.Printf
 
 
 throwError'
-  :: ( Has (Error String) sig m )
+  :: ( Has (Error Builder) sig m )
   => String -> m a
 throwError' = throwError @String . ("[Codgen|SplitCast] " ++)
 
@@ -91,7 +91,7 @@ codegenSplitEd ed1 ed2 offset size =
 -- * Split & Cast Semantics
 --------------------------------------------------------------------------------
 codegenSplitThenCastEmit
-  :: ( Has (Error String) sig m
+  :: ( Has (Error Builder) sig m
      , Has Trace sig m
      )
   => Maybe SplitScheme
@@ -114,7 +114,7 @@ codegenCast locus qtyInto = do
   codegenCastEmitMaybe mayScheme
 
 codegenCastEmitMaybe
-  :: ( Has (Error String) sig m)
+  :: ( Has (Error Builder) sig m)
   => Maybe CastScheme -> m [Stmt']
 codegenCastEmitMaybe =
   maybe (return []) codegenCastEmit
@@ -126,7 +126,7 @@ codegenCastEmitMaybe =
 -- A cast doesn't change the meaning of the representation while a promotion
 -- does.
 codegenCastEmit
-  :: ( Has (Error String) sig m)
+  :: ( Has (Error Builder) sig m)
   => CastScheme -> m [Stmt']
 codegenCastEmit
   CastScheme{ schEdsFrom=edsFrom@(lEdFrom, rsEdFrom), schEdsTo=edsTo@(lEdTo, rsEdTo)
@@ -278,7 +278,7 @@ dupState s' = do
 -- guaranteed that only one range can be in the partition
 --
 makeLoopRange
-  :: Has (Error String) sig m
+  :: Has (Error Builder) sig m
   => Partition -> Exp' -> Exp' -> m (Range, Exp')
 makeLoopRange (Partition [Range r sl sh]) l h =
   return

@@ -7,8 +7,6 @@ import           Qafny.Syntax.AST
 import           Qafny.Syntax.Emit
 import           Qafny.Syntax.IR
     (MTy)
-import           Text.Printf
-    (printf)
 
 data QError = UnknownVariableError Var (Map.Map Var MTy)
             | UnknownPartitionError Partition
@@ -16,15 +14,20 @@ data QError = UnknownVariableError Var (Map.Map Var MTy)
             | UnknownLocError Loc
             | AmbiguousRange Range [(Range, Loc)]
 
-instance Show QError where
-  show (UnknownVariableError v env) =
-    printf "Variable [%s] is not in the scope!\n\nCurrent environment:\n%s" v (showEmitI 4 env)
-  show (UnknownPartitionError s) =
-    printf "Partition [%s] is not in the scope!" (show s)
-  show (UnknownRangeError r) =
-    printf "Range [%s] is not in the scope!" (showEmit0 r)
-  show (UnknownLocError l) =
-    printf "Loc [%s] is not in the scope!" (show l)
-  show (AmbiguousRange r rs) =
-    printf "Range %s is a subrange of multiple ranges: %s"
-    (showEmit0 r) (showEmit0 (vsep rs))
+instance DafnyPrinter QError where
+  pp = debugOnly' . pp'
+    where
+      pp' (UnknownVariableError v env) = vsep
+        [ "Variable" <+> v <+> "is not in the scope!"
+        , pp "Current environment:"
+        , indent 4 env
+        ]
+      pp' (UnknownPartitionError s) =
+        "Partition [" <+> s <+> "] is not in the scope!"
+      pp' (UnknownRangeError r) =
+        "Range [" <+> r <+> "] is not in the scope!"
+      pp' (UnknownLocError l) =
+        "Loc [" <+> l <+> "] is not in the scope!"
+      pp' (AmbiguousRange r rs) =
+        "Range " <+> r <+> " is a subrange of multiple ranges: "
+        <!> line <!> indent 4 (vsep rs)

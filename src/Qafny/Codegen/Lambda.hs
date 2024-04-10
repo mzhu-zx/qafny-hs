@@ -43,7 +43,7 @@ import           Text.Printf
 
 
 throwError'
-  :: ( Has (Error String) sig m )
+  :: ( Has (Error Builder) sig m )
   => String -> m a
 throwError' = throwError @String . ("[Codegen|Lambda] " ++)
 

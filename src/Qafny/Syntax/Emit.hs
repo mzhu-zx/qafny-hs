@@ -7,26 +7,32 @@
 
 module Qafny.Syntax.Emit where
 
-import qualified Data.Map.Strict                         as Map
-import           Data.Sum
-
 -- Text
-import qualified Data.Text                               as TS
-import qualified Data.Text.Lazy                          as TL
+import qualified Data.Text                as TS
+import qualified Data.Text.Lazy           as TL
 
 -- Qafny
 import           Qafny.Syntax.AST
 import           Qafny.Syntax.EmitBinding
 import           Qafny.Syntax.IR
 import           Qafny.Syntax.Render
-
 -- PP
 import           Prettyprinter
     (lbrace, rbrace, space)
-import qualified Prettyprinter                           as P
+import qualified Prettyprinter            as P
+
+import           Data.Bifunctor
+    (Bifunctor (second))
+import qualified Data.List.NonEmpty       as NE
+import qualified Data.Map.Strict          as Map
+import           Data.Sum
+
+
+
 
 -------------------- Builder --------------------
 type Builder = P.Doc TS.Text
+
 
 viaShow :: Show e => e -> Builder
 viaShow = P.viaShow
@@ -36,6 +42,14 @@ line = P.line
 
 incr2 :: DafnyPrinter a => a -> Builder
 incr2 = P.indent 2 . pp
+
+incr4 :: DafnyPrinter a => a -> Builder
+incr4 = P.indent 4 . pp
+
+
+indent :: DafnyPrinter a => Int -> a -> Builder
+indent i = P.indent i . pp
+
 
 vsep :: DafnyPrinter a => [a] -> Builder
 vsep = P.vsep . (pp <$>)
@@ -151,7 +165,7 @@ instance DafnyPrinter (QMethod ()) where
       reqEns =
         (("requires" <+>) <$> reqs) <>
         (("ensures"  <+>) <$> ens)
-  
+
 instance DafnyPrinter (Block ()) where
   pp (Block b) = vsep
     [ lbrace
@@ -409,7 +423,7 @@ texify = runBuilder 0 False
 showEmit :: DafnyPrinter a => a -> String
 showEmit = TL.unpack . texify
 
--- * Debug modes 
+-- * Debug modes
 
 -- | Prettyprint the term in debugging mode as String
 showEmitI :: DafnyPrinter a => Int -> a -> String
@@ -449,3 +463,6 @@ instance DafnyPrinter TState where
     where
       ppincr2 :: DafnyPrinter a => a -> Builder
       ppincr2 = pp . incr2
+
+ppIEnv :: IEnv -> Builder
+ppIEnv = list . (second (list . NE.toList) <$>)

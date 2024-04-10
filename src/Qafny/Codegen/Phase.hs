@@ -52,7 +52,7 @@ import           Text.Printf
 
 
 throwError'
-  :: ( Has (Error String) sig m )
+  :: ( Has (Error Builder) sig m )
   => String -> m a
 throwError' = throwError @String . ("[Codegen] " ++)
 
@@ -61,7 +61,7 @@ throwError' = throwError @String . ("[Codegen] " ++)
 codegenPromotionMaybe
   :: ( Has (Gensym Emitter) sig m
      , Has (State TState) sig m
-     , Has (Error String) sig m
+     , Has (Error Builder) sig m
      )
   => Maybe PromotionScheme -> m [Stmt']
 codegenPromotionMaybe = (concat <$>) . mapM codegenPromotion . maybeToList
@@ -71,7 +71,7 @@ codegenPromotionMaybe = (concat <$>) . mapM codegenPromotion . maybeToList
 codegenPromotion
   :: ( Has (Gensym Emitter) sig m
      , Has (State TState) sig m
-     , Has (Error String) sig m
+     , Has (Error Builder) sig m
      )
   => PromotionScheme -> m [Stmt']
 codegenPromotion
@@ -87,7 +87,7 @@ codegenPromotion
 codegenPromote'0'1
   :: ( Has (Gensym Emitter) sig m
      , Has (State TState) sig m
-     , Has (Error String) sig m
+     , Has (Error Builder) sig m
      )
   => QTy -> [Range] -> [PhaseRef] -> (Exp', Exp') -> m [Stmt']
 codegenPromote'0'1 qt rs prefs (i, n) = do
@@ -109,7 +109,7 @@ codegenPromote'0'1 qt rs prefs (i, n) = do
 --------------------------------------------------------------------------------
 codegenPhaseLambda
   :: ( Has (State TState) sig m
-     , Has (Error String) sig m
+     , Has (Error Builder) sig m
      )
   => Locus -> PhaseBinder -> PhaseExp -> m [Stmt']
 codegenPhaseLambda st@Locus{degrees} pb pe = do

@@ -103,7 +103,7 @@ codegenMethodParams MethodType{ mtSrcParams } eds =
 codegenMethodReturns
   :: ( Has (State TState) sig m
      , Has (Gensym Emitter) sig m
-     , Has (Error String) sig m
+     , Has (Error Builder) sig m
      , Has (Reader IEnv) sig m
      , Has Trace sig m
      )

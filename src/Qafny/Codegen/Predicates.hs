@@ -53,7 +53,7 @@ import           Qafny.Utils.Utils
 
 
 throwError'
-  :: ( Has (Error String) sig m )
+  :: ( Has (Error Builder) sig m )
   => String -> m a
 throwError' = throwError @String . ("[Codegen/Predicates] " ++)
 
@@ -87,7 +87,7 @@ codegenAssertion' e = return [e]
 -- | Take in the emit variable corresponding to each range in the partition and the
 -- partition type; with which, generate expressions (predicates)
 codegenSpecExp
-  :: forall sig m . ( Has (Error String) sig m, Has (Reader Bool) sig m )
+  :: forall sig m . ( Has (Error Builder) sig m, Has (Reader Bool) sig m )
   => EmitData -> [(Range, EmitData)] -> QTy -> [SpecExp] -> m [Exp']
 codegenSpecExp locusEd rangesEd = go
   where
@@ -208,7 +208,7 @@ codegenRequires rqs = do
 
 codegenEnsures
   :: ( Has (State TState)  sig m
-     , Has (Error String) sig m
+     , Has (Error Builder) sig m
      , Has Trace sig m
      )
   => [Exp'] -> m [Exp']
@@ -218,7 +218,7 @@ codegenEnsures ens =
 -- | Find the representation of the given range
 codegenRangeRepr
   :: ( Has (State TState) sig m
-     , Has (Error String) sig m
+     , Has (Error Builder) sig m
      , Has (Reader IEnv) sig m
      , Has Trace sig m
      )

@@ -39,8 +39,6 @@ import           Data.Functor
 import qualified Data.Map.Strict          as Map
 import qualified Data.Set                 as Set
 import           Data.Sum
-import           Text.Printf
-    (printf)
 
 import           Control.Effect.Lens
 import           Data.Foldable
@@ -49,6 +47,7 @@ import           Data.Maybe
     (catMaybes)
 import           Qafny.Effect
 import           Qafny.Syntax.AST
+import           Qafny.Syntax.Emit
 import           Qafny.Syntax.EmitBinding
 import           Qafny.Syntax.IR
 import           Qafny.Typing.Utils
@@ -164,7 +163,7 @@ genEmStFromLocus Locus{loc, part=Partition{ranges}, qty, degrees} = do
 -- | Update existing `EmitData` based on degree information from a Locus.
 genEmStUpdatePhaseFromLocus
   :: ( GensymEmitterWithState sig m
-     , Has (Error String) sig m
+     , Has (Error Builder) sig m
      )
   => Locus -> m [EmitData]
 genEmStUpdatePhaseFromLocus Locus{loc, part=Partition{ranges=rs}, qty, degrees} =
@@ -185,7 +184,7 @@ appendEmSt rl ed = do
 genEmStUpdatePhase
   :: GensymEmitterWithStateError sig m
   => QTy -> Int -> Loc -> m EmitData
-genEmStUpdatePhase qt i l  = errTrace "`genEmStUpdatePhase`" $ do
+genEmStUpdatePhase qt i l  = errTrace (pp "`genEmStUpdatePhase`") $ do
   evPhaseRef  <- genPhase qt i l
   appendEmSt (inj l) (mtEmitData {evPhaseRef})
 
@@ -208,8 +207,8 @@ findEm rl = do
   ed <- use emitSt <&> (^. at rl)
   maybe (complain =<< use emitSt) return ed
   where
-    complain st = throwError @String $
-      printf "%s cannot be found in emitSt!\n%s" (show rl) (show st)
+    complain st = throwError $
+      rl <+> "cannot be found in emitSt" <!> line <+> indent 4 st
 
 findEms :: StateMayFail sig m => [RangeOrLoc] -> m [EmitData]
 findEms = mapM findEm
@@ -222,15 +221,15 @@ findEmsByLocus Locus{loc, part=Partition{ranges}, qty, degrees} = do
     perRange r = (r,) <$> findEm (inj r)
 
 -- | Find the EmitData and visit it with an accessor
-visitEm :: Has (Error String) sig m => (EmitData -> Maybe a) -> EmitData -> m a
+visitEm :: Has (Error Builder) sig m => (EmitData -> Maybe a) -> EmitData -> m a
 visitEm evF ed = do
   maybe (complain ed) return (evF ed)
   where
-    complain ed' = throwError @String $
-      printf "Attempting to access non-Just field in %s" (show ed')
+    complain ed' = throwError $
+      "Attempting to access non-Just field in" <+> ed
 
 visitEms
-  :: Has (Error String) sig m
+  :: Has (Error Builder) sig m
   => (EmitData -> Maybe a) -> [EmitData] -> m [a]
 visitEms f = mapM (visitEm f)
 
@@ -242,15 +241,15 @@ findVisitEm evF = findEm >=> visitEm evF
 findVisitEms
   :: StateMayFail sig m
   => (EmitData -> Maybe c) -> [RangeOrLoc] -> m [c]
-findVisitEms f = errTrace "findVisitEms" .
+findVisitEms f = errTrace (pp "findVisitEms") .
   mapM (findVisitEm f)
 
 
 -- *** Shorthands
-visitEmBasis :: Has (Error String) sig m => EmitData -> m (Var, Ty)
+visitEmBasis :: Has (Error Builder) sig m => EmitData -> m (Var, Ty)
 visitEmBasis = visitEm evBasis
 
-visitEmsBasis :: Has (Error String) sig m => [EmitData] -> m [(Var, Ty)]
+visitEmsBasis :: Has (Error Builder) sig m => [EmitData] -> m [(Var, Ty)]
 visitEmsBasis = mapM visitEmBasis
 
 findVisitEmsBasis

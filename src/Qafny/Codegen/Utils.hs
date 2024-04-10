@@ -5,12 +5,11 @@
 
 module Qafny.Codegen.Utils where
 
-import           Qafny.Effect
 import           Data.Bool
     (bool)
+import           Qafny.Effect
 import           Qafny.Syntax.AST
 import           Qafny.Syntax.Emit
-    (DafnyPrinter, showEmitI)
 
 --------------------------------------------------------------------------------
 -- * Splits
@@ -38,12 +37,13 @@ putOpt s = do
 
 -- | Attach control flow information to error handling.
 runWithCallStack
-  :: ( Has (Error String) sig m
+  :: ( Has (Error Builder) sig m
      , DafnyPrinter s
      )
   => s
   -> m b
   -> m b
 runWithCallStack s =
-  flip catchError $ \err -> throwError $ err ++ "\nat:\n" ++ showEmitI 4 s
-
+  flip (catchError @Builder) fmt
+  where
+    fmt err = throwError $ err <+> "at" <+> line <+> indent 4 s <+> line

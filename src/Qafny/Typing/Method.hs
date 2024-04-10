@@ -39,14 +39,11 @@ import           Qafny.Typing.Predicates
 import           Qafny.Typing.Typing
     (checkTypeEq, resolvePartition, splitThenCastScheme,
     typingExp, typingPartitionQTy, extendState)
-import           Text.Printf
-    (printf)
-
 
 throwError'
-  :: ( Has (Error String) sig m )
-  => String -> m a
-throwError' = throwError @String . ("[Typing/Method] " ++)
+  :: ( Has (Error Builder) sig m, DafnyPrinter s )
+  => s -> m a
+throwError' = throwError . ("[Typing/Method]" <+>)
 
 --------------------------------------------------------------------------------
 -- * Method Typing
@@ -55,7 +52,7 @@ throwError' = throwError @String . ("[Typing/Method] " ++)
 -- origianl signature following the calling convention.
 --
 analyzeMethodType
-  :: Has (Error String) sig m
+  :: Has (Error Builder) sig m
   => QMethod () -> m (Var, MethodType)
 analyzeMethodType (QMethod v bds rts rqs ens _) = do
   sigRqs <- sigsFromClauses rqs
@@ -99,7 +96,7 @@ analyzeMethodType (QMethod v bds rts rqs ens _) = do
 -- | Given an argument, check it against the parameter in the method signature.
 -- Note this function doesn't check the entanglement type information.
 kindCheckEachParameter
-  :: ( Has (Error String) sig m'
+  :: ( Has (Error Builder) sig m'
      , Has (State (Map.Map Var Range)) sig m'
      , Has (Reader IEnv) sig m'
      , Has (Reader TEnv) sig m'
@@ -122,16 +119,15 @@ kindCheckEachParameter earg (MTyQuantum v cardinality) = do
   -- test if the cadinality is known to be the same as the qreg's size
   eq <- (allI .:) <$> liftIEnv2 (≡)
   unless (eq 0 (er - el - cardinality)) $
-    throwError' $ cardinalityMismatch eCard cardinality
+    cardinalityMismatch eCard cardinality
   modify (Map.insert v qRange)
   pure Nothing
   where
     nonQArgument arg = throwError' $
-      printf "%s is not a valid qreg parameter" (showEmitI 0 arg)
-    cardinalityMismatch cardGiven cardReq = fail $
-      printf "the cardinality of the qreg passed %s doesn't match the required: %s"
-      (showEmitI 0 cardGiven) (showEmitI 0 cardReq)
-
+      arg <+> "is not a valid qreg parameter"
+    cardinalityMismatch cardGiven cardReq = throwError' $
+      "the cardinality of the qreg passed" <+> cardGiven
+      <+> "doesn't match the required:" <+> cardReq
 
 -- | Partition arguments into quantum and regular ones and produce
 --
@@ -143,7 +139,7 @@ kindCheckEachParameter earg (MTyQuantum v cardinality) = do
 -- potential range overlappings among those arguments at the call site.
 --
 normalizeArguments
-  :: ( Has (Error String) sig m
+  :: ( Has (Error Builder) sig m
      , Has (Reader IEnv) sig m
      , Has (Reader TEnv) sig m
      )
@@ -158,9 +154,9 @@ normalizeArguments es params = do
     throwError' (errNonLinear rs)
   return (qmap, pureArgs)
   where
-    errNonLinear rs = printf
-      "Nonlinear usage of quantum resources in ranges:\n%s"
-      (showEmit0 (vsep rs))
+    errNonLinear rs = vsep
+      [ pp "Nonlinear usage of quantum resources in ranges."
+      , incr2 $ vsep rs ]
 
 -- | Given an inclusion operator, check if there's a nonlinear usage of ranges.
 checkRangeDuplication :: (Range -> Bool) -> [Range] -> Bool
@@ -181,7 +177,7 @@ checkRangeDuplication isBot' = go
 resolveMethodApplicationArgs
   ::  ( Has (Gensym String) sig m
       , Has (Gensym Emitter) sig m
-      , Has (Error String) sig m
+      , Has (Error Builder) sig m
       , Has (Reader TEnv) sig m
       , Has (Reader IEnv) sig m
       , Has (State TState) sig m
@@ -206,9 +202,10 @@ resolveMethodApplicationArgs es
   (qArgs, schemes, loci) <- resolveInstantiatedQuantumArgs inst
   pure (qArgMap, pureArgs, qArgs, schemes, loci)
   where
-    arityMismatch prs = throwError' $
-      "The number of arguments given doesn't match the number of parameters expected by the method."
-      ++ printf "Given:\n%s\nExpected:\n%s" (show es) (show prs)
+    arityMismatch prs = throwError' $ vsep
+      [ pp "The number of arguments given doesn't match the number of parameters expected by the method."
+      , "Given   " <+> list es
+      , "Expected" <+> list prs ]
 
 -- | Given an list of instantiated entanglement types, perform splits and casts
 -- and return a list of extracted representations as well as split and cast
@@ -246,13 +243,15 @@ resolveInstantiatedQuantumArgs insts = do
     checkPhase Locus{degrees} (_, _, methodDegree) =
       toList methodDegree == degrees
 
-    errDegreeMismatch loci = throwError' $ printf "Degree mismatch:\n%s\n%s"
-      (showEmit0 (byComma (byComma . degrees <$> loci)))
-      (showEmit0 (byComma (trd <$> insts)))
+    errDegreeMismatch loci = throwError' $ vsep
+      [ pp "Degree mismatch:"
+      , incr2 (byComma (byComma . degrees <$> loci))
+      , incr2 (byComma (trd <$> insts))
+      ]
 
 -- | Compute the typing state after returning from a method call.
 resolveMethodApplicationRets
-  ::  ( Has (Error String) sig m
+  ::  ( Has (Error Builder) sig m
       , Has (State TState) sig m
       , Has (Gensym Var) sig m
       , Has (Gensym Emitter) sig m
@@ -286,12 +285,12 @@ collectPureBindings params =  [ Binding v t | MTyPure v t <- params ]
 
 -- Compute types of methods from the toplevel
 collectMethodTypes
-  :: (Has (Error String) sig m)
+  :: (Has (Error Builder) sig m)
   => AST  -> m (Map.Map Var MethodType)
 collectMethodTypes a = execState @(Map.Map Var MethodType) Map.empty $
   forM_ a go
   where
-    go :: ( Has (Error String) sig m'
+    go :: ( Has (Error Builder) sig m'
           , Has (State (Map.Map Var MethodType)) sig m'
           )
        => Toplevel () -> m' ()
@@ -300,6 +299,6 @@ collectMethodTypes a = execState @(Map.Map Var MethodType) Map.empty $
       existsMaybe <- (Map.!? idMethod) <$> get @(Map.Map Var MethodType)
       case existsMaybe of
         Just _ ->
-          throwError' $ printf "Duplicated definitions of the method %s." idMethod
+          throwError' $ "Duplicated definitions of the method"<+>idMethod<!>"."
         _ -> modify (Map.insert idMethod methodTy)
     go _ = pure ()

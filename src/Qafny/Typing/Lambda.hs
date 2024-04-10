@@ -27,13 +27,13 @@ analyzeLambdaType
   :: MayFail sig m => [(Range, Range, Locus)] -> Lambda -> m LambdaType
 analyzeLambdaType rsAndLoci LambdaF{bBases, eBases} =
   case rsAndLoci of
-    []  -> throwError "An oracle cannot be applied to an empty partition."
+    []  -> throwError (pp "An oracle cannot be applied to an empty partition.")
     [r] -> pure (LamUnary r)
     [rl1, rl2] -> case checkKickback rsAndLoci bBases eBases of
       Nothing -> do
         let rsMap =  (fst2 <$> rsAndLoci)
         unless (areRangesEquiv rsMap) $
-          throwError (errRangesAreProper rsMap)
+          throwError (pp (errRangesAreProper rsMap))
         pure (LamBinary rl1 rl2)
       Just s -> pure $ LamPhaseKickback s
     -- _ ->

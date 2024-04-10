@@ -1,11 +1,18 @@
-{-# LANGUAGE GADTs, KindSignatures, RankNTypes #-}
+{-# LANGUAGE
+    GADTs
+  , KindSignatures
+  , RankNTypes
+  #-}
 
 module Effect.Cache where
 
 import           Control.Algebra
-import           Control.Effect.Error (Error, throwError)
-import           Data.Kind            (Type)
-import Debug.Trace (traceStack)
+import           Control.Effect.Error
+    (Error, throwError)
+import           Data.Kind
+    (Type)
+import           Debug.Trace
+    (traceStack)
 
 -- | `Cache` effect: avoid carrying out extra computation by caching
 --
