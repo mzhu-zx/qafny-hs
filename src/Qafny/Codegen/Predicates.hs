@@ -27,6 +27,7 @@ import           Qafny.Effect
 import           Qafny.Syntax.AST
 import           Qafny.Syntax.ASTFactory
 import           Qafny.Syntax.IR
+import           Qafny.Syntax.Emit
 import           Qafny.Typing.Typing
     (extendState, resolvePartition, typingPartitionQTy)
 
@@ -54,8 +55,8 @@ import           Qafny.Utils.Utils
 
 throwError'
   :: ( Has (Error Builder) sig m )
-  => String -> m a
-throwError' = throwError @String . ("[Codegen/Predicates] " ++)
+  => Builder -> m a
+throwError' = throwError . ("[Codegen/Predicates]" <+>)
 
 
 -- | Take in an /assertional/ expression, perform type check and emit
@@ -76,7 +77,7 @@ codegenAssertion' (ESpec s qt espec) = do
   st@Locus{part, degrees=dgrs} <- typingPartitionQTy s qt
   -- FIXME: do something seriously when (part /= s)
   when (sort (ranges part) /= sort (ranges s)) $
-    throwError' (printf "Assertion: %s is inconsistent with %s." (show part) (show s))
+    throwError' ("Assertion:"<+>part<+>"is inconsistent with"<+>s<+>".")
   (locusEd, rangesEd) <- findEmsByLocus st
   codegenSpecExp locusEd rangesEd qt espec
 codegenAssertion' e = return [e]

@@ -140,7 +140,9 @@ resolvePartition' se' = do
   let locs = [ ((rSe, rSt), loc)
              | (rSe, rSt, ans, loc) <- concat rsResolved, included ans ]
   constraints <- ask @IEnv
-  let related = vsep [ showRel r1 r2 b | (r1, r2, b, _) <- concat rsResolved ]
+  let related = incr4 $ vsep
+        [ showRel r1 r2 b | (r1, r2, b, _) <- concat rsResolved ]
+
   trace . showEmit0 $ vsep
     [ "[resolvePartition] resolve (" <!> se
     , incr2 $ "within" <+> ppIEnv constraints
@@ -465,7 +467,7 @@ getRangeSplits
   => Locus -> Range -> m RangeSplits
 getRangeSplits s@(Locus{loc, part=p, degrees}) rSplitTo@(Range to rstL rstR) = do
   trace $ showEmit0
-    ("splitInto:" <+> "from" <+> rSplitTo <+> "to" <+> p)
+    ("splitInto:" <+> "from" <+> p <+> "to" <+> rSplitTo)
   botHuh <- ($ rSplitTo) <$> isBotI
   case botHuh of
     _ | all (== Just True)  botHuh -> throwError' errBotRx

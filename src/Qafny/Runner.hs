@@ -14,7 +14,7 @@ import           Qafny.Config
 import           Qafny.Syntax.AST
     (AST, Toplevel', Var)
 import           Qafny.Syntax.Emit
-    (prettyIO)
+    (prettyIO, Builder)
 import           Qafny.Syntax.IR
 import           Qafny.Syntax.Parser
     (scanAndParse)
@@ -23,13 +23,13 @@ import           Qafny.Syntax.Parser
 -- Wrapper
 --------------------------------------------------------------------------------
 data Production a = Production
-  { pResult ::  Either String a
-  , pDetail :: [Either String Toplevel']
+  { pResult ::  Either Builder a
+  , pDetail :: [Either Builder Toplevel']
   , pState  :: [(Var, TState)]
   , pTrace  :: String
   }
 
-collectErrors :: Production a -> [(Var, String)]
+collectErrors :: Production a -> [(Var, Builder)]
 collectErrors Production{ pDetail=detail, pState=st } = catMaybes $ do
   (errHuh, (v, st')) <- zip detail st
   case errHuh of
@@ -41,7 +41,7 @@ collectErrors Production{ pDetail=detail, pState=st } = catMaybes $ do
 --------------------------------------------------------------------------------
 runCodegen
   :: Configs -> AST
-  -> ([String], ([((Var, TState), Either String Toplevel')], Either String AST))
+  -> ([String], ([((Var, TState), Either Builder Toplevel')], Either Builder AST))
 runCodegen conf ast = do
   run . run' $ codegenAST ast
   where

@@ -16,11 +16,10 @@ import           Qafny.FileUtils
 import           Qafny.Runner
     (Production (..), collectErrors, produceCodegen)
 import           Qafny.Syntax.Emit
-    (Builder, pp, prettyIO, showEmitI)
 import           Qafny.Syntax.Parser
     (scanAndParse)
 import           Qafny.Syntax.Render
-    (hPutDoc)
+    (hPutDoc, putDoc)
 import           System.Directory
     (doesFileExist)
 import           System.Environment
@@ -111,15 +110,17 @@ withProg srcFile config@Configs{mode=Verify} = do
   srcText <- readFile srcFile
   either ((>> exitFailure) . putStrLn) (>>= writeOrReportP)
     (pipeline srcText config)
-  putStrLn $ "\ESC[32mSuccess: target is emited as `" ++ tgtFile ++ "` \ESC[0m"
+  putDoc True $
+    ("\ESC[32mSuccess: target is emited as `"::Text)
+    <!>tgtFile<!>("` \ESC[0m"::Text)
   where
     writeOrReportP :: Production Builder -> IO ()
     writeOrReportP prod@(Production {pResult=res, pState=st, pDetail=details})  = do
       wrapUp <- case res of
         Left txt -> do
           if null (pDetail prod)
-            then pError txt
-            else forM_ (collectErrors prod) (pError . formatMethodError)
+            then pErrorDoc txt
+            else forM_ (collectErrors prod) (pErrorDoc . formatMethodError)
           return exitFailure
         Right doc -> do
           putStrLn "Pipeline Finished!\n"
@@ -131,10 +132,16 @@ withProg srcFile config@Configs{mode=Verify} = do
         concatMap showEachSt st
       wrapUp
 
-    formatMethodError (m, e) = printf "(\ESC[3m%s\ESC[0m\ESC[93m): %s" m e
+    formatMethodError (m, e) =
+      ("(\ESC[3m"::Text)<!>m<!>("\ESC[0m\ESC[93m):"::Text)<+>e
     showEachSt (v, st) =
       printf "\nThe final state of the method `%s`:\n%s\n" v (showEmitI 2 st)
     tgtFile = srcFile -<.> "dfy"
+
+pErrorDoc :: Builder -> IO ()
+pErrorDoc err = putDoc True fmt
+  where
+    fmt = ("\ESC[31m[Error]\ESC[93m"::Text) <!> err <!> ("\ESC[0m\n"::Text)
 
 pError :: String -> IO ()
 pError err = putStrLn $ "\ESC[31m[Error]\ESC[93m " ++ err ++ "\ESC[0m\n"

@@ -128,7 +128,9 @@ dumpSt
   => String -> m ()
 dumpSt str = do
   s <- get @TState
-  tracef "[info] The state after (%s) is:\n%s" str (show s)
+  tracep $ vsep
+    [ pp "[info] The state after ("<!>str<!>") is:"
+    , incr4 s ]
 
 dumpSSt
   :: ( Has (State TState) sig m
@@ -189,3 +191,5 @@ hasNoDup (x:xs) = foldr go True xs
   where
     go x' ans = x == x' && ans
 
+tracep :: (Has Trace sig m, DafnyPrinter s) => s -> m ()
+tracep = trace . showEmit0

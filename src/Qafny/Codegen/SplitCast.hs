@@ -39,7 +39,7 @@ import           Text.Printf
 throwError'
   :: ( Has (Error Builder) sig m )
   => String -> m a
-throwError' = throwError @String . ("[Codgen|SplitCast] " ++)
+throwError' = throwError . ("[Codgen|SplitCast]" <+>)
 
 --------------------------------------------------------------------------------
 -- * Split Semantics
@@ -288,8 +288,8 @@ makeLoopRange (Partition [Range r sl sh]) l h =
 makeLoopRange s _ _ =
   throwError $
     "Partition `"
-      ++ show s
-      ++ "` contains more than 1 range, this should be resolved at the typing stage"
+    <!> s
+    <!> "` contains more than 1 range, this should be resolved at the typing stage"
 
 
 

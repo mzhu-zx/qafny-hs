@@ -29,6 +29,7 @@ import           Qafny.Syntax.AST
 import           Qafny.Syntax.ASTFactory
     (mkDeclAssign)
 import           Qafny.Syntax.EmitBinding
+import           Qafny.Syntax.Emit
 import           Qafny.Syntax.IR
 
 import           Data.Foldable

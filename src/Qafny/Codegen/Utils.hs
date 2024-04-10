@@ -46,4 +46,5 @@ runWithCallStack
 runWithCallStack s =
   flip (catchError @Builder) fmt
   where
-    fmt err = throwError $ err <+> "at" <+> line <+> indent 4 s <+> line
+    fmt err = throwError $
+      err <+> line <+> "at" <+> line <+> indent 4 s

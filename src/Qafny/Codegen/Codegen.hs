@@ -42,7 +42,7 @@ import           Data.List.NonEmpty
     (NonEmpty (..))
 import qualified Data.Map.Strict              as Map
 import           Data.Maybe
-    (mapMaybe, fromMaybe)
+    (mapMaybe)
 import qualified Data.Sum                     as Sum
 import           Text.Printf
     (printf)
@@ -62,11 +62,11 @@ import           Qafny.Syntax.Emit
 import           Qafny.Syntax.EmitBinding
 import           Qafny.Syntax.IR
 import           Qafny.Typing
-    (appkEnvWithBds, checkSubtype, collectConstraints, matchEmitStatesVars,
-    matchStateCorrLoop, mergeCandidateHad, mergeLociHadEN, mergeMatchedTState,
-    mergeScheme, removeTStateByLocus, resolvePartition, resolvePartitions,
-    splitScheme, splitSchemePartition, splitThenCastScheme,
-    tStateFromPartitionQTys, typingExp, typingGuard, typingPartition, castScheme)
+    (appkEnvWithBds, castScheme, checkSubtype, collectConstraints,
+    matchEmitStatesVars, matchStateCorrLoop, mergeCandidateHad,
+    mergeMatchedTState, mergeScheme, removeTStateByLocus, resolvePartition,
+    resolvePartitions, splitScheme, splitSchemePartition, splitThenCastScheme,
+    tStateFromPartitionQTys, typingExp, typingGuard, typingPartition)
 import           Qafny.Typing.Utils
     (emitTypeFromDegree, isEn)
 
@@ -74,6 +74,8 @@ import           Data.Sum
     (Injection (inj))
 import           Qafny.Codegen.Common
     (codegenAssignEmitData)
+import           Qafny.Codegen.Had
+    (codegenNorToHad)
 import           Qafny.Codegen.Lambda
 import           Qafny.Codegen.Merge
     (codegenMergeScheme)
@@ -95,8 +97,7 @@ import           Qafny.Utils.EmitBinding
 import           Qafny.Utils.TraceF
     (Traceable (tracef))
 import           Qafny.Utils.Utils
-    (both, bothM, dumpSt, gensymLoc, getMethodType)
-import Qafny.Codegen.Had (codegenNorToHad)
+    (both, bothM, dumpSt, gensymLoc, getMethodType, tracep)
 
 --------------------------------------------------------------------------------
 -- * Introduction
@@ -113,9 +114,9 @@ import Qafny.Codegen.Had (codegenNorToHad)
 
 
 throwError'
-  :: ( Has (Error Builder) sig m )
-  => String -> m a
-throwError' = throwError @String . ("[Codegen] " ++)
+  :: ( Has (Error Builder) sig m, DafnyPrinter s )
+  => s -> m a
+throwError' = throwError . ("[Codegen]" <+>)
 
 --------------------------------------------------------------------------------
 -- * Codegen
@@ -126,16 +127,17 @@ codegenAST
      , Has Trace sig m
      )
   => AST
-  -> m ([((Var, TState), Either String Toplevel')], Either String AST)
+  -> m ([((Var, TState), Either Builder Toplevel')], Either Builder AST)
 codegenAST ast = ErrC.runError handleASTError return  $ do
   Configs { stdlibPath=libPath, depth=depth' } <- ask
   let path = concat (replicate depth' "../") ++ libPath
   let prelude = (mkIncludes path <$> includes) ++ imports
   methodMap <- collectMethodTypes ast
-  stTops <- local (kEnv %~ Map.union (Sum.inj <$> methodMap)) $ mapM codegenToplevel ast
+  stTops <- local (kEnv %~ Map.union (Sum.inj <$> methodMap)) $
+    mapM codegenToplevel ast
   let methodOutcomes = mapMaybe methodOnly stTops
   let (_, mainMayFail) = unzip stTops
-  let main :: Either String AST = sequence mainMayFail
+  let main :: Either Builder AST = sequence mainMayFail
   let astGened = (injQDafny prelude ++) <$> main <&> (++ injQDafny finale)
   return (methodOutcomes, astGened)
   where
@@ -172,7 +174,7 @@ codegenToplevel
      , Has Trace sig m
      )
   => Toplevel'
-  -> m (Maybe (Var, TState), Either String Toplevel')
+  -> m (Maybe (Var, TState), Either Builder Toplevel')
 codegenToplevel t = case unTop t of
   Sum.Inl q@(QMethod idm _ _ _ _ _ ) ->
     bimap (Just . (idm, )) (Sum.inj <$>)  <$> codegenMethod q
@@ -213,7 +215,8 @@ codegenToplevel'Method q@(QMethod vMethod bds rts rqs ens (Just block)) = runWit
 
   -- construct the Interval environment
   let iEnv = Map.foldMapWithKey vIntv2IEnv boundConstraints
-  trace $ printf "Constraint Sets:\n%s\n" (show boundConstraints)
+  trace . showEmit0 $
+    "Constraint Sets:" <!> line <!> boundConstraints
 
   -- construct requires, parameters and the method body
   mty <- getMethodType vMethod
@@ -229,7 +232,7 @@ codegenToplevel'Method q@(QMethod vMethod bds rts rqs ens (Just block)) = runWit
 
   ensCG <- codegenEnsures ens
 
-  trace (printf "** %s" (show rbdvsEmitB))
+  tracep $ "**" <!> align (vsep (first viaShow <$> rbdvsEmitB))
   -- Gensym symbols are in the reverse order!
   let stmtsDeclare = fDecls rbdvsEmitB
   -- let stmtsDeclare = undefined
@@ -406,7 +409,7 @@ codegenStmt' (SCall x eargs) = do
     [SEmit (fsts rets :*:=: [EEmit (ECall x (pureArgs ++ qArgs))])]
   where
     errNoAMethod = throwError' $
-      printf "The variable %s is not referring to a method." x
+      "The variable"<+>x<+>"is not referring to a method."
 
 codegenStmt' s@(SDafny {}) = return [s]
 
@@ -442,8 +445,8 @@ codegenStmt'Apply (s@Partition{ranges=[rApplied]} :*=: EHad) = do
         pure castMaybe
       stmtsCast <- codegenNorToHad cast
       return $ codegenSplitEmitMaybe splitMaybe ++ stmtsCast
-    go l = throwError' $ printf
-      "H may not be applied to locus %s" (showEmit0 l)
+    go l = throwError' $
+      "H may not be applied to locus" <+> l
 codegenStmt'Apply (s :*=: EHad) =
   throwError' $ showEmit0 ("H can only be applied to one range given" <+> s)
 
@@ -542,7 +545,6 @@ codegenStmt'For
      )
   => Stmt'
   -> m [Stmt']
-
 codegenStmt'For (SFor idx boundl boundr eG invs (Just seps) body) = do
   -- statePreLoop: the state before the loop starts
   -- stateLoop:    the state for each iteration
@@ -555,7 +557,7 @@ codegenStmt'For (SFor idx boundl boundr eG invs (Just seps) body) = do
   put stateLoop
   -- generate loop invariants
 
-  stmtsBody <- local (++ substEnv) $ do
+  stmtsBody <- localExtendInv $ do
     ask @IEnv >>= trace . printf "Augmented IENV: %s" . show
     stSep <- typingPartition seps -- check if `seps` clause is valid
     stmtsBody <- codegenFor'Body idx boundl boundr eG body stSep (concat newInvs)
@@ -569,6 +571,7 @@ codegenStmt'For (SFor idx boundl boundr eG invs (Just seps) body) = do
   return $ stmtsPreGuard ++ stmtsBody
   where
     -- IEnv for loop constraints
+    localExtendInv = local (++ substEnv)
     substEnv = [(idx, boundl :| [boundr - 1])]
 
     substInfoPre info = go <$> info
@@ -685,7 +688,6 @@ codegenFor'Body
   -> [Exp'] -- ^ emitted invariants
   -> m [Stmt']
 codegenFor'Body idx boundl boundr eG body stSep@(Locus{qty=qtSep}) newInvs = do
-
   let psBody = leftPartitions . inBlock $ body
   -- FIXME: what's the difference between pG and sG here?
   (stG@Locus{part=sG, qty=qtG }, pG) <- typingGuard eG
@@ -800,7 +802,7 @@ codegenFor'Body idx boundl boundr eG body stSep@(Locus{qty=qtSep}) newInvs = do
                       , stmtsMatchLoopBeginEnd
                       ]
              )
-    _    -> throwError' $ printf "%s is not a supported guard type!" (show qtG)
+    _    -> throwError' $ ""<+>qtG<+>"is not a supported guard type!"
   let innerFor = SEmit $ SForEmit idx boundl boundr newInvs $ Block stmtsBody
   return $ stmtsPrelude ++ [innerFor]
   where
@@ -963,7 +965,7 @@ codegenEnReprCard2 (((vStash, _) ,(vMain, _)) : _) =
   return ( EEmit . ECard . EVar $ vStash
          , EEmit . ECard . EVar $ vMain)
 codegenEnReprCard2 a =
-  throwError "State cardinality of an empty correspondence is undefined!"
+  throwError' "State cardinality of an empty correspondence is undefined!"
 
 
 -- Merge the two partitions in correspondence
@@ -995,6 +997,6 @@ codegenAlloc v e@(EOp2 ONor e1 e2) t@(TQReg _) = do
   (vEmit, _) <- visitEmBasis edR
   return $ vEmit ::=: eEmit
 codegenAlloc v e@(EOp2 ONor _ _) _ =
-  throwError "Internal: Attempt to create a Nor partition that's not of nor type"
+  throwError' "Internal: Attempt to create a Nor partition that's not of nor type"
 codegenAlloc v e _ = return $ (::=:) v e
 

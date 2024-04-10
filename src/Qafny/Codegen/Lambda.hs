@@ -43,9 +43,9 @@ import           Text.Printf
 
 
 throwError'
-  :: ( Has (Error Builder) sig m )
-  => String -> m a
-throwError' = throwError @String . ("[Codegen|Lambda] " ++)
+  :: ( Has (Error Builder) sig m , DafnyPrinter  s)
+  => s -> m a
+throwError' = throwError . ("[Codegen|Lambda]" <+>)
 
 --------------------------------------------------------------------------------
 codegenLambda
@@ -180,7 +180,7 @@ codegenLambdaEntangle
 codegenLambdaEntangle rs (LambdaF{ bBases, eBases }) = do
   vReprs <- fsts <$> findEmitBasesByRanges rs
   unless (lenBbases == lenEbases && length vReprs == lenEbases) $
-    throwError errInconsistentLength
+    throwError' errInconsistentLength
   (iVar, _) <- gensymBinding "i" TNat
   return $ codegenApplyLambdaMany iVar vReprs bBases eBases
   where

@@ -31,7 +31,6 @@ import           Qafny.Effect
 import           Qafny.Syntax.AST
 import           Qafny.Syntax.ASTFactory
 import           Qafny.Syntax.Emit
-    (showEmit0)
 import           Qafny.Syntax.EmitBinding
 import           Qafny.Syntax.IR
 import           Qafny.Typing.Utils
@@ -53,8 +52,8 @@ import           Text.Printf
 
 throwError'
   :: ( Has (Error Builder) sig m )
-  => String -> m a
-throwError' = throwError @String . ("[Codegen] " ++)
+  => Builder -> m a
+throwError' = throwError . ("[Codegen]" <+>)
 
 -- * Generating Phase Promotion
 
@@ -124,10 +123,8 @@ codegenPhaseLambda st@Locus{degrees} pb pe = do
                , vBase ::=: subst [(bBase, EVar vBase)] eBase
                ]
     go dgr _ _ _ = throwError' $
-      printf "At least one of the binder %s and the specficiation %s is not of degree %d."
-      (showEmit0 pb) (showEmit0 pe) dgr
-
-
+      "At least one of the binder"<+>pb<+>"and the specficiation"
+      <+>pe<+>"is not of degree"<+>dgr<+>"."
 
 -- * Quantum Fourier Transformation
 codegenApplyQft
@@ -141,18 +138,18 @@ codegenApplyQft s = do
     [(r1, r2)] -> if r1 == r2 then go locus r1
                   else throwError' (errIncompleteRange r1 r2)
     _          ->
-      throwError' "Qft may only be applied to exactly one range."
+      throwError' (pp "Qft may only be applied to exactly one range.")
   where
     go locusS r = do
       -- ensures that bases is `EN`
       (locusS, stmtCast) <- castScheme locusS TEn
       -- ensures that phases is in 1st degree
       when (degrees locusS /= [1]) $
-        throwError' "Degree not 1"
+        throwError' (pp "Degree not 1")
       newLocus <- typingQft r locusS
       codegenQft locusS newLocus
-    errIncompleteRange r1 r2 = printf
-      "The range %s is a proper subrange of %s." (showEmit0 r1) (showEmit0 r2)
+    errIncompleteRange r1 r2 = 
+      "The range"<+>r1<+>"is a proper subrange of"<+>r2<+>"."
 
 
 -- | Generate statements for Qft and update Emit states given the original locus

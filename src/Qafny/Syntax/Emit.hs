@@ -26,6 +26,8 @@ import           Data.Bifunctor
 import qualified Data.List.NonEmpty       as NE
 import qualified Data.Map.Strict          as Map
 import           Data.Sum
+import           Qafny.Interval
+    (Interval (..))
 
 
 
@@ -33,6 +35,8 @@ import           Data.Sum
 -------------------- Builder --------------------
 type Builder = P.Doc TS.Text
 
+align :: DafnyPrinter a => a -> Builder
+align = P.align . pp
 
 viaShow :: Show e => e -> Builder
 viaShow = P.viaShow
@@ -111,6 +115,12 @@ instance DafnyPrinter Char where
   pp = P.pretty
 
 instance DafnyPrinter String where
+  pp = P.pretty
+
+instance DafnyPrinter TS.Text where
+  pp = P.pretty
+
+instance DafnyPrinter TL.Text where
   pp = P.pretty
 
 instance DafnyPrinter AST where
@@ -270,6 +280,11 @@ instance (Show f, DafnyPrinter f) => DafnyPrinter (LambdaF f) where
 instance DafnyPrinter Intv where
   pp e@(Intv e1 e2) = debugOnly e $
     brackets $ e1 <+> ".." <+> e2
+
+instance DafnyPrinter s => DafnyPrinter (Interval s) where
+  pp e@(Interval e1 e2) = debugOnly' $
+    brackets $ e1 <+> ".." <+> e2
+
 
 instance (DafnyPrinter f, Show f) => DafnyPrinter (SpecExpF f) where
   pp s = debugOnly s ppSubterm
