@@ -430,12 +430,12 @@ codegenStmt'Apply
      )
   => Stmt'
   -> m [Stmt']
-codegenStmt'Apply (s :*=: EHad) = do
-  st@Locus{qty, part=Partition{ranges}} <- resolvePartition s
+codegenStmt'Apply (s@Partition{ranges=[rApplied]} :*=: EHad) = do
+  st@Locus{qty, part} <- resolvePartition s
   go st
   where
-    go l@Locus{qty, part=Partition [r]} = do
-      (lSplit, splitMaybe) <- splitScheme l r
+    go l@Locus{qty=TNor} = do
+      (lSplit, splitMaybe) <- splitScheme l rApplied
       (lCasted, castMaybe) <- castScheme lSplit THad
       cast <- maybe
         (throwError' "Applying H over a Had locus is unimplemented.")
@@ -444,6 +444,8 @@ codegenStmt'Apply (s :*=: EHad) = do
       return $ codegenSplitEmitMaybe splitMaybe ++ stmtsCast
     go l = throwError' $ printf
       "H may not be applied to locus %s" (showEmit0 l)
+codegenStmt'Apply (s :*=: EHad) =
+  throwError' $ showEmit0 ("H can only be applied to one range given" <+> s)
 
 
 codegenStmt'Apply stmt@(s@(Partition{}) :*=: (ELambda lam)) =

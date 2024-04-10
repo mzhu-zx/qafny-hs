@@ -70,6 +70,7 @@ import           Qafny.Typing.Error
 import           Text.Printf
     (printf)
 import Qafny.Typing.Locus (updateMetaStByLocus)
+import Data.Text.Prettyprint.Doc (punctuate)
 
 throwError'
   :: ( Has (Error String) sig m )
@@ -346,6 +347,8 @@ splitScheme' s@(Locus{loc, part, qty, degrees}) rSplitTo@(Range to rstL rstR) = 
 
   rangeSplit@RangeSplits { rsRsUnchanged, rsRLeft, rsRRight, rsRAffected} <-
     getRangeSplits s rSplitTo
+  trace $ showEmit0
+    ("range split:" <+> rsRAffected <+> rsRLeft <+> rsRRight)
   case NE.nonEmpty (rsRsRemainder rangeSplit) of
     Nothing -> -- | No split!
       return (s, Nothing)
@@ -457,20 +460,25 @@ data RangeSplits = RangeSplits
 getRangeSplits
   :: ( Has (Error String) sig m
      , Has (Reader IEnv) sig m
+     , Has Trace sig m
      )
   => Locus -> Range -> m RangeSplits
 getRangeSplits s@(Locus{loc, part=p, degrees}) rSplitTo@(Range to rstL rstR) = do
+  trace $ showEmit0
+    ("splitInto:" <+> "from" <+> rSplitTo <+> "to" <+> p)
   botHuh <- ($ rSplitTo) <$> isBotI
   case botHuh of
     _ | all (== Just True)  botHuh -> throwError' errBotRx
     _ | all (== Just False) botHuh -> return ()
     _ -> do ienv <- ask @IEnv
-            throwError' $ printf "Cannot decide if %s is empty.\nEnv: %s" (show rSplitTo) (show ienv)
+            throwError' $ printf
+              "Cannot decide if %s is empty.\nEnv: %s"
+              (show rSplitTo) (show ienv)
   (⊑??) <- (∀⊑/)
   case matched (⊑??) of
     Nothing -> throwError' errImproperRx
     Just (rRemL, _, rRemR, rOrigin, idx)  -> do
-      rRemLeft <- contractRange rRemL
+      rRemLeft  <- contractRange rRemL
       rRemRight <- contractRange rRemR
       let rsRest = removeNth idx (unpackPart p)
       return $ RangeSplits
