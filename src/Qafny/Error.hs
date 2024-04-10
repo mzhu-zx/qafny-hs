@@ -5,7 +5,6 @@ import qualified Data.Map.Strict   as Map
 import           Qafny.Syntax.AST
     (Loc, Partition, Range, Var)
 import           Qafny.Syntax.Emit
-    (showEmitI, showEmit0, byLineT)
 import           Qafny.Syntax.IR
     (MTy)
 import           Text.Printf
@@ -28,4 +27,4 @@ instance Show QError where
     printf "Loc [%s] is not in the scope!" (show l)
   show (AmbiguousRange r rs) =
     printf "Range %s is a subrange of multiple ranges: %s"
-    (showEmit0 r) (showEmit0 (byLineT  rs))
+    (showEmit0 r) (showEmit0 (vsep rs))

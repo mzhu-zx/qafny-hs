@@ -8,7 +8,6 @@ import           Data.List
 import           Qafny.Effect
 import           Qafny.Syntax.AST
 import           Qafny.Syntax.Emit
-    (byLineT, showEmit0)
 import           Qafny.Syntax.IR
 import           Qafny.Typing.Range
     (areRangesEquiv)
@@ -43,7 +42,7 @@ analyzeLambdaType rsAndLoci LambdaF{bBases, eBases} =
     errRangesAreProper :: [(Range, Range)] -> String
     errRangesAreProper rMap = printf
       "Ranges given on the LHS of the application contains some incomplete range(s).\n%s"
-      (showEmit0 $ byLineT rMap)
+      (showEmit0 $ vsep rMap)
 
 
 checkKickback

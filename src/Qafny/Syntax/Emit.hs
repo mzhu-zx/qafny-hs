@@ -100,7 +100,7 @@ instance DafnyPrinter String where
   pp = P.pretty
 
 instance DafnyPrinter AST where
-  pp = vsep
+  pp ast = vsep ast <> line
 
 instance DafnyPrinter Ty where
   pp TNat             = pp "nat"
@@ -140,17 +140,18 @@ instance DafnyPrinter QDafny where
   pp (QDafny s) = pp s
 
 instance DafnyPrinter (QMethod ()) where
-  pp (QMethod idt bds rets reqs ens blockMaybe) =
-    "method" <+> idt <+> tupled bds <+> ppRets rets
-    <!> incr2 (vsep reqEns)
-    <!> maybe mempty pp blockMaybe
+  pp (QMethod idt bds rets reqs ens blockMaybe) = vsep
+    [ "method" <+> idt <+> tupled bds <+> ppRets rets
+    , incr2 (vsep reqEns)
+    , maybe mempty pp blockMaybe
+    ]
     where
       ppRets [] = mempty
       ppRets x  = tupled x
       reqEns =
         (("requires" <+>) <$> reqs) <>
         (("ensures"  <+>) <$> ens)
-
+  
 instance DafnyPrinter (Block ()) where
   pp (Block b) = vsep
     [ lbrace
@@ -170,24 +171,26 @@ ppInvs = vsep . (("invariant" <+>) <$> )
 
 instance DafnyPrinter (Stmt ()) where
   pp (SEmit (SBlock b)) = pp b
-  pp (SEmit f@(SForEmit idf initf bound invs b)) =
-    "for " <!> idf <!> " := " <!> initf <!> " to " <!> bound <!> line
-    <!> ppInvs invs
-    <!> b
-
+  pp (SEmit f@(SForEmit idf initf bound invs b)) = vsep
+    [ "for " <!> idf <!> " := " <!> initf <!> " to " <!> bound
+    , incr2 $ ppInvs invs
+    , pp b
+    ]
   pp (SDafny s') = pp s'
 
-  pp s@(SFor idx boundl boundr eG invs seps body) = debugOnly s $
-    "for" <+> idx <+> "∈" <+> brackets (boundl <+> ".." <+> boundr)
-    <+> "with" <+> eG <!> (line :: Builder)
-    <!> ppInvs invs
-    <!> body
+  pp s@(SFor idx boundl boundr eG invs seps body) = debugOnly s $ vsep
+    [ "for" <+> idx <+> "∈" <+> brackets (boundl <+> ".." <+> boundr) <+>
+      "with" <+> eG
+    , incr2 $ ppInvs invs
+    , pp body
+    ]
 
   -- Statements that end with a SemiColon
-  pp s@(SIf eg sep block) = debugOnly s $
-    "if" <+> parens eg <!> line
-    <!> incr2 ("seperates" <+> sep) <!> line
-    <!> block
+  pp s@(SIf eg sep block) = debugOnly s $ vsep
+    [ "if" <+> parens eg
+    , incr2 ("seperates" <+> sep)
+    , pp block
+    ]
 
   pp s = ppStmt s <> pp ';'
     where
@@ -320,12 +323,16 @@ instance DafnyPrinter PhaseRef where
     prRepr <+> "/" <+> prBase
 
 instance DafnyPrinter EmitData where
-  pp EmitData{evPhaseRef, evBasis, evAmp} = list
-    [ "phase:" <+> evPhaseRef
-    , "ket:"   <+> evBasis
-    , "amp:"   <+> evAmp
+  pp EmitData{evPhaseRef, evBasis, evAmp} = P.align . list $
+    phase ++
+    [ "ket:" <+> evBasis
+    , "amp:" <+> evAmp
     ]
-
+    where
+      phase = concatMap ppPhase evPhaseRef
+      ppPhase (PhaseRef{prBase, prRepr}, ty) =
+        [ "phase:" <+> (prRepr, ty)
+        , "base:"  <+> prBase ]
 
 instance (DafnyPrinter a, DafnyPrinter b) => DafnyPrinter (a, b) where
   pp t'@(a, b) = tupled [pp a, pp b]
@@ -344,10 +351,10 @@ instance ( DafnyPrinter a
 instance ( DafnyPrinter k, DafnyPrinter v
          ) => DafnyPrinter (Map.Map k v) where
   pp m' = debugOnly' $
-    list (row <$> m)
+    vsep (row <$> m)
     where
       m = Map.toList m'
-      row (a, b) = a <+> "↦" <+> b
+      row (a, b) = a <+> "↦" <!> (P.softline :: Builder) <!> b
 
 instance DafnyPrinter MTy where
   pp (MTy (Inl ty)) = pp ty
@@ -395,21 +402,26 @@ runBuilder i debug =
   . P.indent i
   . pp
 
+-- | Prettyprint the program into a Lazy Text
 texify :: DafnyPrinter a => a -> TL.Text
 texify = runBuilder 0 False
 
+showEmit :: DafnyPrinter a => a -> String
+showEmit = TL.unpack . texify
+
+-- * Debug modes 
+
+-- | Prettyprint the term in debugging mode as String
+showEmitI :: DafnyPrinter a => Int -> a -> String
+showEmitI i = TL.unpack . runBuilder i True
+
+-- | Prettyprint the term in debugging mode as String with 0 indentation
+showEmit0 :: DafnyPrinter a => a -> String
+showEmit0 = showEmitI 0
+
+-- | Prettyprint the source code to IO.
 prettyIO :: DafnyPrinter a => a -> IO ()
-prettyIO = putDoc False . pp
-
--- showEmit :: DafnyPrinter a => a -> String
--- showEmit = TL.unpack . texify
-
--- -- Debug mode
--- showEmitI :: DafnyPrinter a => Int -> a -> String
--- showEmitI i = TL.unpack . runBuilder i True
-
--- showEmit0 :: DafnyPrinter a => a -> String
--- showEmit0 = showEmitI 0
+prettyIO = putDoc True . pp
 
 
 -- Regex for OverloadedStrings
@@ -422,12 +434,15 @@ prettyIO = putDoc False . pp
 instance DafnyPrinter [Int] where
   pp = list
 
+ppSst :: (Partition, (QTy, [Int])) -> Builder
+ppSst (p, (q, i)) = p <+> "::" <+> q <+> "~" <+> list i
+
 instance DafnyPrinter TState where
   pp TState{_sSt, _xSt, _emitSt} = vsep
     [ pp "Partition Reference State:"
-    , ppincr2 (list <$> _xSt)
+    , ppincr2 (vsep <$> _xSt)
     , pp "Partition State:"
-    , ppincr2 _sSt
+    , ppincr2 (ppSst <$> _sSt)
     , pp "Renaming State:"
     , ppincr2 _emitSt
     ]

@@ -12,7 +12,6 @@ import           Qafny.Partial
     (Reducible (reduce))
 import           Qafny.Syntax.AST
 import           Qafny.Syntax.Emit
-    (byComma, byLineT, showEmit0, showEmitI)
 import           Qafny.Syntax.EmitBinding
 import           Qafny.Syntax.IR
 import           Qafny.Utils.Utils
@@ -161,7 +160,7 @@ normalizeArguments es params = do
   where
     errNonLinear rs = printf
       "Nonlinear usage of quantum resources in ranges:\n%s"
-      (showEmit0 (byLineT rs))
+      (showEmit0 (vsep rs))
 
 -- | Given an inclusion operator, check if there's a nonlinear usage of ranges.
 checkRangeDuplication :: (Range -> Bool) -> [Range] -> Bool

@@ -29,7 +29,6 @@ import           Qafny.Partial
     (Reducible (reduce))
 import           Qafny.Syntax.AST
 import           Qafny.Syntax.Emit
-    (byComma, byLineT, showEmit0, showEmitI)
 import           Qafny.Syntax.EmitBinding
 import           Qafny.Syntax.IR
 import           Qafny.Typing.Utils
@@ -830,7 +829,6 @@ lookupAdjacentRange rs r@(Range _ el er) = do
   (≡?) <- (allI .:) <$> liftIEnv2 (≡)
   return  [ r' | r'@(Range x' el' er') <- rs, er' ≡? el ]
 
-
 -- | Given two Loci in EN type where the first is for the body partition and
 -- the other one is for the guard partition.
 --
@@ -930,7 +928,7 @@ mergeCandidateHad st@(Locus{part, qty=THad, degrees}) = do
 
     ambiguousCandidates matched = printf
       "There're more than one merge candidate for %s.\n%s"
-      (show st) (showEmit0 $ byLineT matched)
+      (show st) (showEmit0 $ vsep matched)
 
 
 mergeCandidateHad st =

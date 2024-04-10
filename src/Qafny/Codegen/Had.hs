@@ -28,8 +28,8 @@ codegenNorToHad
     Nothing -> throwError' $ printf
       "%s cannot be casted into %s:\n%s\n%s\n"
       (showEmit0 schQtFrom) (showEmit0 schQtTo)
-      (showEmit0 (second byLineT edsFrom))
-      (showEmit0 (second byLineT edsTo))
+      (showEmit0 (second byComma edsFrom))
+      (showEmit0 (second byComma edsTo))
     Just s  -> return s
   where
     rules :: QTy -> QTy -> Maybe [Stmt']

@@ -59,7 +59,6 @@ import           Qafny.Partial
 import           Qafny.Syntax.AST
 import           Qafny.Syntax.ASTFactory
 import           Qafny.Syntax.Emit
-    (byLineT, showEmit0, showEmitI)
 import           Qafny.Syntax.EmitBinding
 import           Qafny.Syntax.IR
 import           Qafny.Typing
@@ -862,7 +861,7 @@ codegenStmt'For'Had stB stG vIdx b = do
   let sB = part stB
   -- 1. duplicate the body
   (stmtsDupB, corrB) <- dupState sB
-  () <- tracef ">>>>> \n%s" (showEmitI 4 (byLineT stmtsDupB))
+  () <- tracef ">>>>> \n%s" (showEmitI 4 (vsep stmtsDupB))
   -- 3. codegen the body
   stmtB <- SEmit . SBlock <$> codegenBlock b
 

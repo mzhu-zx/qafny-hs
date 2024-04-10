@@ -23,7 +23,6 @@ import           Qafny.Partial
 import           Qafny.Syntax.AST
 import           Qafny.Syntax.ASTFactory
 import           Qafny.Syntax.Emit
-    (byLineT, showEmit0)
 import           Qafny.Syntax.EmitBinding
 import           Qafny.Syntax.IR
 import           Qafny.Typing
@@ -137,8 +136,8 @@ codegenCastEmit
     Nothing -> throwError' $ printf
       "%s cannot be casted into %s:\n%s\n%s\n"
       (showEmit0 schQtFrom) (showEmit0 schQtTo)
-      (showEmit0 (second byLineT edsFrom))
-      (showEmit0 (second byLineT edsTo))
+      (showEmit0 (second vsep edsFrom))
+      (showEmit0 (second vsep edsTo))
     Just s  -> return s
   where
     rules :: QTy -> QTy -> Maybe [Stmt']

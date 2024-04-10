@@ -8,7 +8,6 @@ import           Control.Monad
     (forM_, unless)
 import           Data.Text.Lazy
     (Text)
-import qualified Data.Text.Lazy      as L
 import qualified Data.Text.Lazy.IO   as L.IO
 
 import           Qafny.Config
@@ -17,9 +16,11 @@ import           Qafny.FileUtils
 import           Qafny.Runner
     (Production (..), collectErrors, produceCodegen)
 import           Qafny.Syntax.Emit
-    (prettyIO, texify, showEmitI)
+    (Builder, pp, prettyIO, showEmitI)
 import           Qafny.Syntax.Parser
     (scanAndParse)
+import           Qafny.Syntax.Render
+    (hPutDoc)
 import           System.Directory
     (doesFileExist)
 import           System.Environment
@@ -28,6 +29,8 @@ import           System.Exit
     (exitFailure)
 import           System.FilePath
     ((-<.>))
+import           System.IO
+    (IOMode (WriteMode), hClose, openFile)
 import           Text.Printf
     (PrintfType, printf)
 
@@ -74,7 +77,7 @@ parseArgs = do
       >> exitFailure
     srcFile s = pathPrefix ++ s ++ ".qfy"
 
-pipeline :: FilePath -> Configs -> Either String (IO (Production L.Text))
+pipeline :: FilePath -> Configs -> Either String (IO (Production Builder))
 pipeline s configs =
   -- do parsing, rethrow error if any
   withAST <$> scanAndParse s
@@ -83,7 +86,7 @@ pipeline s configs =
       let prod = produceCodegen configs ast
       -- print trace
       putStr $ pTrace prod
-      return $ prod { pResult = texify <$> pResult prod }
+      return $ prod { pResult = pp <$> pResult prod }
 
 main :: IO ()
 main =
@@ -110,7 +113,7 @@ withProg srcFile config@Configs{mode=Verify} = do
     (pipeline srcText config)
   putStrLn $ "\ESC[32mSuccess: target is emited as `" ++ tgtFile ++ "` \ESC[0m"
   where
-    writeOrReportP :: Production L.Text -> IO ()
+    writeOrReportP :: Production Builder -> IO ()
     writeOrReportP prod@(Production {pResult=res, pState=st, pDetail=details})  = do
       wrapUp <- case res of
         Left txt -> do
@@ -118,9 +121,11 @@ withProg srcFile config@Configs{mode=Verify} = do
             then pError txt
             else forM_ (collectErrors prod) (pError . formatMethodError)
           return exitFailure
-        Right txt -> do
+        Right doc -> do
           putStrLn "Pipeline Finished!\n"
-          L.IO.writeFile tgtFile txt
+          handle <- openFile tgtFile WriteMode
+          hPutDoc False handle doc
+          hClose handle
           return (return ())
       putStrLn $ "Statistics from Codegen:\n" ++
         concatMap showEachSt st
@@ -130,7 +135,6 @@ withProg srcFile config@Configs{mode=Verify} = do
     showEachSt (v, st) =
       printf "\nThe final state of the method `%s`:\n%s\n" v (showEmitI 2 st)
     tgtFile = srcFile -<.> "dfy"
-f
 
 pError :: String -> IO ()
 pError err = putStrLn $ "\ESC[31m[Error]\ESC[93m " ++ err ++ "\ESC[0m\n"
