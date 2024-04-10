@@ -130,7 +130,7 @@ withProg srcFile config@Configs{mode=Verify} = do
     showEachSt (v, st) =
       printf "\nThe final state of the method `%s`:\n%s\n" v (showEmitI 2 st)
     tgtFile = srcFile -<.> "dfy"
-
+f
 
 pError :: String -> IO ()
 pError err = putStrLn $ "\ESC[31m[Error]\ESC[93m " ++ err ++ "\ESC[0m\n"
