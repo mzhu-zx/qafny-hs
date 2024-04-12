@@ -18,7 +18,7 @@ import           Data.Maybe
 import           Qafny.Codegen.Amplitude
     (ampFromRepr)
 import           Qafny.Effect
-import           Qafny.Partial
+import           Qafny.Analysis.Partial
     (Reducible (reduce))
 import           Qafny.Syntax.AST
 import           Qafny.Syntax.ASTFactory
@@ -38,7 +38,7 @@ import           Text.Printf
 
 throwError'
   :: ( Has (Error Builder) sig m )
-  => String -> m a
+  => Builder -> m a
 throwError' = throwError . ("[Codgen|SplitCast]" <+>)
 
 --------------------------------------------------------------------------------
@@ -133,11 +133,11 @@ codegenCastEmit
             , schQtFrom , schQtTo
             } =
   case rules schQtFrom schQtTo of
-    Nothing -> throwError' $ printf
-      "%s cannot be casted into %s:\n%s\n%s\n"
-      (showEmit0 schQtFrom) (showEmit0 schQtTo)
-      (showEmit0 (second vsep edsFrom))
-      (showEmit0 (second vsep edsTo))
+    Nothing -> throwError' $ vsep
+      [ pp $ schQtFrom <+>"cannot be casted into"<+>schQtTo
+      , incr4 (second vsep edsFrom)
+      , incr4 (second vsep edsTo)
+      ]
     Just s  -> return s
   where
     rules :: QTy -> QTy -> Maybe [Stmt']
@@ -237,11 +237,11 @@ castPartitionEN' st@Locus{loc=locS, part=s, qty=qtS} = do
     TNor -> castWithOp "CastNorEN" st TEn
     THad -> castWithOp "CastHadEN" st TEn
     TEn -> throwError' $
-      printf "Partition `%s` is already of EN type." (show st)
+      "Partition `"<!>st<!>"` is already of EN type."
     TEn01 -> throwError' $
-      printf "Casting %s to TEn is expensive therefore not advised!" (show qtS)
+      "Casting"<+>qtS<+>"to TEn is expensive therefore not advised!"
     TQft -> throwError' $
-      printf "It is impossible to cast into Qft type."
+      pp "It is impossible to cast into Qft type."
 
 -- | Duplicate the data, i.e. sequences to be emitted, by generating statements
 -- that duplicates the data as well as the correspondence between the range

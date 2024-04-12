@@ -77,7 +77,7 @@ promotionScheme st@Locus{loc, part, qty, degrees=dgrsSt} pb pe = do
   -- construct a partition with multiple different degrees.
 
   -- intro degrees
-  dgrSt <- onlyOne throwError' $ nub dgrsSt
+  dgrSt <- onlyOne (throwError' . ("promote"  <+>)) $ nub dgrsSt
   let dgrBind = analyzePhaseSpecDegree pb
       dgrSpec = analyzePhaseSpecDegree pe
 
@@ -180,7 +180,7 @@ queryPhase
   => Locus -> m [Maybe (PhaseRef, Ty)]
 queryPhase Locus{loc, part=Partition{ranges}, qty, degrees}
   | isEn qty = do
-      dgr <- onlyOne throwError' degrees
+      dgr <- onlyOne (throwError' . ("1" <+>)) degrees
       singleton . evPhaseRef <$> findEm (inj loc)
   | otherwise = do
       haveSameLength ranges degrees
@@ -194,7 +194,7 @@ queryPhaseRef
   => Locus -> m [Maybe (PhaseRef, Ty)]
 queryPhaseRef Locus{loc, part=Partition{ranges}, qty, degrees}
   | isEn qty = do
-      dgr <- onlyOne throwError' degrees
+      dgr <- onlyOne (throwError' . ("2" <+>)) degrees
       singleton . evPhaseRef <$> findEm (inj loc)
   | otherwise = do
       haveSameLength ranges degrees

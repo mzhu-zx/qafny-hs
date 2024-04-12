@@ -2,8 +2,8 @@
     FlexibleInstances
   #-}
 
-module Qafny.Domain where
-import           Qafny.Interval
+module Qafny.Analysis.Domain where
+import           Qafny.Analysis.Interval
 
 -- * Nat Domain
 data Nat

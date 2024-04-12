@@ -6,7 +6,7 @@
   , TypeOperators
   #-}
 
-module Qafny.Partial where
+module Qafny.Analysis.Partial where
 import           Data.Bool
     (bool)
 import           Data.Functor.Foldable
@@ -20,7 +20,7 @@ import           Qafny.Syntax.AST
 
 --------------------------------------------------------------------------------
 -- $doc
--- 'Qafny.Partial' module implements the partial evaluation strategy of
+-- 'Qafny.Analysis.Partial' module implements the partial evaluation strategy of
 -- expressions, (linear) arithmetic expressions and ranges in particular.
 --
 -- The goal is to reduce an expression with uninterpreted variables /as much as/

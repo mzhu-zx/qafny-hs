@@ -3,11 +3,11 @@
   , GeneralizedNewtypeDeriving
   #-}
 
-module Qafny.Interval where
+module Qafny.Analysis.Interval where
 
 import           Control.Applicative (Applicative (liftA2))
 import           Data.Bool           (bool)
-import           Qafny.Partial       (evalPStatic, hasResidue)
+import           Qafny.Analysis.Partial       (evalPStatic, hasResidue)
 import           Qafny.Syntax.AST    (Exp (..), Exp', Range (..), Var)
 import           Text.Printf         (printf)
 

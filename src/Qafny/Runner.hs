@@ -1,20 +1,27 @@
 module Qafny.Runner where
-import           Control.Algebra
-    (run)
+import           Carrier.Gensym.Emit
+    (GensymC, runGensymEmit)
 import           Control.Carrier.Reader
     (runReader)
+import           Control.Carrier.State.Lazy
+    (StateC, runState)
 import           Control.Carrier.Trace.Returning
     (runTrace)
+import           Data.Functor.Identity
+    (Identity)
 import           Data.Maybe
     (catMaybes)
 import           Qafny.Codegen
     (codegenAST)
 import           Qafny.Config
     (Configs)
+import           Qafny.Effect
 import           Qafny.Syntax.AST
     (AST, Toplevel', Var)
 import           Qafny.Syntax.Emit
-    (prettyIO, Builder)
+    (Builder, prettyIO)
+import           Qafny.Syntax.EmitBinding
+    (Emitter)
 import           Qafny.Syntax.IR
 import           Qafny.Syntax.Parser
     (scanAndParse)
@@ -73,3 +80,12 @@ formatProg :: String -> IO ()
 formatProg s = case scanAndParse s of
   Left parseErr -> putStrLn parseErr
   Right ast     -> prettyIO ast
+
+--------------------------------------------------------------------------------
+debugGensymEmitterWithState
+  :: StateC TState (GensymC Emitter Identity) a
+  -> (Int, [(Emitter, String)], (TState, a))
+debugGensymEmitterWithState =
+  run . runGensymEmit . runState initTState
+--------------------------------------------------------------------------------
+

@@ -16,7 +16,7 @@ import           Text.Printf
 
 -- Qafny
 
-import           Qafny.Partial
+import           Qafny.Analysis.Partial
     (Reducible (reduce))
 import           Qafny.Syntax.AST
 import           Qafny.Syntax.ASTFactory

@@ -7,7 +7,7 @@ import           Qafny.Syntax.AST
 import           Data.List.NonEmpty
     (NonEmpty (..))
 import qualified Data.List.NonEmpty as NE
-import           Qafny.Interval
+import           Qafny.Analysis.Interval
 
 -- * Lattice and ordering operators lifted to IEnv
 

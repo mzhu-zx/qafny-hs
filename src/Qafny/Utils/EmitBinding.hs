@@ -98,6 +98,7 @@ genPhase _ n r
       pr <- liftM2 PhaseRef (gensym (EmPhaseBase r)) (gensym (EmPhaseSeq r n))
       return $ Just (pr, typingPhaseEmitReprN n)
 
+
 genAmp :: Has (Gensym Emitter) sig m
        => QTy -> Loc -> m (Maybe (Var, Ty))
 genAmp qty l =
@@ -151,9 +152,9 @@ genEmStFromLocus
   => LocusT t -> m (EmitData, t (Range, EmitData))
 genEmStFromLocus Locus{loc, part=Partition{ranges}, qty, degrees} = do
   rEms <- genEmStByRanges qty ranges
-  p <- genPhase qty (head degrees) loc
-  a <- genAmp qty loc
-  let edL = mtEmitData { evPhaseRef = p }
+  evPhaseRef <- genPhase qty (head degrees) loc
+  evAmp <- genAmp qty loc
+  let edL = mtEmitData { evPhaseRef, evAmp }
   emitSt %= (at (inj loc) ?~ edL)
   return ( edL , rEms )
 

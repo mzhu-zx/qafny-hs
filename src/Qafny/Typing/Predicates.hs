@@ -21,9 +21,6 @@ import           Qafny.Typing.Phase hiding
 import           Qafny.Typing.Utils
     (assertPartQTyArity)
 import           Qafny.Utils
-import           Text.Printf
-    (printf)
-
 
 throwError'
   :: ( Has (Error Builder) sig m, DafnyPrinter s )

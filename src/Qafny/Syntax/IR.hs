@@ -15,7 +15,7 @@ import           Data.List
     (intercalate)
 import qualified Data.Map.Strict          as Map
 import           Data.Sum
-import           Qafny.Partial
+import           Qafny.Analysis.Partial
 import           Qafny.Syntax.AST
 import           Qafny.Syntax.EmitBinding
 

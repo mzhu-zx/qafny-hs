@@ -52,9 +52,9 @@ import           Qafny.Codegen.Utils
     (runWithCallStack)
 
 import           Qafny.Config
-import           Qafny.Interval
+import           Qafny.Analysis.Interval
     (Interval (Interval))
-import           Qafny.Partial
+import           Qafny.Analysis.Partial
     (Reducible (reduce))
 import           Qafny.Syntax.AST
 import           Qafny.Syntax.ASTFactory
@@ -548,17 +548,20 @@ codegenStmt'For
 codegenStmt'For (SFor idx boundl boundr eG invs (Just seps) body) = do
   -- statePreLoop: the state before the loop starts
   -- stateLoop:    the state for each iteration
-  newInvs <- forM invs codegenAssertion
+  tracep "* enter"
+  tracep "codegenAssertion"
   infoInv <- wfSignatureFromPredicates invs
+  tracep "wfSignatureFromPredicates"
   let infoInvPre = substInfoPre infoInv
-
-  (stmtsPreGuard, statePreLoop, stateLoop) <-
+  tracep $ "partition on entry:"<+>list ((\(x,y,z,_)->(x,y,z)) <$> infoInvPre)
+  (lsPreCasted, stmtsPreGuard, statePreLoop, stateLoop) <-
     codegenInit (dropSignatureSpecs infoInv) (dropSignatureSpecs infoInvPre)
   put stateLoop
-  -- generate loop invariants
 
+  -- generate loop invariants
   stmtsBody <- localExtendInv $ do
     ask @IEnv >>= trace . printf "Augmented IENV: %s" . show
+    newInvs <- forM invs codegenAssertion
     stSep <- typingPartition seps -- check if `seps` clause is valid
     stmtsBody <- codegenFor'Body idx boundl boundr eG body stSep (concat newInvs)
 
@@ -587,36 +590,15 @@ codegenStmt'For (SFor idx boundl boundr eG invs (Just seps) body) = do
     -- | Generate code and state for the precondition after which
     -- | we only need to concern those mentioned by the loop invariants
     codegenInit infoInv infoInvPre = do
-      stmtsPreGuard <- infoInvPre `forM` \(sInv, qtInv, _) -> case sInv of
-        Partition [rInv] -> do
-          stInv <- resolvePartition sInv
-          (sInvSplit, maySplit, mayCast) <- hdlSCError $
-            splitThenCastScheme stInv qtInv rInv
-          codegenSplitThenCastEmit maySplit mayCast
-        _                ->
-          -- Q: What is a reasonable split if there are 2 ranges? Would this have
-          --    a slightly different meaning? For example, consider a EN partition
-          --
-          --       { q[0..i], p[0..i] } ↦ { Σ_i . ket(i, i) }
-          --
-          --    In this case, split will also requires a non-trivial merge?
-          --    How to do this?
-          --
-          -- A: In this case, I don't want to do casts or splits at this
-          -- moment. But this will be a serious limitation given that I haven't
-          -- allow explicit casts/splits yet. There's a way to do it by using
-          -- λ. However, this falls into the category of undocumented, probably
-          -- undefined tricks.
-          --
-          -- But why would one split and cast a real partition?
-          -- If we have a partition made up of two ranges, it's likely that
-          -- both ranges are in entanglement, therefore, there's no reasonable
-          -- way to split them. To entangle two partitions into one, one should
-          -- use a single If statement to perform the initialization.
-          --
-          -- ------------------------------------------------------------------
-          -- Here, I simply allow this by performing NO cast/split.
-          pure []
+      (lPreCasted, stmtsPreGuard) <- unzip <$> infoInvPre `forM` \(sInv, qtInv, _) -> do
+        lInv <- resolvePartition sInv
+        case sInv of
+          Partition [rInv] -> do
+            stInv <- resolvePartition sInv
+            (sInvSplit, maySplit, mayCast) <- hdlSCError $
+              splitThenCastScheme lInv qtInv rInv
+            (sInvSplit, ) <$> codegenSplitThenCastEmit maySplit mayCast
+          _                -> pure (lInv, []) -- See [Note: CodegenInit]
       -- | This is important because we will generate a new state from the loop
       -- invariant and perform both typing and codegen in the new state!
       statePreLoop <- get @TState
@@ -630,7 +612,10 @@ codegenStmt'For (SFor idx boundl boundr eG invs (Just seps) body) = do
       let stmtsEquiv = (\(e1, e2) -> mkAssignment (fst e1) (fst e2))
             <$> matchedVarTys
 
-      return (concat stmtsPreGuard ++ stmtsEquiv, statePreLoop, stateLoop)
+      return ( lPreCasted
+             , concat stmtsPreGuard ++ stmtsEquiv
+             , statePreLoop
+             , stateLoop)
 
     -- update the typing state by plugging the right bound into the index
     -- parameter
@@ -1000,3 +985,28 @@ codegenAlloc v e@(EOp2 ONor _ _) _ =
   throwError' "Internal: Attempt to create a Nor partition that's not of nor type"
 codegenAlloc v e _ = return $ (::=:) v e
 
+
+-- * Notes
+-- ** Note: CodegenInit 
+-- Q: What is a reasonable split if there are 2 ranges? Would this have
+--    a slightly different meaning? For example, consider a EN partition
+--
+--       { q[0..i], p[0..i] } ↦ { Σ_i . ket(i, i) }
+--
+--    In this case, split will also requires a non-trivial merge?
+--    How to do this?
+--
+-- A: In this case, I don't want to do casts or splits at this
+-- moment. But this will be a serious limitation given that I haven't
+-- allow explicit casts/splits yet. There's a way to do it by using
+-- λ. However, this falls into the category of undocumented, probably
+-- undefined tricks.
+--
+-- But why would one split and cast a real partition?
+-- If we have a partition made up of two ranges, it's likely that
+-- both ranges are in entanglement, therefore, there's no reasonable
+-- way to split them. To entangle two partitions into one, one should
+-- use a single If statement to perform the initialization.
+--
+-- ------------------------------------------------------------------
+-- Here, I simply allow this by performing NO cast/split.

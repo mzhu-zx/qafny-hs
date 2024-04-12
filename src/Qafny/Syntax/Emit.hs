@@ -26,8 +26,9 @@ import           Data.Bifunctor
 import qualified Data.List.NonEmpty       as NE
 import qualified Data.Map.Strict          as Map
 import           Data.Sum
-import           Qafny.Interval
+import           Qafny.Analysis.Interval
     (Interval (..))
+import Data.Maybe (maybeToList)
 
 
 
@@ -205,9 +206,12 @@ instance DafnyPrinter (Stmt ()) where
   pp s@(SFor idx boundl boundr eG invs seps body) = debugOnly s $ vsep
     [ "for" <+> idx <+> "∈" <+> brackets (boundl <+> ".." <+> boundr) <+>
       "with" <+> eG
-    , incr2 $ ppInvs invs
+    , incr2 $ vsep (pSep ++ pInvs)
     , pp body
     ]
+    where
+      pSep  = ("separates" <+>) <$> maybeToList seps
+      pInvs = ("invariant" <+>) <$> invs
 
   -- Statements that end with a SemiColon
   pp s@(SIf eg sep block) = debugOnly s $ vsep

@@ -24,8 +24,8 @@ import           Qafny.Effect
 -- Qafny
 import           Qafny.Error
     (QError (..))
-import           Qafny.Interval
-import           Qafny.Partial
+import           Qafny.Analysis.Interval
+import           Qafny.Analysis.Partial
     (Reducible (reduce))
 import           Qafny.Syntax.AST
 import           Qafny.Syntax.Emit
