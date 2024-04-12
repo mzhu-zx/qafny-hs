@@ -167,9 +167,10 @@ haveSameLength
   => [a] -> [b] -> m ()
 haveSameLength vsEmit eValues =
   unless (length vsEmit == length eValues) $
-    throwError @Builder $
-      "the number of elements doesn't agree with each other:"
-      <!> vsep [ pp (byComma vsEmit), pp (byComma eValues) ]
+    throwError @Builder $ vsep    
+      [ pp "the number of elements doesn't agree with each other:"
+      , incr4 (list vsEmit)
+      , incr4 (list eValues) ]
 
 --------------------------------------------------------------------------------
 -- | Catch error and add information to it

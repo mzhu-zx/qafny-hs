@@ -47,7 +47,6 @@ emitTypeFromDegree 0 = Nothing
 emitTypeFromDegree n =
   Just $ typingPhaseEmitReprN n
 
-
 -- | Check if the given type is an 'EN'-like type.
 isEn :: QTy -> Bool
 isEn TEn01 = True

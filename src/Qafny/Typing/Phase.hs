@@ -69,30 +69,34 @@ promotionScheme
      , Has Trace sig m
      )
   => Locus -> PhaseBinder -> PhaseExp -> m (Maybe PromotionScheme)
-promotionScheme st@Locus{loc, part, qty, degrees=dgrsSt} pb pe = do
-  -- FIXME: for now, the simple dirty way is to restrict `dgrsSt` to have only
-  -- one consistent degree. So the promotionScheme can act on the entire
-  -- partition, which I think is a good idea for now.  Unless one specified a
-  -- weird phase in the precondition, there's no statement available for you to
-  -- construct a partition with multiple different degrees.
-
-  -- intro degrees
-  dgrSt <- onlyOne (throwError' . ("promote"  <+>)) $ nub dgrsSt
-  let dgrBind = analyzePhaseSpecDegree pb
-      dgrSpec = analyzePhaseSpecDegree pe
-
-  -- check if binder's and specexp's degrees match
-  when (dgrSt /= dgrBind) $ throwError' (errDgrMismatch dgrSt dgrBind)
-
-  -- check what promotion can be done here
-  case (dgrBind, dgrSpec) of
-    (dBind, dSpec) | dBind == dSpec -> return Nothing
-    (0, 1)                          -> promote'0'1 pe
-    (1, 2)                          -> promote'1'2
-    (dBind, dSpec) | dBind > dSpec  -> errDemotion dBind dSpec
-    (dBind, dSpec)                  -> errUnimplementedPrompt dBind dSpec
+promotionScheme st@Locus{loc, part, qty, degrees=dgrsSt} pb pe =
+  if (dgrBind < 0 && dgrSpec < 0)
+  then return Nothing
+  else do
+    -- FIXME: for now, the simple dirty way is to restrict `dgrsSt` to have only
+    -- one consistent degree. So the promotionScheme can act on the entire
+    -- partition, which I think is a good idea for now.  Unless one specified a
+    -- weird phase in the precondition, there's no statement available for you to
+    -- construct a partition with multiple different degrees.
+    -- intro degrees
+    dgrSt <- onlyOne (throwError' . ("promote"  <+>)) $ nub dgrsSt
+    -- check if binder's and specexp's degrees match
+    when (dgrSt /= dgrBind) $ throwError' (errDgrMismatch dgrSt dgrBind)
+  
+    -- check what promotion can be done here
+    case (dgrBind, dgrSpec) of
+      (dBind, dSpec) | dBind == dSpec -> return Nothing
+      (0, 1)                          -> promote'0'1 pe
+      (1, 2)                          -> promote'1'2
+      (dBind, dSpec) | dBind > dSpec  -> errDemotion dBind dSpec
+      (dBind, dSpec)                  -> errUnimplementedPrompt dBind dSpec
   where
+    -- degree 
+    dgrBind = analyzePhaseSpecDegree pb
+    dgrSpec = analyzePhaseSpecDegree pe
+
     rs = ranges part
+
     -- Promote 0 to 1
     promote'0'1
       :: ( Has (Gensym Emitter) sig m'
@@ -156,10 +160,10 @@ analyzeSpecDegree _ = Nothing
 
 -- | Analyze the degree of a phase expression
 analyzePhaseSpecDegree :: PhaseExpF f -> Int
-analyzePhaseSpecDegree PhaseZ          = 0
-analyzePhaseSpecDegree PhaseWildCard   = 0
-analyzePhaseSpecDegree PhaseOmega{}    = 1
-analyzePhaseSpecDegree PhaseSumOmega{} = 2
+analyzePhaseSpecDegree PhaseWildCard   = -1
+analyzePhaseSpecDegree PhaseZ          =  0
+analyzePhaseSpecDegree PhaseOmega{}    =  1
+analyzePhaseSpecDegree PhaseSumOmega{} =  2
 
 
 allocAndUpdatePhaseType
