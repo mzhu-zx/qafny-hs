@@ -51,11 +51,11 @@ import           Text.Printf
 import           Qafny.Codegen.Utils
     (runWithCallStack)
 
-import           Qafny.Config
 import           Qafny.Analysis.Interval
     (Interval (Interval))
 import           Qafny.Analysis.Partial
     (Reducible (reduce))
+import           Qafny.Config
 import           Qafny.Syntax.AST
 import           Qafny.Syntax.ASTFactory
 import           Qafny.Syntax.Emit
@@ -87,6 +87,7 @@ import           Qafny.Codegen.Predicates
     (codegenAssertion, codegenEnsures, codegenRequires)
 import           Qafny.Codegen.SplitCast      hiding
     (throwError')
+import           Qafny.Syntax.Subst
 import           Qafny.Typing.Error
 import           Qafny.Typing.Method
     (collectMethodTypes, resolveMethodApplicationArgs,
@@ -987,7 +988,7 @@ codegenAlloc v e _ = return $ (::=:) v e
 
 
 -- * Notes
--- ** Note: CodegenInit 
+-- ** Note: CodegenInit
 -- Q: What is a reasonable split if there are 2 ranges? Would this have
 --    a slightly different meaning? For example, consider a EN partition
 --

@@ -11,12 +11,16 @@ import           Data.Bool
     (bool)
 import           Data.Functor.Foldable
     (Corecursive (embed), Recursive (project))
-import qualified Data.Map.Strict          as Map
+import qualified Data.Map.Strict       as Map
 import           Data.Maybe
     (isJust)
-import           Data.Sum                 as Sum
+import           Data.Sum              as Sum
 
+import           Data.Bifunctor
+    (Bifunctor (first))
 import           Qafny.Syntax.AST
+import           Qafny.Syntax.IR
+import           Qafny.Syntax.Subst
 
 --------------------------------------------------------------------------------
 -- $doc
@@ -112,6 +116,15 @@ instance Reducible a => Reducible (a :+: b) where
   reduce (Inl r) = inj $ reduce r
   reduce b       = b
 
+
+instance Reducible TState where
+  reduce (TState{ _sSt = s, _xSt = x, _emitSt = es }) =
+    TState { _sSt = first reduce <$> s
+           , _xSt = (first reduce <$>) <$> x
+           , _emitSt = Map.mapKeys reduce es
+           }
+
+
 -- instance Reducible EmitBinding where
 --   reduce (RBinding b) = RBinding $ first reduce b
 --   reduce v            = v
@@ -142,3 +155,5 @@ hasResidue = isJust . staticValue . evalP
 
 sizeOfRangeP :: Range -> Maybe Int
 sizeOfRangeP (Range _ el er) = evalPStatic (er - el)
+
+

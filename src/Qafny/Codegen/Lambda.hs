@@ -3,6 +3,7 @@
   , TypeApplications
   , TypeFamilies
   #-}
+{-# OPTIONS_GHC -Wno-unused-imports #-}
 
 module Qafny.Codegen.Lambda(codegenLambda) where
 
@@ -25,6 +26,7 @@ import           Qafny.Syntax.Emit
 import           Qafny.Syntax.EmitBinding
     (EmitData (evPhaseRef))
 import           Qafny.Syntax.IR
+import           Qafny.Syntax.Subst
 import           Qafny.Typing
     (castScheme, checkSubtypeQ, mergeScheme, promotionScheme, resolvePartition',
     splitThenCastScheme)

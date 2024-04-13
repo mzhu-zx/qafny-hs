@@ -61,17 +61,6 @@ newtype EmitBinding
   = EmitBinding { unEB :: (Range :+: Loc, EmitData) }
   deriving (Eq, Ord)
 
-instance Substitutable EmitBinding where
-  subst a (EmitBinding (Inl r, t)) = EmitBinding (inj (subst a r), t)
-  subst a b                        = b
-
-  fVars (EmitBinding (Inl r, _)) = fVars r
-  fVars _                        = []
-
-instance Substitutable (Map.Map (Range :+: Loc) EmitData) where
-  subst = substMapKeys
-  fVars = fVarMapKeys
-
 instance Show EmitBinding where
   show (EmitBinding t) = show t
 

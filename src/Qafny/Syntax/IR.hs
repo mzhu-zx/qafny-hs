@@ -1,12 +1,12 @@
 {-# LANGUAGE
     DataKinds
-  , DatatypeContexts
   , FlexibleInstances
   , GADTs
   , LambdaCase
   , TemplateHaskell
   , TypeApplications
   , TypeOperators
+  , StrictData
   #-}
 module Qafny.Syntax.IR where
 
@@ -19,7 +19,6 @@ import           Data.List.NonEmpty
     (NonEmpty)
 import qualified Data.Map.Strict          as Map
 import           Data.Sum
-import           Qafny.Analysis.Partial
 import           Qafny.Syntax.AST
 import           Qafny.Syntax.EmitBinding
 
@@ -102,25 +101,6 @@ data TState = TState
   , _xSt    :: Map.Map Var [(Range, Loc)]            -- range reference state
   , _emitSt :: EmitState
   }
-
-instance Substitutable TState where
-  subst a (TState{ _sSt = s, _xSt = x, _emitSt = es }) =
-    TState { _sSt = first (subst a) <$> s
-           , _xSt = (first (subst a) <$>) <$> x
-           , _emitSt = Map.mapKeys (subst a) es
-           }
-  fVars (TState{ _sSt = s, _xSt = x, _emitSt = es }) =
-    concatMap (fVars . fst) s
-    ++ fVarMapKeys es
-    ++ concatMap (concatMap $ fVars . fst) (Map.elems x)
-
-instance Reducible TState where
-  reduce (TState{ _sSt = s, _xSt = x, _emitSt = es }) =
-    TState { _sSt = first reduce <$> s
-           , _xSt = (first reduce <$>) <$> x
-           , _emitSt = Map.mapKeys reduce es
-           }
-
 $(makeLenses ''TState)
 $(makeLenses ''TEnv)
 
@@ -193,7 +173,7 @@ data JoinStrategy = JoinStrategy
 
 --------------------------------------------------------------------------------
 -- * Spec Relations
-data Traversable t => SRelT t
+data SRelT t
   = RNor  (t SpecNor)
   | RHad  (t SpecHad)
   | REn   (t SpecEn)

@@ -92,6 +92,8 @@ debugOnly e a = do
   P.annotate (TS.pack "/* (DEBUG)" <> TS.pack (show e) <> TS.pack "*/") (pp a)
 
 infixr 6 <!>
+infixr 6 <+>
+infixr 6 <%>
 
 class DafnyPrinter a where
   pp :: a -> Builder
@@ -104,6 +106,9 @@ a <!> b = pp a <> pp b
 a <+> b = pp a P.<+> pp b
 {-# INLINE (<+>) #-}
 
+(<%>) :: (DafnyPrinter a, DafnyPrinter b) => a -> b -> Builder
+a <%> b = pp a <> P.flatAlt (line<>incr2 pb) (space<>pb)
+  where pb = pp b
 
 instance DafnyPrinter Builder where
   pp = id
@@ -166,13 +171,13 @@ instance DafnyPrinter QDafny where
 
 instance DafnyPrinter (QMethod ()) where
   pp (QMethod idt bds rets reqs ens blockMaybe) = vsep
-    [ "method" <+> idt <+> tupled bds <+> ppRets rets
+    [ P.group $ "method" <+> idt <+> align (tupled bds) <%> ppRets rets
     , incr2 (vsep reqEns)
     , maybe mempty pp blockMaybe
     ]
     where
       ppRets [] = mempty
-      ppRets x  = tupled x
+      ppRets x  = "returns" <+> align (tupled x)
       reqEns =
         (("requires" <+>) <$> reqs) <>
         (("ensures"  <+>) <$> ens)
@@ -197,7 +202,7 @@ ppInvs = vsep . (("invariant" <+>) <$> )
 instance DafnyPrinter (Stmt ()) where
   pp (SEmit (SBlock b)) = pp b
   pp (SEmit f@(SForEmit idf initf bound invs b)) = vsep
-    [ "for " <!> idf <!> " := " <!> initf <!> " to " <!> bound
+    [ "for " <!> idf <+> ":=" <+> initf <!> " to " <!> bound
     , incr2 $ ppInvs invs
     , pp b
     ]
@@ -224,8 +229,8 @@ instance DafnyPrinter (Stmt ()) where
     where
       ppStmt :: Stmt' -> Builder
       ppStmt (SVar bd Nothing) = "var " <!> bd
-      ppStmt (SVar bd (Just e)) = "var " <!> bd <!> " := " <!> e
-      ppStmt (v ::=: e) = v <!> " := " <!> e
+      ppStmt (SVar bd (Just e)) = "var " <!> bd <+> ":=" <+> e
+      ppStmt (v ::=: e) = P.group $ v <+> ":=" <%> e
       ppStmt (SCall v es) = v <!> tupled es
       ppStmt (SEmit s') = ppEmit s'
       ppStmt (SAssert e) = "assert " <!> e
@@ -274,7 +279,7 @@ instance (Show f, DafnyPrinter f) => DafnyPrinter (LambdaF f) where
   pp e@(LambdaF{ bPhase, bBases, ePhase, eBases }) =
     case (bPhase, ePhase) of
       (PhaseWildCard, PhaseWildCard) ->
-        tupled bBases <+> "=>" <+> tupled eBases
+        P.group $ tupled bBases <+> "=>" <%> align (tupled eBases)
       (_, _) -> debugOnly e $
         bPhase <+>
         "~" <+> tupled bBases <+>
@@ -328,13 +333,13 @@ instance DafnyPrinter EmitExp where
   pp (e1 :@@: (e2, e3)) = e1 <!> "[" <!> e2 <!> ".." <!> e3 <!> "]"
   pp EMtSeq = pp "[]"
   pp (EMakeSeq ty e ee) =
-    "seq<" <!> ty <!> ">" <!> parens (e <!> ", " <!> ee)
+    "seq<" <!> ty <!> ">" <!> align (tupled [e, ee])
   pp (EDafnyVar s) = pp s
   pp (EOpChained e eos) =
     foldl (\el (op, er) -> ppOp2 op el (pp er)) (pp e) eos
   pp (ECard e) = "|" <!> e <!> "|"
-  pp (ECall v es) = v <!> tupled es
-  pp (EMultiLambda vs e) = tupled vs <+> "=>" <+> e
+  pp (ECall v es) = v <!> align (tupled es)
+  pp (EMultiLambda vs e) = tupled vs <+> "=>" <+> align e
   pp (EAsReal e) =
     parens (parens e <+> "as real")
 
@@ -398,8 +403,9 @@ instance DafnyPrinter MTy where
 -- on this function not to be parenthesized
 -- TODO: I want to get the precedence right here.
 ppOp2 :: Op2 -> Builder -> Builder -> Builder
-ppOp2 ONor b1 b2 = "nor" <!> tupled [b1, b2]
-ppOp2 op b1 b2 =  parenOpt b1 <!> opSign <!> parenOpt b2
+ppOp2 ONor b1 b2 = "nor" <!> align (tupled [b1, b2])
+ppOp2 op b1 b2 =  P.group $
+  align (parenOpt b1 <+> opSign <> line <> parenOpt b2)
   where
     parenOpt :: Builder -> Builder
     parenOpt =
@@ -412,18 +418,18 @@ ppOp2 op b1 b2 =  parenOpt b1 <!> opSign <!> parenOpt b2
 
     opSign = pp $
       case op of
-        OAnd -> " && "
-        OOr  -> " || "
-        OAdd -> " + "
-        OSub -> " - "
-        OMul -> " * "
-        OMod -> " % "
-        ODiv -> " / "
-        OEq  -> " == "
-        OLt  -> " < "
-        OLe  -> " <= "
-        OGt  -> " > "
-        OGe  -> " >= "
+        OAnd -> "&&"
+        OOr  -> "||"
+        OAdd -> "+"
+        OSub -> "-"
+        OMul -> "*"
+        OMod -> "%"
+        ODiv -> "/"
+        OEq  -> "=="
+        OLt  -> "<"
+        OLe  -> "<="
+        OGt  -> ">"
+        OGe  -> ">="
 
 ppConds :: DafnyPrinter a => a -> [Exp'] -> [Builder]
 ppConds s = map ((s <+> (space :: Builder)) <!>)

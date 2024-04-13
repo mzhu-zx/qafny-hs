@@ -29,6 +29,7 @@ import           Data.Sum
 
 import           Qafny.Effect
 import           Qafny.Syntax.AST
+import           Qafny.Syntax.Subst
 import           Qafny.Syntax.ASTFactory
 import           Qafny.Syntax.Emit
 import           Qafny.Syntax.EmitBinding

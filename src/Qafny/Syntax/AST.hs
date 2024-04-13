@@ -1,22 +1,18 @@
 {-# LANGUAGE
-    DeriveAnyClass
-  , DeriveFoldable
+    DeriveFoldable
   , DeriveFunctor
   , DeriveGeneric
   , DeriveTraversable
-  , PatternSynonyms
   , FlexibleContexts
   , FlexibleInstances
-  , GADTs
-  , ImpredicativeTypes
-  , MultiParamTypeClasses
   , NamedFieldPuns
-  , RankNTypes
+  , PatternSynonyms
   , StandaloneDeriving
   , TemplateHaskell
   , TupleSections
   , TypeFamilies
   , TypeOperators
+  , StrictData
   , UndecidableInstances
   #-}
 
@@ -25,22 +21,15 @@ module Qafny.Syntax.AST where
 import           Qafny.TTG
 
 --------------------------------------------------------------------------------
-import qualified Data.Text.Lazy as L
 
-import           Data.Bifunctor
 -- import           Data.Data
 import           Data.Functor.Foldable
-    (Base, Corecursive (embed), Recursive (cata, project))
-import           Data.Functor.Foldable.TH
-    (MakeBaseFunctor (makeBaseFunctor))
+    (Base, Corecursive, Recursive)
 import           Data.Functor.Identity
 import           Data.List.NonEmpty
     (NonEmpty (..))
-import qualified Data.Map.Strict          as Map
-import           Data.Maybe
-    (fromMaybe)
 import           Data.Sum
-import           GHC.Generics             hiding
+import           GHC.Generics          hiding
     ((:+:))
 import           Text.Printf
     (printf)
@@ -70,18 +59,6 @@ data PhaseRef = PhaseRef
   , prRepr :: Var -- | pointer to its representation
   }
   deriving (Show, Eq, Ord)
-
--- mkPhaseRef :: Var -> Var -> PhaseRef
--- mkPhaseRef prBase prRepr = PhaseRef { prBase, prRepr }
-
--- -- | PhaseTy associated with corresponding emitted vars
--- data PhaseTy
---   = PT0
---   | PTN Int PhaseRef
---   deriving (Show, Eq, Ord)
-
--- phaseTyN :: Int -> Var -> Var -> PhaseTy
--- phaseTyN n vBase vRepr = PTN n $ PhaseRef { prBase=vBase, prRepr=vRepr }
 
 data Ty
   = TNat
@@ -225,7 +202,7 @@ deriving instance (Ord (Exp ()))
 deriving instance (Ord (Exp Source))
 
 data SpecExpF f
-  = SESpecNor (SpecNorF f) 
+  = SESpecNor (SpecNorF f)
     -- ^ `⊗ id . e`
   | SESpecHad (SpecHadF f)
     -- ^ `⊗ id . ω`
@@ -554,85 +531,6 @@ initAEnv = []
 initIEnv :: IEnv
 initIEnv = []
 
--- | Perform expression subtitution
---
-class Substitutable a where
-  subst :: AEnv -> a -> a
-  fVars :: a -> [Var]
-
-instance Substitutable (Exp ()) where
-  subst = substE
-  fVars = cata go
-    where
-      go :: ExpF [Var] -> [Var]
-      go (EVarF x) = [x]
-      go fvs       = concat fvs
-
-instance Substitutable Partition where
-  subst = substP
-  fVars = concatMap fVars . unpackPart
-
-instance Substitutable Range where
-  subst = substR
-  fVars (Range _ e1 e2) = fVars e1 ++ fVars e2
-
-instance Substitutable f => Substitutable (SpecExpF f) where
-  subst = substF
-  fVars = fVarsF
-
-instance (Substitutable a) => Substitutable [a] where
-  subst = substF
-  fVars = fVarsF
-
-instance (Substitutable a, Substitutable b) => Substitutable (a, b) where
-  subst a = bimap (subst a) (subst a)
-  fVars = uncurry (++) . bimap fVars fVars
-
-instance Substitutable a => Substitutable (a :+: b) where
-  subst a (Inl r) = inj $ subst a r
-  subst _ b       = b
-  fVars (Inl r) = fVars r
-  fVars _       = []
-
-
--- lift `subst` to Functor
-substF :: (Substitutable a, Functor f) => AEnv -> f a -> f a
-substF a = (subst a <$>)
-
-fVarsF :: (Substitutable a, Foldable t) => t a -> [Var]
-fVarsF = concatMap fVars
-
-
-substMapKeys :: (Ord k, Substitutable k) => AEnv -> Map.Map k v -> Map.Map k v
-substMapKeys a = Map.mapKeys (subst a)
-
-fVarMapKeys :: Substitutable k => Map.Map k v -> [Var]
-fVarMapKeys = fVars . Map.keys
-
-substE :: AEnv -> Exp () -> Exp ()
-substE [] = id
-substE env = go
-  where
-    go :: Exp () -> Exp ()
-    go (EVar x)      = EVar x `fromMaybe` lookup x env
-    go (ESpec p q e) = ESpec (substP env p) q e
-    go (ERange r)    = ERange (substR env r)
-    go e             = embed $ go <$> project e
-
-substP :: AEnv -> Partition -> Partition
-substP [] = id
-substP env =
-  Partition . (substR env <$> ) . unpackPart
-
-
-substR :: AEnv -> Range -> Range
-substR [] r = r
-substR env (Range x l r) =
-  Range x (go l) (go r)
-  where
-    go = substE env
-
-
 --------------------------------------------------------------------------------
 -- * Vanilla Types
 
@@ -646,7 +544,3 @@ type Toplevel' = Toplevel ()
 -- * Annotated Types
 type LExp = XRec Source (Exp Source)
 type LStmt = XRec Source (Stmt Source)
-
---------------------------------------------------------------------------------
--- unL :: LExp -> Exp'
--- unL (L _ e) = gmapT unL e

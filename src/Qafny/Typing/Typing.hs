@@ -28,6 +28,7 @@ import           Qafny.Analysis.Interval
 import           Qafny.Analysis.Partial
     (Reducible (reduce))
 import           Qafny.Syntax.AST
+import           Qafny.Syntax.Subst
 import           Qafny.Syntax.Emit
 import           Qafny.Syntax.EmitBinding
 import           Qafny.Syntax.IR

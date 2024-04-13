@@ -3,10 +3,11 @@ module Qafny.Typing.Partial where
 
 import           Qafny.Effect
 import           Qafny.Syntax.AST
+import           Qafny.Syntax.Subst
 
 import           Data.List.NonEmpty
     (NonEmpty (..))
-import qualified Data.List.NonEmpty as NE
+import qualified Data.List.NonEmpty      as NE
 import           Qafny.Analysis.Interval
 
 -- * Lattice and ordering operators lifted to IEnv
@@ -24,7 +25,7 @@ liftIEnv2 (<?>) = do
         subst' r'' = (\aenv -> fixN (subst aenv) (length aenv) r'') <$> aenvs
     in NE.zipWith (\(r1', r2') -> (r1' <?> r2',)) (NE.zip (subst' r1) (subst' r2)) aenvs
 
--- | Iterate `n` times 
+-- | Iterate `n` times
 fixN ::  (a -> a) -> Int -> (a -> a)
 fixN f = go
   where
@@ -41,7 +42,7 @@ fixN f = go
 allI :: NonEmpty (Maybe Bool, a) -> Bool
 allI = all ((== Just True) . fst)
 
--- | every pair of intervals in the permutaton are known to be "included" 
+-- | every pair of intervals in the permutaton are known to be "included"
 (∀⊑/)
   :: ( Has (Reader IEnv) sig m )
   => m (Range -> Range -> Bool)
