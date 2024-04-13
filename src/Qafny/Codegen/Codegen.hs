@@ -130,8 +130,8 @@ codegenAST
   => AST
   -> m ([((Var, TState), Either Builder Toplevel')], Either Builder AST)
 codegenAST ast = ErrC.runError handleASTError return  $ do
-  Configs { stdlibPath=libPath, depth=depth' } <- ask
-  let path = concat (replicate depth' "../") ++ libPath
+  Configs { stdlibPath=libPath } <- ask @Configs
+  let path = libPath
   let prelude = (mkIncludes path <$> includes) ++ imports
   methodMap <- collectMethodTypes ast
   stTops <- local (kEnv %~ Map.union (Sum.inj <$> methodMap)) $
@@ -158,7 +158,7 @@ codegenAST ast = ErrC.runError handleASTError return  $ do
       ]
     imports =
       [ QDafny ""
-      , QDafny "// target Dafny version: 4.2.0"
+      , QDafny "// target Dafny version: 4.6.0"
       , QDafny "abstract module QafnyDefault {"
       , QDafny "import opened QPreludeUntyped"
       -- , QDafny "import opened LittleEndianNat"

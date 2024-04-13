@@ -15,10 +15,9 @@ import           Qafny.Syntax.Token (SrcLoc (..))
 data Source
   deriving (Data, Typeable)
 
-type family XRec idx a
-
-type instance XRec () a = a
-type instance XRec Source a = Located a
+type family XRec idx a where
+  XRec ()     a = a
+  XRec Source a = Located a
 
 data Located f = L SrcLoc f
   deriving (Show, Functor, Typeable, Data)

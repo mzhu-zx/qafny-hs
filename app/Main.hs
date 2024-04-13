@@ -10,9 +10,9 @@ import           Data.Text.Lazy
     (Text)
 import qualified Data.Text.Lazy.IO   as L.IO
 
+import           Data.Maybe
+    (fromMaybe)
 import           Qafny.Config
-import           Qafny.FileUtils
-    (countDepth)
 import           Qafny.Runner
     (Production (..), collectErrors, produceCodegen)
 import           Qafny.Syntax.Emit
@@ -21,13 +21,13 @@ import           Qafny.Syntax.Parser
 import           Qafny.Syntax.Render
     (hPutDoc, putDoc)
 import           System.Directory
-    (doesFileExist)
+    (doesFileExist, makeAbsolute, getHomeDirectory)
 import           System.Environment
-    (getArgs)
+    (getArgs, getExecutablePath)
 import           System.Exit
     (exitFailure)
 import           System.FilePath
-    ((-<.>))
+    (makeRelative, (-<.>), (</>))
 import           System.IO
     (IOMode (WriteMode), hClose, openFile)
 import           Text.Printf
@@ -36,8 +36,8 @@ import           Text.Printf
 pathPrefix :: FilePath
 pathPrefix = "./test/Resource/"
 
-parseFilepath :: FilePath -> (FilePath, Int)
-parseFilepath path = (path, countDepth path)
+-- parseFilepath :: FilePath -> (FilePath, Int)
+-- parseFilepath path = (path, countDepth path)
 
 help :: Text
 help =
@@ -50,24 +50,55 @@ help =
   \  format <file>    Scan, parse, and print the formatted program to stdout.\
   \"
 
-parseArgs :: IO (FilePath, Mode)
+parseSwitches :: [String] -> IO ([String], ConfigsP)
+parseSwitches = go defaultConfigsP []
+  where
+    go :: ConfigsP -> [String] -> [String] -> IO ([String], ConfigsP)
+    go config rargs [] = return (reverse rargs, config)
+    go config rargs ("--library" : args) =
+      case args of
+        []              -> errorMissingArgument "--library"
+        (libPath: args') ->
+          go config{stdlibPath=Just libPath} rargs args'
+    go config rargs (arg : args) = go config (arg:rargs) args
+
+
+errorMissingArgument :: forall a . String -> IO a
+errorMissingArgument s = do
+  pError ("Argument list ended prematurely for option: '"++s++"'.")
+  exitFailure
+
+parseArgs :: IO Configs
 parseArgs = do
-  args <- getArgs
-  (path, mode) <- case args of
+  rawArgs <- getArgs
+  (args, initConfigP) <- parseSwitches rawArgs
+  (filePath, mode) <- case args of
     []            -> showUsage
     ["help"]      -> showUsage
     ["verify", s] -> return (s, Verify)
     ["format", s] -> return (s, Format)
     [s] | s `elem` ["verify", "format"] ->
           pError "No input file was specified." >> exitFailure
-    [s] -> return (srcFile s, Verify)
-    _   -> exitUnknownCmd args
-  exists <- doesFileExist path
-  unless exists $
-    pErrorf "The input file %s doesn't exist." path >> exitFailure
+    [s]           -> return (srcFile s, Verify)
+    _otherCmds    -> exitUnknownCmd args
 
-  return (path, mode)
+  doesFileExist filePath >>=
+    (`unless` (pErrorf "The input file %s doesn't exist." filePath
+               >> exitFailure))
+
+  let stdlibPath' = fromMaybe defaultStdlibPath (stdlibPath initConfigP)
+  
+  homePath <- getHomeDirectory
+  stdlibPathWithHome <- makeAbsolute stdlibPath'
+  stdlibPath <- redactHomePath stdlibPathWithHome
+
+  pure Configs { filePath, mode, stdlibPath }
   where
+    -- Remove /home/XXX/ in the path if there is any
+    redactHomePath path = 
+      ("~" </>) <$> (makeRelative <$> getHomeDirectory <*> makeAbsolute path)
+
+    defaultStdlibPath = "external/"
     showUsage =
       L.IO.putStrLn help >> exitFailure
     exitUnknownCmd args =
@@ -88,15 +119,13 @@ pipeline s configs =
       return $ prod { pResult = pp <$> pResult prod }
 
 main :: IO ()
-main =
-  do
-    (path, mode) <- parseArgs
-    let (prog, depth) = parseFilepath path
-    withProg prog (defaultConfigs { depth, mode })
+main = do
+  configs <- parseArgs
+  withProg configs
 
 
-withProg :: FilePath -> Configs -> IO ()
-withProg srcFile config@Configs{mode=Format} = do
+withProg :: Configs -> IO ()
+withProg config@Configs{filePath=srcFile, mode=Format} = do
   printf "[Info] format %s\n" srcFile
   src <- readFile srcFile
   case scanAndParse src of
@@ -105,7 +134,7 @@ withProg srcFile config@Configs{mode=Format} = do
       putStrLn "============================================================"
       >> prettyIO p
 
-withProg srcFile config@Configs{mode=Verify} = do
+withProg config@Configs{filePath=srcFile, mode=Verify} = do
   printf "[Info] verify %s\n" srcFile
   srcText <- readFile srcFile
   either ((>> exitFailure) . putStrLn) (>>= writeOrReportP)
@@ -147,5 +176,9 @@ pErrorDoc err = putDoc True fmt
 pError :: String -> IO ()
 pError err = putStrLn $ "\ESC[31m[Error]\ESC[93m " ++ err ++ "\ESC[0m\n"
 
+pErrorFail :: String -> IO a
+pErrorFail = (>> exitFailure) . pError
+
 pErrorf :: PrintfType r => String -> r
 pErrorf s = printf ("\ESC[31m[Error]\ESC[93m " ++ s ++ "\ESC[0m\n")
+
