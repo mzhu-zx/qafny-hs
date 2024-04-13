@@ -1,26 +1,25 @@
 -- | Specification and predicate typechecking
 module Qafny.Typing.Predicates(
   wfSignatureFromPredicate, wfSignatureFromPredicate',
-  wfSignatureFromPredicates, dropSignatureSpecs
+  wfSignatureFromPredicates, dropSignatureSpecs,
+  wfQTySpecs
   ) where
 
 -- Effects
-import           Qafny.Effect
-
--- Qafny
-import           Control.Monad
-    (unless)
 import           Data.Foldable
     (Foldable (toList))
 import           Data.Maybe
     (catMaybes, listToMaybe)
+import           Qafny.Effect
 import           Qafny.Syntax.AST
 import           Qafny.Syntax.Emit
+import           Qafny.Syntax.IR
 import           Qafny.Typing.Phase hiding
     (throwError')
 import           Qafny.Typing.Utils
     (assertPartQTyArity)
 import           Qafny.Utils
+import           Qafny.Utils.Common
 
 throwError'
   :: ( Has (Error Builder) sig m, DafnyPrinter s )
@@ -36,6 +35,41 @@ assertSpecWf TEn   SESpecEn{}   = True
 assertSpecWf TEn01 SESpecEn01{} = True
 assertSpecWf _     SEWildcard   = True
 assertSpecWf _     _            = False
+
+wfQTySpec :: (Has (Error Builder) sig m) => QTy -> SpecExp -> m SRel1
+wfQTySpec TNor  (SESpecNor  s) = pure (RNor  (pure s))
+wfQTySpec THad  (SESpecHad  s) = pure (RHad  (pure s))
+wfQTySpec TEn   (SESpecEn   s) = pure (REn   (pure s))
+wfQTySpec TEn01 (SESpecEn01 s) = pure (REn01 (pure s))
+wfQTySpec _     SEWildcard     = pure RWild
+wfQTySpec ty    spec           = throwError' $
+  "Specification"<+>spec
+  <+>"is not well-formed w.r.t. the given entanglement type"
+  <+>ty
+
+wfQTySpecs :: (Has (Error Builder) sig m) => QTy -> [SpecExp] -> m SRel
+wfQTySpecs qty specs' =
+  case qty of
+    TNor  -> RNor  <$> mapM goNor         specs
+    THad  -> RHad  <$> mapM goHad         specs
+    TEn   -> REn   <$> mapM goEn          specs
+    TEn01 -> REn01 <$> mapM goEn01        specs
+    qt    -> RWild <$  mapM (fmtError qt) specs
+  where
+    specs = filter (SEWildcard ==) specs'
+    goNor (SESpecNor s) = pure s
+    goNor s             = fmtError TNor s
+    goHad (SESpecHad s) = pure s
+    goHad s             = fmtError THad s
+    goEn (SESpecEn s) = pure s
+    goEn s            = fmtError TEn s
+    goEn01 (SESpecEn01 s) = pure s
+    goEn01 s              = fmtError TEn01 s
+    fmtError ty spec = throwError' $
+      "Specification"
+      <+>spec
+      <+>"is not well-formed w.r.t. the given entanglement type"
+      <+>ty
 
 -- | Collect entanglement type signature from predicate-ish clauses
 -- without checking the well-formedness of the predicate.

@@ -58,7 +58,7 @@ codegenLambda
      )
   => Partition -> Lambda -> m [Stmt']
 codegenLambda s@Partition{ranges} lam@LambdaF{bBases} = do
-  haveSameLength ranges bBases
+  haveSameLength "codegenLambda" ranges bBases
   rangesAndLoci <- resolveRangesStrictIntoLoci ranges
   lambdaTy <- analyzeLambdaType rangesAndLoci lam
 

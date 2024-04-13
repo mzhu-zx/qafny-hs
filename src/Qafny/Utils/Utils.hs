@@ -163,12 +163,13 @@ haveSameLength
   :: ( Has (Error Builder) sig m
      , DafnyPrinter a
      , DafnyPrinter b
+     , DafnyPrinter c
      )
-  => [a] -> [b] -> m ()
-haveSameLength vsEmit eValues =
+  => c -> [a] -> [b] -> m ()
+haveSameLength blame vsEmit eValues =
   unless (length vsEmit == length eValues) $
     throwError @Builder $ vsep    
-      [ pp "the number of elements doesn't agree with each other:"
+      [ ">>"<+>parens blame <+> "the number of elements doesn't agree with each other:"
       , incr4 (list vsEmit)
       , incr4 (list eValues) ]
 

@@ -9,5 +9,5 @@ import           Control.Monad
     (forM, unless, when)
 import           Data.Bifunctor
 import           Data.Functor
-    ((<&>))
+    ((<&>), ($>), (<$))
 import           Data.Functor.Identity

@@ -1,5 +1,6 @@
 {-# LANGUAGE
     DataKinds
+  , DatatypeContexts
   , FlexibleInstances
   , GADTs
   , LambdaCase
@@ -11,16 +12,17 @@ module Qafny.Syntax.IR where
 
 import           Control.Lens
 import           Data.Bifunctor
+import           Data.Functor.Identity
 import           Data.List
     (intercalate)
+import           Data.List.NonEmpty
+    (NonEmpty)
 import qualified Data.Map.Strict          as Map
 import           Data.Sum
 import           Qafny.Analysis.Partial
 import           Qafny.Syntax.AST
 import           Qafny.Syntax.EmitBinding
 
-import           Data.List.NonEmpty
-    (NonEmpty)
 --------------------------------------------------------------------------------
 -- High-Order Types
 --------------------------------------------------------------------------------
@@ -189,3 +191,14 @@ data JoinStrategy = JoinStrategy
   }
   deriving Show
 
+--------------------------------------------------------------------------------
+-- * Spec Relations
+data Traversable t => SRelT t
+  = RNor  (t SpecNor)
+  | RHad  (t SpecHad)
+  | REn   (t SpecEn)
+  | REn01 (t SpecEn01)
+  | RWild
+
+type SRel1 = SRelT Identity
+type SRel  = SRelT []

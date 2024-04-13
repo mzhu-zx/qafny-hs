@@ -111,6 +111,8 @@ codegenPhaseLambda
      , Has (Error Builder) sig m
      )
   => Locus -> PhaseBinder -> PhaseExp -> m [Stmt']
+codegenPhaseLambda _ PhaseWildCard PhaseWildCard =
+  return []
 codegenPhaseLambda st@Locus{degrees} pb pe = do
   prefs <- queryPhaseRef st
   dgrSt <- onlyOne throwError' $ nub degrees

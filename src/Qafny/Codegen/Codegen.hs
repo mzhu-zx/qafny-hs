@@ -232,7 +232,7 @@ codegenToplevel'Method q@(QMethod vMethod bds rts rqs ens (Just block)) = runWit
 
   ensCG <- codegenEnsures ens
 
-  tracep $ "**" <!> align (vsep (first viaShow <$> rbdvsEmitB))
+  -- tracep $ "**" <!> align (vsep (first viaShow <$> rbdvsEmitB))
   -- Gensym symbols are in the reverse order!
   let stmtsDeclare = fDecls rbdvsEmitB
   -- let stmtsDeclare = undefined

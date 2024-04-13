@@ -318,7 +318,7 @@ instance (Show f, DafnyPrinter f) => DafnyPrinter (PhaseExpF f) where
 instance (Show f, DafnyPrinter f) => DafnyPrinter (AmpExpF f) where
   pp p = debugOnly p $ case p of
     ADefault     -> mempty
-    AISqrt en ed -> "isqpp " <+> tupled [en, ed]
+    AISqrt en ed -> "isqrt" <+> tupled [en, ed]
     ASin e       -> "sin" <!> parens e
     ACos e       -> "cos" <!> parens e
 

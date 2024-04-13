@@ -113,6 +113,7 @@ withProg srcFile config@Configs{mode=Verify} = do
   putDoc True $
     ("\ESC[32mSuccess: target is emited as `"::Text)
     <!>tgtFile<!>("` \ESC[0m"::Text)
+  putStrLn ""
   where
     writeOrReportP :: Production Builder -> IO ()
     writeOrReportP prod@(Production {pResult=res, pState=st, pDetail=details})  = do

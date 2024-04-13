@@ -187,7 +187,7 @@ queryPhase Locus{loc, part=Partition{ranges}, qty, degrees}
       dgr <- onlyOne (throwError' . ("1" <+>)) degrees
       singleton . evPhaseRef <$> findEm (inj loc)
   | otherwise = do
-      haveSameLength ranges degrees
+      haveSameLength "queryPhase" ranges degrees
       sequence [ evPhaseRef <$> findEm (inj r) | r <- ranges ]
 
 -- | Query in the emit state the phase types of the given Locus
@@ -201,7 +201,7 @@ queryPhaseRef Locus{loc, part=Partition{ranges}, qty, degrees}
       dgr <- onlyOne (throwError' . ("2" <+>)) degrees
       singleton . evPhaseRef <$> findEm (inj loc)
   | otherwise = do
-      haveSameLength ranges degrees
+      haveSameLength "queryPhaseRef" ranges degrees
       sequence [ evPhaseRef <$> findEm (inj r) | r <- ranges ]
 
 -- * Degree

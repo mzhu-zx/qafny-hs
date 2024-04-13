@@ -26,8 +26,8 @@ import           Text.Printf
 import           Qafny.Effect
 import           Qafny.Syntax.AST
 import           Qafny.Syntax.ASTFactory
-import           Qafny.Syntax.IR
 import           Qafny.Syntax.Emit
+import           Qafny.Syntax.IR
 import           Qafny.Typing.Typing
     (extendState, resolvePartition, typingPartitionQTy)
 
@@ -47,10 +47,10 @@ import           Qafny.Codegen.Utils
     (runWithCallStack)
 import           Qafny.Syntax.EmitBinding
 import           Qafny.Typing.Predicates
-    (wfSignatureFromPredicate')
+    (wfQTySpecs, wfSignatureFromPredicate')
 import           Qafny.Utils.EmitBinding
 import           Qafny.Utils.Utils
-    (onlyOne)
+    (onlyOne, tracep)
 
 
 throwError'
@@ -79,7 +79,12 @@ codegenAssertion' (ESpec s qt espec) = do
   when (sort (ranges part) /= sort (ranges s)) $
     throwError' ("Assertion:"<+>part<+>"is inconsistent with"<+>s<+>".")
   (locusEd, rangesEd) <- findEmsByLocus st
-  codegenSpecExp locusEd rangesEd qt espec
+  tracep . vsep $
+    [ pp "codegenAssertion'"
+    , incr4 $ vsep [ pp qt, list espec ]
+    ]
+  wfRels <- wfQTySpecs qt espec
+  codegenSpecExp locusEd rangesEd wfRels
 codegenAssertion' e = return [e]
   -- FIXME: what to do if [e] contains an assertion?
 
@@ -88,32 +93,32 @@ codegenAssertion' e = return [e]
 -- | Take in the emit variable corresponding to each range in the partition and the
 -- partition type; with which, generate expressions (predicates)
 codegenSpecExp
-  :: forall sig m . ( Has (Error Builder) sig m, Has (Reader Bool) sig m )
-  => EmitData -> [(Range, EmitData)] -> QTy -> [SpecExp] -> m [Exp']
+  :: forall sig m . (Has (Error Builder) sig m, Has (Reader Bool) sig m)
+  => EmitData -> [(Range, EmitData)] -> SRel -> m [Exp']
 codegenSpecExp locusEd rangesEd = go
   where
-    go :: QTy -> [SpecExp] -> m [Exp']
-    go TNor specs = do
+    go :: SRel -> m [Exp']
+    go (RNor specs) = do
       (range, ed) <- onlyOne throwError' rangesEd
       vKet <- fst <$> visitEmBasis ed
-      return $ codegenSpecExpNor vKet (predFromRange range) . seNor <$> specs
-    go THad specs = do
+      return $ codegenSpecExpNor vKet (predFromRange range) <$> specs
+    go (RHad specs) = do
       (range, _) <- onlyOne throwError' rangesEd
       return $ case evPhaseRef locusEd of
         Nothing -> []
-        Just (ref, _) ->
-          concatMap (codegenSpecExpHad ref (predFromRange range) . seHad) specs
-    go TEn specs = do
+        Just (ref, _) -> do
+          concatMap (codegenSpecExpHad ref (predFromRange range)) specs
+    go (REn specs) = do
       (vAmp, _) <- visitEm evAmp locusEd
       let refMaybe = fst <$> evPhaseRef locusEd
           rvKets = second ((fst <$>) . evBasis) <$> rangesEd
-      return $ concatMap (codegenSpecExpEn vAmp refMaybe rvKets . seEn) specs
-    go TEn01 specs = do
+      return $ concatMap (codegenSpecExpEn vAmp refMaybe rvKets) specs
+    go (REn01 specs) = do
       (vAmp, _) <- visitEm evAmp locusEd
       let refMaybe = fst <$> evPhaseRef locusEd
           rvKets = second ((fst <$>) . evBasis) <$> rangesEd
-      return $ concatMap (codegenSpecExpEn01 vAmp refMaybe rvKets . seEn01) specs
-  
+      return $ concatMap (codegenSpecExpEn01 vAmp refMaybe rvKets) specs
+
     predFromRange r =
       let bound = Intv 0 (rangeSize r)
       in predFromIntv  bound
@@ -134,7 +139,7 @@ codegenSpecExpEn vAmp prMaybe rvKets
   where
     predIntv = predFromIntv enIntvSup
 
-    ampPred = [ vAmp `eEq` codegenAmpExp enAmpCoef]
+    ampPred = codegenAmpExp vAmp enVarSup predIntv enAmpCoef
     phasePreds = concat $ prMaybe <&> \pr ->
       codegenPhaseSpec pr enVarSup predIntv enPhaseCoef
     ketPreds = -- TODO: generate mod using Range
@@ -154,7 +159,8 @@ codegenSpecExpEn01 vAmp prMaybe rvKets
     predIntv = predFromIntv en01IntvSup
     predIntvQ = predFromIntv en01IntvQbit
 
-    ampPred = [ vAmp `eEq` codegenAmpExp en01AmpCoef]
+    ampPred = codegenAmpExp vAmp en01VarSup predIntv en01AmpCoef
+    -- ampPred = [ vAmp `eEq` codegenAmpExp en01AmpCoef]
     phasePreds = concat $ prMaybe <&> \pr ->
       codegenPhaseSpec pr en01VarSup predIntv en01PhaseCoef
     ketPreds = -- TODO: generate mod using Range
@@ -166,9 +172,15 @@ codegenSpecExpEn01 vAmp prMaybe rvKets
       mkForallEq2 en01VarSup predIntv en01VarQbit predIntvQ v eKet
 
 
-
-codegenAmpExp :: AmpExp -> Exp'
-codegenAmpExp = undefined
+codegenAmpExp :: Var -> Var -> (Var -> Exp') -> AmpExp -> [Exp']
+codegenAmpExp _ _ _ ADefault = []
+codegenAmpExp vAmp vIdx predIdx aexp =
+  [mkForallEq vIdx predIdx vAmp eA]
+  where
+    eA = case aexp of
+      (AISqrt en ed) -> en >// ed
+      (ASin e)       -> "sin" >$ e
+      (ACos e)       -> "cos" >$ e
 
 -- | Generate a predicates over phases based on the phase type
 codegenPhaseSpec :: PhaseRef -> Var -> (Var -> Exp') -> PhaseExp -> [Exp']
@@ -204,7 +216,8 @@ codegenRequires rqs = do
        -> m ([Exp'], [EmitData])
     go (p, qt, ds, specs) (retEs, retEds)= do
       eds <- extendState p qt (toList ds)
-      es <- runReader True $ uncurry codegenSpecExp eds qt specs
+      wfRels <- wfQTySpecs qt specs
+      es <- runReader True $ uncurry codegenSpecExp eds wfRels
       return (es ++ retEs, eraseRanges eds ++ retEds)
 
 codegenEnsures

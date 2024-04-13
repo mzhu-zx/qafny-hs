@@ -225,13 +225,13 @@ deriving instance (Ord (Exp ()))
 deriving instance (Ord (Exp Source))
 
 data SpecExpF f
-  = SESpecNor { seNor :: SpecNorF f }
+  = SESpecNor (SpecNorF f) 
     -- ^ `⊗ id . e`
-  | SESpecHad { seHad :: SpecHadF f }
+  | SESpecHad (SpecHadF f)
     -- ^ `⊗ id . ω`
-  | SESpecEn { seEn :: SpecEnF f }
+  | SESpecEn (SpecEnF f)
     -- ^ `Σ id ∈ intv . ω ~ e`
-  | SESpecEn01 { seEn01 :: SpecEn01F f }
+  | SESpecEn01 (SpecEn01F f)
     -- ^ `Σ id1 ∈ intv1 . ⊗ id2 . ω ~ e`
   | SEWildcard
     -- ^ `_`
@@ -255,7 +255,6 @@ deriving instance (Eq f) => Eq (SpecNorF f)
 deriving instance (Ord f) => Ord (SpecNorF f)
 
 type SpecNor = SpecNorF Exp'
-
 
 data SpecHadF f =
   SpecHadF { hadVar   :: Var           -- ^ enumerator for each qubit
