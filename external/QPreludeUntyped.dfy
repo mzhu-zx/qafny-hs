@@ -13,13 +13,12 @@ abstract module {:options "-functionSyntax:4"} QPreludeUntyped {
   // Cast functions
   /* Cast ketful Nor into phaseful Had
    */
-  function CastNorHad(kets : seq<nat>) : (pb : (seq<nat>, nat)) 
+  function CastNorHad_Phase_1st(kets : seq<nat>) : (pb : seq<nat>) 
     requires forall k : nat | k < |kets| :: kets[k] == 0 || kets[k] == 1
-    ensures pb.1 == 2 
-    ensures |pb.0| == |kets|
-    ensures  forall i : nat | i < |pb.0| ::
-      ((kets[i] == 0) ==> (pb.0[i] == 0)) &&
-      ((kets[i] == 1) ==> (pb.0[i] == 1))
+    ensures |pb| == |kets|
+    ensures  forall i : nat | i < |pb| ::
+      ((kets[i] == 0) ==> (pb[i] == 0)) &&
+      ((kets[i] == 1) ==> (pb[i] == 1))
 
   function {:opaque} CastNorEN_Ket(q : seq<nat>) : (c : seq<nat>)
     requires forall k : nat | k < |q| :: q[k] == 0 || q[k] == 1
@@ -84,7 +83,7 @@ abstract module {:options "-functionSyntax:4"} QPreludeUntyped {
 
   /* If the cardinality is one, this is immediately [[0], [1]]
    */
-  function CastHadEn01'1_Ket() : (c : seq<seq<nat>>)
+  function CastHadEn01_Ket1() : (c : seq<seq<nat>>)
     ensures c == [[0], [1]]
 
 

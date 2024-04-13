@@ -26,6 +26,8 @@ dependencies:
 - fused-effects-lens
 - recursion-schemes
 - prettyprinter
+- directory
+- filepath
 
 language: GHC2021
 

@@ -93,9 +93,11 @@ codegenAssertion' e = return [e]
 -- | Take in the emit variable corresponding to each range in the partition and the
 -- partition type; with which, generate expressions (predicates)
 codegenSpecExp
-  :: forall sig m . (Has (Error Builder) sig m, Has (Reader Bool) sig m)
+  :: forall sig m . (Has (Error Builder) sig m, Has (Reader Bool) sig m, Has Trace sig m)
   => EmitData -> [(Range, EmitData)] -> SRel -> m [Exp']
-codegenSpecExp locusEd rangesEd = go
+codegenSpecExp locusEd rangesEd srel = do
+  trace (show srel)
+  go srel
   where
     go :: SRel -> m [Exp']
     go (RNor specs) = do

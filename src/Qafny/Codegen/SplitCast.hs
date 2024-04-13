@@ -163,8 +163,8 @@ codegenCastEmit
       -- No amplitude is involved
       phaseStmts <- case (evPhaseRef lEdFrom, evPhaseRef lEdTo) of
         (Nothing, Nothing) -> Just []
-        (Just (PhaseRef pvReprH pvBaseH, TSeqNat),
-         Just (PhaseRef pvReprE pvBaseE, TSeqNat)) -> Just
+        (Just (PhaseRef pvBaseH pvReprH , TSeqNat),
+         Just (PhaseRef pvBaseE pvReprE , TSeqNat)) -> Just
           [ pvBaseE >::=: pvBaseH
           , pvReprE  ::=: ("CastHadEn_Phase_1st" >$* [pvReprH, pvBaseH])]
         _ -> Nothing
@@ -180,8 +180,8 @@ codegenCastEmit
       -- | Cast a 0th/1st degree Had to 0th/1st degree En
       phaseStmts <- case (evPhaseRef lEdFrom, evPhaseRef lEdTo) of
         (Nothing, Nothing) -> Just []
-        (Just (PhaseRef pvReprH pvBaseH, TSeqNat),
-         Just (PhaseRef pvReprE pvBaseE, TSeqNat)) -> Just
+        (Just (PhaseRef pvBaseH pvReprH , TSeqNat),
+         Just (PhaseRef pvBaseE pvReprE, TSeqNat)) -> Just
           [ pvBaseE >::=: pvBaseH
           , pvReprE  ::=: ("CastHadEn_Phase_1st" >$* [pvReprH, pvBaseH]) ]
         _ -> Nothing

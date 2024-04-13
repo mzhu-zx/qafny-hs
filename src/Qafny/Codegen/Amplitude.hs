@@ -14,7 +14,7 @@ import           Qafny.Syntax.ASTFactory
 -- calculate the amplitude for each term.
 ampFromRepr :: AstInjection a Exp' => a -> Exp'
 ampFromRepr vRepr =
-  seqLike TSeqReal vRepr (constLambda eAmp)
+  seqLike TReal vRepr (constLambda eAmp)
   where
     eAmp  = (1 :: Exp') >// denom
     denom = mkPow2 (mkCard vRepr)

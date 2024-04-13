@@ -5,17 +5,12 @@
 
 module Qafny.Config where
 
-import           Data.Functor.Identity
-import           Data.Kind
-    (Type)
+import           Qafny.TTG
+import           Qafny.Utils.Common
 
 data Mode
   = Verify
   | Format
-
-type family T (a :: Type -> Type) b where
-  T Identity a = a
-  T Maybe    a = Maybe a
 
 data ConfigsT t = Configs
   { stdlibPath :: T t String

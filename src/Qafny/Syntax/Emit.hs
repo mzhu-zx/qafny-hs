@@ -244,8 +244,8 @@ instance DafnyPrinter (Stmt ()) where
       ppEmit :: EmitStmt -> Builder
       ppEmit (SVars bds e) = "var" <+> byComma bds <+> ":=" <+> e
       ppEmit (vs :*:=: rhs)  = case rhs of
-        [] -> mempty
-        _  -> byComma vs <+> ":=" <+> byComma (parens <$> rhs)
+        []   -> mempty
+        _rhs -> byComma vs <+> ":=" <+> byComma rhs
       -- ppEmit (SIfDafny e b) = "if " <!> withParen (pp e) <!> b
       ppEmit _             = error "Should have been handled!!"
 

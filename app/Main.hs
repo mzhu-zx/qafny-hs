@@ -13,6 +13,7 @@ import qualified Data.Text.Lazy.IO   as L.IO
 import           Data.Maybe
     (fromMaybe)
 import           Qafny.Config
+import           Qafny.Utils.Path
 import           Qafny.Runner
     (Production (..), collectErrors, produceCodegen)
 import           Qafny.Syntax.Emit
@@ -21,13 +22,13 @@ import           Qafny.Syntax.Parser
 import           Qafny.Syntax.Render
     (hPutDoc, putDoc)
 import           System.Directory
-    (doesFileExist, makeAbsolute, getHomeDirectory)
+    (doesFileExist, getHomeDirectory, makeAbsolute)
 import           System.Environment
     (getArgs, getExecutablePath)
 import           System.Exit
     (exitFailure)
 import           System.FilePath
-    (makeRelative, (-<.>), (</>))
+    (joinPath, makeRelative, normalise, splitPath, (-<.>), (</>))
 import           System.IO
     (IOMode (WriteMode), hClose, openFile)
 import           Text.Printf
@@ -87,15 +88,13 @@ parseArgs = do
                >> exitFailure))
 
   let stdlibPath' = fromMaybe defaultStdlibPath (stdlibPath initConfigP)
-  
-  homePath <- getHomeDirectory
-  stdlibPathWithHome <- makeAbsolute stdlibPath'
-  stdlibPath <- redactHomePath stdlibPathWithHome
+
+  stdlibPath <- makeRelativePath stdlibPath' filePath
 
   pure Configs { filePath, mode, stdlibPath }
   where
     -- Remove /home/XXX/ in the path if there is any
-    redactHomePath path = 
+    redactHomePath path =
       ("~" </>) <$> (makeRelative <$> getHomeDirectory <*> makeAbsolute path)
 
     defaultStdlibPath = "external/"

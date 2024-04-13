@@ -8,7 +8,9 @@
 
 module Qafny.TTG where
 import           Data.Data
-import           Qafny.Syntax.Token (SrcLoc (..))
+import           Qafny.Syntax.Token
+    (SrcLoc (..))
+import           Qafny.Utils.Common
 --------------------------------------------------------------------------------
 -- * Indexed Family for Extensible ADTs
 
@@ -32,3 +34,7 @@ instance Ord f => Ord (Located f) where
   a `compare` b = unLoc a `compare` unLoc b
 
 
+type family T (t :: Type -> Type) a where
+  T Identity a = a
+  T Maybe    a = Maybe a
+  T []       a = [a]

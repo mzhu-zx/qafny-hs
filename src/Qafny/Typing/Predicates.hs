@@ -37,10 +37,10 @@ assertSpecWf _     SEWildcard   = True
 assertSpecWf _     _            = False
 
 wfQTySpec :: (Has (Error Builder) sig m) => QTy -> SpecExp -> m SRel1
-wfQTySpec TNor  (SESpecNor  s) = pure (RNor  (pure s))
-wfQTySpec THad  (SESpecHad  s) = pure (RHad  (pure s))
-wfQTySpec TEn   (SESpecEn   s) = pure (REn   (pure s))
-wfQTySpec TEn01 (SESpecEn01 s) = pure (REn01 (pure s))
+wfQTySpec TNor  (SESpecNor  s) = pure (RNor  s)
+wfQTySpec THad  (SESpecHad  s) = pure (RHad  s)
+wfQTySpec TEn   (SESpecEn   s) = pure (REn   s)
+wfQTySpec TEn01 (SESpecEn01 s) = pure (REn01 s)
 wfQTySpec _     SEWildcard     = pure RWild
 wfQTySpec ty    spec           = throwError' $
   "Specification"<+>spec
@@ -56,7 +56,7 @@ wfQTySpecs qty specs' =
     TEn01 -> REn01 <$> mapM goEn01        specs
     qt    -> RWild <$  mapM (fmtError qt) specs
   where
-    specs = filter (SEWildcard ==) specs'
+    specs = filter (SEWildcard /=) specs'
     goNor (SESpecNor s) = pure s
     goNor s             = fmtError TNor s
     goHad (SESpecHad s) = pure s

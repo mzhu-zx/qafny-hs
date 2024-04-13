@@ -284,7 +284,8 @@ codegenToplevel'Method q@(QMethod vMethod bds rts rqs ens (Just block)) = runWit
       Just $ mkSVar v' TNat
     fDecl (EmAnyBinding v' t) _ =
       Just $ mkSVar v' t
-    fDecl _ _ = Nothing
+    fDecl (EmAmplitude _ _) v' =
+      Just $ mkSVar v' TSeqReal
 
     mkSVar :: Var -> Ty -> Stmt'
     mkSVar v ty = SVar (Binding v ty) Nothing
@@ -562,7 +563,10 @@ codegenStmt'For (SFor idx boundl boundr eG invs (Just seps) body) = do
   -- generate loop invariants
   stmtsBody <- localExtendInv $ do
     ask @IEnv >>= trace . printf "Augmented IENV: %s" . show
+    tracep $ "new invariants:"<!>line<!>incr2 (align (vsep invs))
     newInvs <- forM invs codegenAssertion
+    tracep $ "new invariants (extracted):"
+      <!>line<!>incr2 (align (vsep (concat newInvs)))
     stSep <- typingPartition seps -- check if `seps` clause is valid
     stmtsBody <- codegenFor'Body idx boundl boundr eG body stSep (concat newInvs)
 
@@ -789,6 +793,7 @@ codegenFor'Body idx boundl boundr eG body stSep@(Locus{qty=qtSep}) newInvs = do
                       ]
              )
     _    -> throwError' $ ""<+>qtG<+>"is not a supported guard type!"
+  tracep $ "[codegen/for]" <+> align (vsep newInvs)
   let innerFor = SEmit $ SForEmit idx boundl boundr newInvs $ Block stmtsBody
   return $ stmtsPrelude ++ [innerFor]
   where

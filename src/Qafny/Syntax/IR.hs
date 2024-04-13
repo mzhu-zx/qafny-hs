@@ -20,7 +20,9 @@ import           Data.List.NonEmpty
 import qualified Data.Map.Strict          as Map
 import           Data.Sum
 import           Qafny.Syntax.AST
+import           Qafny.TTG
 import           Qafny.Syntax.EmitBinding
+
 
 --------------------------------------------------------------------------------
 -- High-Order Types
@@ -174,11 +176,14 @@ data JoinStrategy = JoinStrategy
 --------------------------------------------------------------------------------
 -- * Spec Relations
 data SRelT t
-  = RNor  (t SpecNor)
-  | RHad  (t SpecHad)
-  | REn   (t SpecEn)
-  | REn01 (t SpecEn01)
+  = RNor  (T t SpecNor)
+  | RHad  (T t SpecHad)
+  | REn   (T t SpecEn)
+  | REn01 (T t SpecEn01)
   | RWild
 
 type SRel1 = SRelT Identity
 type SRel  = SRelT []
+
+deriving instance (Show SRel1)
+deriving instance (Show SRel)

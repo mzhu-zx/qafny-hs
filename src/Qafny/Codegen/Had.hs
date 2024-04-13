@@ -36,5 +36,6 @@ codegenNorToHad
       (PhaseRef vBase vRepr, TSeqNat) <- evPhaseRef lEdTo
       [(vKet, TSeqNat)]               <- (evBasis . snd) `mapM` rsEdFrom
       return $ SEmit <$>
-        [[vBase, vRepr] :*:=: ["CastNorHad" >$ vKet]]
+        [ [vRepr] :*:=: ["CastNorHad_Phase_1st" >$ vKet]
+        , [vBase] :*:=: [2] ]
     rules _ _ = Nothing
