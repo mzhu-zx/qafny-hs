@@ -261,7 +261,7 @@ instance DafnyPrinter (Exp ()) where
   pp (EOp2 op e1 e2) = ppOp2 op (pp e1) (pp e2)
   -- parentheses are critical to forall expressions!
   pp (EForall x eb e) =
-    parens $ "forall " <!> x  <!> beb eb <!> " :: " <!> e
+    P.group . parens $ "forall " <!> x  <!> beb eb <+> "::" <%> e
     where
       beb (Just eb') = " | " <!> eb'
       beb Nothing    = mempty

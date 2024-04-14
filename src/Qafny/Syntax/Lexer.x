@@ -16,7 +16,7 @@ $digit = 0-9
 @dafny = \#(~\n)*
 @comment = (\/\/)(~\n)*
 @id = ($alpha) ($alpha | $digit | \_ | \')*
-@wild=(\_)
+@wname=(\_)($alpha|$digit)*
 @assign = (:=)
 @qassign = (\*=)
 @aand = (&&)
@@ -31,8 +31,8 @@ $digit = 0-9
 token :-
   $white+          ;
   @comment         ;
-  @wild            { emit $  TWildcard           }
-  @dafny           { pushToken $ TDafny . tail   }
+  @wname           { pushToken $ TWildcardName . tail }
+  @dafny           { pushToken $ TDafny . tail        }
   method           { emit $  TMethod             }
   ensures          { emit $  TEnsures            }
   separates        { emit $  TSeparates          }
@@ -69,6 +69,7 @@ token :-
   "\Sum"           { emit $  TUnicodeSum         }
   "⊗"              { emit $  TUnicodeTensor      }
   "\otimes"        { emit $  TUnicodeIn          }
+  "|->"            { emit $  TTyArrow            }
   "↦"              { emit $  TUnicodeMap         }
   "\mapsto"        { emit $  TUnicodeMap         }
   "->"             { emit $  TTyArrow            }

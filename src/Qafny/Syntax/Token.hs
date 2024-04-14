@@ -1,9 +1,11 @@
 {-# LANGUAGE
     DeriveDataTypeable
+  , StrictData
   #-}
 module Qafny.Syntax.Token where
-import           Text.Printf (printf)
 import           Data.Data
+import           Text.Printf
+    (printf)
 
 data Token
   -- Dafny Fragments
@@ -49,8 +51,8 @@ data Token
   | TQReg
 
   -- Identifiers
-  | TId String
-  | TWildcard
+  | TId           String
+  | TWildcardName String
 
   -- Comparison
   | TEq | TLe | TGe
@@ -62,7 +64,7 @@ data Token
   | TMul | TAdd | TMod | TSub
 
   -- Amplitudes
-  | TISqrt | TSin | TCos 
+  | TISqrt | TSin | TCos
 
   -- Gates
   | THApp | TQFT | TRQFT

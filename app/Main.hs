@@ -13,7 +13,6 @@ import qualified Data.Text.Lazy.IO   as L.IO
 import           Data.Maybe
     (fromMaybe)
 import           Qafny.Config
-import           Qafny.Utils.Path
 import           Qafny.Runner
     (Production (..), collectErrors, produceCodegen)
 import           Qafny.Syntax.Emit
@@ -21,14 +20,15 @@ import           Qafny.Syntax.Parser
     (scanAndParse)
 import           Qafny.Syntax.Render
     (hPutDoc, putDoc)
+import           Qafny.Utils.Path
 import           System.Directory
     (doesFileExist, getHomeDirectory, makeAbsolute)
 import           System.Environment
-    (getArgs, getExecutablePath)
+    (getArgs)
 import           System.Exit
     (exitFailure)
 import           System.FilePath
-    (joinPath, makeRelative, normalise, splitPath, (-<.>), (</>))
+    (makeRelative, (-<.>), (</>))
 import           System.IO
     (IOMode (WriteMode), hClose, openFile)
 import           Text.Printf

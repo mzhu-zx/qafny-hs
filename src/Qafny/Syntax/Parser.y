@@ -24,8 +24,15 @@ import           Data.Maybe
 %monad { Parser }{ >>= }{ return }
 
 %token
+'_'                   { ( _, L.TWildcardName ""  ) }
+'1'                 { ( _, L.TWildcardName "1" ) }
+'S'                   { ( _, L.TWildcardName "_S" ) }
+'T'                   { ( _, L.TWildcardName "_T" ) }
+'o'                   { ( _, L.TWildcardName "_o" ) }
+'O'                   { ( _, L.TWildcardName "_O" ) }
+
+namedW                { ( _, L.TWildcardName $$ ) }
 digits                { ( _, L.TLitInt $$ ) }
-one                   { ( _, L.TLitInt 1  ) }
 dafny                 { ( _, L.TDafny $$  ) }
 "method"              { ( _, L.TMethod    ) }
 "ensures"             { ( _, L.TEnsures   ) }
@@ -33,8 +40,8 @@ dafny                 { ( _, L.TDafny $$  ) }
 "separates"           { ( _, L.TSeparates ) }
 "invariant"           { ( _, L.TInv       ) }
 "with"                { ( _, L.TWith      ) }
-"at"                  { ( _, L.TAt      ) }
-"split"               { ( _, L.TSplit      ) }
+"at"                  { ( _, L.TAt        ) }
+"split"               { ( _, L.TSplit     ) }
 "for"                 { ( _, L.TFor       ) }
 "returns"             { ( _, L.TReturns   ) }
 "not"                 { ( _, L.TNot       ) }
@@ -57,15 +64,15 @@ dafny                 { ( _, L.TDafny $$  ) }
 "var"                 { ( _, L.TVar       ) }
 "if"                  { ( _, L.TIf        ) }
 
-"isqrt"               { ( _, L.TISqrt       ) }
+"isqrt"               { ( _, L.TISqrt     ) }
 "sin"                 { ( _, L.TSin       ) }
 "cos"                 { ( _, L.TCos       ) }
 
 
-"λ"                   { ( _, L.TCl        ) }
+"λ"                   { ( _, L.TCl            ) }
 "Σ"                   { ( _, L.TUnicodeSum    ) }
 "⊗"                   { ( _, L.TUnicodeTensor ) }
-"ω"                   { ( _, L.TUnicodeOmega ) }
+"ω"                   { ( _, L.TUnicodeOmega  ) }
 "Ω"                   { ( _, L.TUnicodeSumOmega ) }
 "∈"                   { ( _, L.TUnicodeIn     ) }
 "↦"                   { ( _, L.TUnicodeMap    ) }
@@ -86,7 +93,6 @@ dafny                 { ( _, L.TDafny $$  ) }
 '{'                   { ( _, L.TLBrace    ) }
 '}'                   { ( _, L.TRBrace    ) }
 id                    { ( _, L.TId $$     ) }
-'_'                   { ( _, L.TWildcard  ) }
 ','                   { ( _, L.TComma     ) }
 ':'                   { ( _, L.TColon     ) }
 '.'                   { ( _, L.TDot       ) }
@@ -205,16 +211,19 @@ nullableId :: { Var }
 intv :: { Intv }
   : '[' expr ".." expr ']'            { Intv $2 $4 }
 
+symT : alt("⊗", 'T') { $1 }
+symS : alt("Σ", 'S') { $1 }
+
 qspec ::  { SpecExp }
-  : "⊗" nullableId '.' pspec
+  : symT nullableId '.' pspec
                                       { SESpecHad (SpecHadF $2 $4) }
-  | "⊗" nullableId '.' expr
+  | symT nullableId '.' expr
                                       { SESpecNor (SpecNorF $2 $4) }
-  | "Σ" id "∈" intv '.' ampExp pspec tuple(expr)
+  | symS id "∈" intv '.' ampExp pspec tuple(expr)
                                       { SESpecEn (SpecEnF $2 $4 $6 $7 $8) }
-  | "Σ" id "∈" intv '.'               {- 5  -}
+  | symS id "∈" intv '.'              {- 5  -}
     ampExp pspec                      {- 7  -}
-    "⊗" id "∈" intv '.'               {- 12 -}
+    symT id "∈" intv '.'              {- 12 -}
     tuple(expr)
                                       { SESpecEn01 (SpecEn01F $2 $4 $6 $7 $9 $11 $13) }
   | '_'                               { SEWildcard }
@@ -228,17 +237,20 @@ ampExp :: { AmpExp }
   | "sin" '(' expr ')'                     { ASin $3          }
   | "cos" '(' expr ')'                     { ASin $3          }
 
+symo : alt("ω", 'o') { $1 }
+symO : alt("Ω", 'O')  { $1 }
+
 -- phase specification
 pspec :: { PhaseExp }
   : {- empty -}                            { PhaseWildCard          }
-  | one                                    { PhaseZ                 }
-  | "ω" '(' expr ',' expr ')' '~'          { PhaseOmega $3 $5       }
-  | "Ω" id "∈" '[' expr ".." expr ']' '.' '(' expr ',' expr ')' '~'
+  | '1' '~'                                { PhaseZ                 }
+  | symo '(' expr ',' expr ')' '~'         { PhaseOmega $3 $5       }
+  | symO id "∈" '[' expr ".." expr ']' '.' '(' expr ',' expr ')' '~'
                                            { PhaseSumOmega (Range $2 $5 $7) $11 $13 }
 
 pbinder :: { PhaseBinder }
   : '_'                                    { PhaseWildCard          }
-  | one                                    { PhaseZ                 }
+  | '1'                                    { PhaseZ                 }
   | "ω" '(' id ',' id ')'                  { PhaseOmega $3 $5       }
   | "Ω" id "∈" '[' expr ".." expr ']' '.' '(' id ',' id ')'
                                            { PhaseSumOmega (Range $2 $5 $7) $11 $13 }
@@ -321,6 +333,7 @@ arith :: { Op2 }
  | '*'                      { OMul }
  | '\%'                     { OMod }
 
+
 atomic                                                                      
   : digits                            { ENum $1                }
   | id tuple(expr)                    { EApp $1 $2             }
@@ -355,6 +368,12 @@ manyComma_(p)
 opt(p)
   : {- empty -}                       { Nothing }
   | p                                 { Just $1 }
+
+
+alt(p, q)
+ : p { $1 }
+ | q { $1 }
+
 
 {
 scanAndParse :: String -> Parser AST
