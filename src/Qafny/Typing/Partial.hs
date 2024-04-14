@@ -1,14 +1,20 @@
+{-# LANGUAGE
+    MultiWayIf
+  #-}
+
 -- | Instantiate partial evaluation engine in the type domain.
 module Qafny.Typing.Partial where
 
+import           Qafny.Analysis.Interval
 import           Qafny.Effect
 import           Qafny.Syntax.AST
 import           Qafny.Syntax.Subst
 
+import           Data.Foldable
+    (Foldable (foldl'))
 import           Data.List.NonEmpty
     (NonEmpty (..))
 import qualified Data.List.NonEmpty      as NE
-import           Qafny.Analysis.Interval
 
 -- * Lattice and ordering operators lifted to IEnv
 
@@ -53,6 +59,31 @@ isBotI
   => m (Range -> NonEmpty (Maybe Bool))
 isBotI = do
   ienv <- ask
-  return $ \r -> isBot . (\env -> fixN (substR env) (length env) r) <$> nondetIEnv ienv
+  return $ \r -> isBot .
+    (\env -> fixN (substR env) (length env) r)
+    <$> nondetIEnv ienv
 
 
+--------------------------------------------------------------------------------
+-- * Instantiate lub in `Intv` domain (defined in AST)
+--------------------------------------------------------------------------------
+-- | Assumption: both intervals are well-formed, so it suffices to compare
+-- between lefts and between rights only.
+--
+instLubIntv :: (Has (Reader IEnv) sig m) => m ([Intv] -> Maybe Intv)
+instLubIntv = do
+  lubSome <$> liftIEnv2 (⊑)
+  where
+    lubSome (≤) [ ]  = Nothing
+    lubSome (≤) (x:xs) =
+      foldl' go' (Just x) xs
+      where
+        go' acc y = acc >>= lub' y
+        lub' (Intv al ar) (Intv bl br) = do
+          l <- if | allI (al ≤ bl) -> Just al
+                  | allI (bl ≤ al) -> Just bl
+                  | otherwise      -> Nothing
+          r <- if | allI (ar ≤ br) -> Just br
+                  | allI (br ≤ ar) -> Just ar
+                  | otherwise      -> Nothing
+          pure (Intv l r)

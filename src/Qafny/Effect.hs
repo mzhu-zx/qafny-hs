@@ -9,7 +9,7 @@ module Qafny.Effect
   , module Effect.Gensym
   , GensymEmitterWithState, GensymEmitterWithStateError, StateMayFail
   , GensymMeta
-  , HasResolution, GenConditionally, MayFail
+  , HasResolution, GenConditionally, MayFail, HasPContext
   ) where
 
 -- | Re-export useful effects to avoid cluttered imports in other modules
@@ -57,3 +57,7 @@ type GenConditionally sig m =
 
 type MayFail sig m =
   Has (Error Builder) sig m
+
+-- | May run partial evaluation in context
+type HasPContext sig m =
+  Has (Reader IEnv) sig m

@@ -69,7 +69,7 @@ eIntv :: Var -> Exp' -> Exp' -> Exp'
 eIntv x l r = EEmit (EOpChained l [(OLe, EVar x), (OLt, r)])
 
 predFromIntv :: Intv -> Var -> Exp'
-predFromIntv (Intv l r) v = eIntv v l r 
+predFromIntv (Intv l r) v = eIntv v (reduce l) (reduce r) 
 
 ands :: [Exp'] -> Exp'
 ands []       = EBool True
@@ -127,7 +127,7 @@ mkCard :: AstInjection a Exp' => a -> Exp'
 mkCard = injAst . ECard . injAst
 
 rangeSize :: Range -> Exp'
-rangeSize (Range _ l r) = r - l
+rangeSize (Range _ l r) = reduce (r - l)
 
 (>::=:) ::  (AstInjection a Exp') => Var -> a -> Stmt'
 v1 >::=: v2 = v1 ::=: injAst v2
@@ -172,6 +172,11 @@ mkPow2 e = injAst $ ECall "Pow2" [injAst e]
 mkForallEq :: Var -> (Var -> Exp') -> Var -> Exp' -> Exp'
 mkForallEq x p v e = EForall (Binding x TNat) (Just (p x)) ((v >:@: x) `eEq` e)
 
+-- | "forall x : nat | P(x) :: |v[x]| == e"
+mkForallCardEq :: Var -> (Var -> Exp') -> Var -> Exp' -> Exp'
+mkForallCardEq x p v e =
+  EForall (Binding x TNat) (Just (p x)) (mkCard (v >:@: x) `eEq` e)
+
 -- | "forall x : t1 | P(x) :: forall y : t2 | Q(y) :: v[x][y] == e"
 mkForallEq2
   :: Var -> (Var -> Exp')
@@ -181,6 +186,7 @@ mkForallEq2 x p y q v e =
   EForall (Binding x TNat) (Just (p x)) $
   EForall (Binding y TNat) (Just (q y))
   ((v >:@: x >:@: y) `eEq` e)
+
 
 
 (>//) :: (AstInjection a Exp', AstInjection b Exp') => a -> b -> Exp'

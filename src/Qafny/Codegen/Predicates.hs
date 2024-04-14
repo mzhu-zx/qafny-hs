@@ -19,8 +19,6 @@ import           Prelude                  hiding
 
 -- Effects
 import           Data.Maybe
-import           Text.Printf
-    (printf)
 
 -- Qafny
 import           Qafny.Effect
@@ -43,12 +41,18 @@ import           Data.Functor
     ((<&>))
 import           Data.List
     (sort)
+import           Qafny.Analysis.Partial
+    (Reducible (reduce))
 import           Qafny.Codegen.Utils
     (runWithCallStack)
 import           Qafny.Syntax.EmitBinding
+import           Qafny.Typing.Partial
+    (instLubIntv)
 import           Qafny.Typing.Predicates
     (wfQTySpecs, wfSignatureFromPredicate')
 import           Qafny.Utils.EmitBinding
+import           Qafny.Utils.Partial
+    (gatherDynBoundsFromSpec)
 import           Qafny.Utils.Utils
     (onlyOne, tracep)
 
@@ -93,37 +97,70 @@ codegenAssertion' e = return [e]
 -- | Take in the emit variable corresponding to each range in the partition and the
 -- partition type; with which, generate expressions (predicates)
 codegenSpecExp
-  :: forall sig m . (Has (Error Builder) sig m, Has (Reader Bool) sig m, Has Trace sig m)
+  :: forall sig m .
+     ( MayFail sig m, HasPContext sig m )
   => EmitData -> [(Range, EmitData)] -> SRel -> m [Exp']
 codegenSpecExp locusEd rangesEd srel = do
-  trace (show srel)
-  go srel
+  lub1' <- instLubIntv
+  go lub1' srel
   where
-    go :: SRel -> m [Exp']
-    go (RNor specs) = do
+    go :: ([Intv] -> Maybe Intv) -> SRel -> m [Exp']
+    go _ (RNor specs) = do
       (range, ed) <- onlyOne throwError' rangesEd
       vKet <- fst <$> visitEmBasis ed
-      return $ codegenSpecExpNor vKet (predFromRange range) <$> specs
-    go (RHad specs) = do
+      return $
+        assertReprLengthIsRangeSize vKet range
+        : (codegenSpecExpNor vKet (predFromRange range) <$> specs)
+    go _ (RHad specs) = do
       (range, _) <- onlyOne throwError' rangesEd
       return $ case evPhaseRef locusEd of
         Nothing -> []
-        Just (ref, _) -> do
-          concatMap (codegenSpecExpHad ref (predFromRange range)) specs
-    go (REn specs) = do
+        Just (ref@PhaseRef{prRepr}, _) ->
+          assertReprLengthIsRangeSize prRepr range
+          : concatMap (codegenSpecExpHad ref (predFromRange range)) specs
+    go lub1' (REn specs) = do
       (vAmp, _) <- visitEm evAmp locusEd
       let refMaybe = fst <$> evPhaseRef locusEd
           rvKets = second ((fst <$>) . evBasis) <$> rangesEd
-      return $ concatMap (codegenSpecExpEn vAmp refMaybe rvKets) specs
-    go (REn01 specs) = do
+          vKetRs = mapMaybe ((fst <$>) . evBasis . snd) rangesEd
+          dynBounds = gatherDynBoundsFromSpec srel
+      dBLub <- maybe (errUndecidableDynBound dynBounds) pure (lub1' dynBounds)
+      return $
+        assertReprLengthIsDyn dBLub vAmp
+        : (assertReprLengthIsDyn dBLub <$> vKetRs)
+        ++ maybeToList (assertReprLengthIsDyn dBLub . prRepr <$> refMaybe)
+        ++ concatMap (codegenSpecExpEn vAmp refMaybe rvKets) specs
+    go lub1' (REn01 specs) = do
       (vAmp, _) <- visitEm evAmp locusEd
-      let refMaybe = fst <$> evPhaseRef locusEd
-          rvKets = second ((fst <$>) . evBasis) <$> rangesEd
-      return $ concatMap (codegenSpecExpEn01 vAmp refMaybe rvKets) specs
+      let refMaybe  = fst <$> evPhaseRef locusEd
+          rvKets    = second ((fst <$>) . evBasis) <$> rangesEd
+          vKetRs    = mapMaybe ((fst <$>) . evBasis . snd) rangesEd
+          dynBounds = gatherDynBoundsFromSpec srel
+      dBLub <- maybe (errUndecidableDynBound dynBounds) pure (lub1' dynBounds)
+      return $
+        assertReprLengthIsDyn dBLub vAmp
+        : (assertReprLengthIsDyn dBLub <$> vKetRs)
+        ++ maybeToList (assertReprLengthIsDyn dBLub . prRepr <$> refMaybe)
+        ++ concatMap (codegenSpecExpEn01 vAmp refMaybe rvKets) specs
+    go _ RWild =
+      throwError' (pp "Unexpected wildcard specification.")
+
+    assertReprLengthIsDyn (Intv _ er) vKet =
+      mkCard vKet `eEq` reduce er
+
+    assertReprLengthIsRangeSize vKet r =
+      mkCard vKet `eEq` rangeSize r
 
     predFromRange r =
       let bound = Intv 0 (rangeSize r)
       in predFromIntv  bound
+
+    errUndecidableDynBound bs = throwError' $ vsep
+      [ pp "Cannot decide the least upperbound of the following intervals."
+      , incr4 . align . list $ bs
+      ]
+
+
 
 codegenSpecExpNor :: Var -> (Var -> Exp') -> SpecNor -> Exp'
 codegenSpecExpNor vKet pred SpecNorF{norVar, norKet} =
@@ -163,16 +200,19 @@ codegenSpecExpEn01 vAmp prMaybe rvKets
 
     ampPred = codegenAmpExp vAmp en01VarSup predIntv en01AmpCoef
     -- ampPred = [ vAmp `eEq` codegenAmpExp en01AmpCoef]
-    phasePreds = concat $ prMaybe <&> \pr ->
-      codegenPhaseSpec pr en01VarSup predIntv en01PhaseCoef
-    ketPreds = -- TODO: generate mod using Range
-      zipWith perKetExp rvKets en01Kets
+    phasePreds = concatMap goPhasePreds prMaybe
+    goPhasePreds pr = codegenPhaseSpec pr en01VarSup predIntv en01PhaseCoef
+    ketPreds = -- TODO: geneorate mod using Range
+      concat $ zipWith perKetExp rvKets en01Kets
 
-    perKetExp (_, v) EWildcard = EBool True
-    perKetExp (_, Nothing) _   = EBool False -- EMMMMM, I should warn instead
-    perKetExp (_, Just v) eKet =
-      mkForallEq2 en01VarSup predIntv en01VarQbit predIntvQ v eKet
-
+    perKetExp (_, v)       EWildcard =
+      pure $ EBool True
+    perKetExp (_, Nothing) _    =
+      pure $ EBool False -- EMMMMM, I should warn instead
+    perKetExp (r, Just v)  eKet =
+      [ mkForallCardEq en01VarSup predIntv v (rangeSize r)
+      , mkForallEq2 en01VarSup predIntv en01VarQbit predIntvQ v eKet
+      ]
 
 codegenAmpExp :: Var -> Var -> (Var -> Exp') -> AmpExp -> [Exp']
 codegenAmpExp _ _ _ ADefault = []
@@ -205,6 +245,7 @@ codegenPhaseSpec PhaseRef{prRepr, prBase} vIdx predIdx = go
 codegenRequires
   :: forall m sig .
      ( GensymEmitterWithStateError sig m
+     , HasPContext sig m 
      , GensymMeta sig m
      , Has Trace sig m
      )

@@ -222,8 +222,8 @@ codegenToplevel'Method q@(QMethod vMethod bds rts rqs ens (Just block)) = runWit
   -- construct requires, parameters and the method body
   mty <- getMethodType vMethod
   (countMeta, (countEmit, (rbdvsEmitR', rbdvsEmitB), (appetizer, mainCourse))) <-
-    local (appkEnvWithBds bds) $
-    codegenRequiresAndParams mty `resumeGensym` codegenMethodBody iEnv block
+    local (appkEnvWithBds bds) . runReader iEnv
+    $ codegenRequiresAndParams mty `resumeGensym` codegenMethodBody block
 
   let (rqsCG, params, stmtsMatchParams) = appetizer
   let blockCG = mainCourse
@@ -262,8 +262,7 @@ codegenToplevel'Method q@(QMethod vMethod bds rts rqs ens (Just block)) = runWit
       dumpSt "genEmitSt"
       return (es, codegenMethodParams mty eds, stmtsCopy)
 
-    codegenMethodBody iEnv =
-      runReader iEnv . -- | TODO: propagate parameter constraints
+    codegenMethodBody =
       runReader TEn .  -- | resolve λ to EN on default
       runReader True .
       -- ((,) <$> genEmitSt <*>) .
