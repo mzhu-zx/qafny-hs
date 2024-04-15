@@ -22,26 +22,25 @@ import           Control.Effect.NonDet
 import           Qafny.Effect
 
 -- Qafny
-import           Qafny.Error
-    (QError (..))
 import           Qafny.Analysis.Interval
 import           Qafny.Analysis.Partial
     (Reducible (reduce))
+import           Qafny.Error
+    (QError (..))
 import           Qafny.Syntax.AST
-import           Qafny.Syntax.Subst
 import           Qafny.Syntax.Emit
 import           Qafny.Syntax.EmitBinding
 import           Qafny.Syntax.IR
+import           Qafny.Syntax.Subst
 import           Qafny.Typing.Utils
 import           Qafny.Utils.Utils
-    (errTrace, exp2AExp, fromMaybeM, gensymLoc, rethrowMaybe, uncurry3)
 
 import           Qafny.Typing.Partial
 import           Qafny.Utils.EmitBinding
 
 -- Utils
 import           Control.Carrier.State.Lazy
-    (evalState, execState)
+    (evalState, execState, runState)
 import           Control.Lens
     (at, (%~), (?~), (^.))
 import           Control.Monad
@@ -681,70 +680,50 @@ retypePartition = (snd <$>) .: castScheme
 --------------------------------------------------------------------------------
 -- * Merge Typing
 --------------------------------------------------------------------------------
-
-matchEmitStates
-  :: EmitState -> EmitState -> [(Range, (EmitData, EmitData))]
-matchEmitStates es1 es2 =
-  filter removeEq . Map.toList $ Map.intersectionWith (,) em1 em2
-  where
-    removeEq (_, (v1, v2)) = v1 /= v2
-    reduceMap = reduceKeys . ripLoc
-    reduceKeys = Map.mapKeys reduce
-    ripLoc = Map.mapKeys getInl . Map.filterWithKey (\k _ -> isInl k)
-    (em1, em2) = (reduceMap es1, reduceMap es2)
-
-matchEmitStatesVars
+-- | Given two states and two lists of loci, return matched LoucsEmitData assuming
+-- there's a one-to-one correspondence between those two lists of loci.
+matchLocusEmitData
   :: Has (Error Builder) sig m
-  => EmitState -> EmitState -> m [(Range, ((Var, Ty), (Var, Ty)))]
-matchEmitStatesVars es1 es2 =
-  sequence [ (r,) <$> liftM2 (,) (byBasis ed1) (byBasis ed2)
-           | (r, (ed1, ed2)) <- reds ]
+  => EmitState -> EmitState -> [(Locus, Locus)] -> m [(LocusEmitData, LocusEmitData)]
+matchLocusEmitData esInit esLoop lociInitLoop =
+  go `mapM` lociInitLoop
   where
-    byBasis = visitEm evBasis
-    reds = matchEmitStates es1 es2
+    go (locusInit, locusLoop) = 
+      (,)
+      <$> findEmsByLocusInEmitState esInit locusInit
+      <*> findEmsByLocusInEmitState esLoop locusLoop
 
+-- | Match loci in two typing states by their partition.
+matchLociInTState :: TState -> TState -> [(Locus, Locus)]
+matchLociInTState TState{_sSt=st1} TState{_sSt=st2} =
+  Map.elems $ Map.intersectionWithKey merge (mkTree st1) (mkTree st2)
+  where
+    merge part t1 t2 = both (uncurry3 (`Locus` part)) (t1, t2)
+    mkTree = Map.foldlWithKey' go Map.empty
+    go mp l (p, (qt, ds)) = Map.insert p (l, qt, ds)  mp
 
--- Given two states compute the correspondence of emitted varaible between two
--- states where 'tsInit' refers to the state before iteration starts and
--- 'tsLoop' is for the state during iteration.
-matchStateCorrLoop
+-- | Match Locus emit data from two typing state by their partition.
+matchLocusEmitDataFromTStates
   :: Has (Error Builder) sig m
-  => TState -> TState -> AEnv -> m [((Var, Ty), (Var, Ty))]
-matchStateCorrLoop tsInit tsLoop env =
-  (snd <$>) <$> matchEmitStatesVars esLoop esInit
+  => TState -> TState -> m [(LocusEmitData, LocusEmitData)]
+matchLocusEmitDataFromTStates t1 t2 =
+  uncurry matchLocusEmitData emSts mLoci
   where
-    esInit = tsInit ^. emitSt
-    esLoop = subst env $ tsLoop ^. emitSt
-
+    emSts = both _emitSt (t1, t2)
+    mLoci = matchLociInTState t1 t2
 
 -- | Take 2 type states, match emit variables by their ranges and output
 -- merge scheme for each of them.
-mergeMatchedTState
-  :: ( Has (Error Builder) sig m
-     , Has (Reader IEnv) sig m
-     , Has Trace sig m)
-  => TState -> TState -> m [MergeScheme]
-mergeMatchedTState
-  ts1@TState {_emitSt=eSt1}
-  ts2@TState {_emitSt=eSt2}
-  = do
-    matchedRangeAndVars <- matchEmitStatesVars eSt1 eSt2
-    (catMaybes <$>) . forM matchedRangeAndVars $ \(r, (v1, v2)) -> do
-      (qt1, _) <- getQPTy ts1 r
-      (qt2, _) <- getQPTy ts2 r
-      when (qt1 /= qt2) $ throwError' "How can they be different?"
-      pure $ case qt1 of
-        _ | qt1 `elem` [ TEn, TEn01 ] -> Just . MEqual $
-            EqualStrategy
-            { esRange = r
-            , esQTy = qt1
-            , esVMain = v1
-            , esVAux = v2
-            }
-        _ -> Nothing
+mergeMatchedTState :: MayFail sig m => TState -> TState -> m [MergeScheme]
+mergeMatchedTState ts1 ts2 = do
+  let matchedLoci  = matchLociInTState ts1 ts2
+      modifiedLoci = filter ensureEn matchedLoci
+  matchedLocusData <- matchLocusEmitData (_emitSt ts1) (_emitSt ts2) modifiedLoci
+  pure . pure . MEqual . EqualStrategy $ matchedLocusData
   where
-    getQPTy ts r = evalState ts $ inferRangeTy r
-
+    -- FIXME: raise a warning if any of them is not En typed
+    -- FIXME: Use move strategy for non-En types
+    ensureEn (l1, l2) = isEn (qty l1) && isEn (qty l2)
 
 -- | Merge the second Locus into the first one
 -- FIXME: Check if phase type is correct!
@@ -933,21 +912,21 @@ tStateFromPartitionQTys
      , Has (Error Builder) sig m
      , Has Trace sig m
      )
-  => [(Partition, QTy, [Int])] -> m TState
-tStateFromPartitionQTys pqts = execState initTState $ do
-  forM_ pqts (uncurry3 extendState)
+  => [(Partition, QTy, [Int])] -> m (TState, [Locus])
+tStateFromPartitionQTys pqts = runState initTState $ do
+  forM pqts ((fst <$>) . uncurry3 extendState')
 
 -- | Extend the typing state with a partition and its type, generate emit
 -- symbols for every range in the partition and return all emit data
 -- the same order as those ranges.
-extendState
+extendState'
   :: ( Has (Gensym Emitter) sig m
      , Has (Gensym Var) sig m
      , Has (State TState) sig m
      , Has Trace sig m
      )
-  => Partition -> QTy -> [Int] -> m (EmitData, [(Range, EmitData)])
-extendState p@Partition{ranges} qt dgrs = do
+  => Partition -> QTy -> [Int] -> m (Locus, (EmitData, [(Range, EmitData)]))
+extendState' p@Partition{ranges} qt dgrs = do
   trace "* extendState"
   sLoc <- gensymLoc "receiver"
   -- "receive" a new locus
@@ -956,5 +935,13 @@ extendState p@Partition{ranges} qt dgrs = do
   let xMap = [ (v, [(r, sLoc)]) | r@(Range v _ _) <- ranges ]
   xSt %= Map.unionWith (++) (Map.fromListWith (++) xMap)
   let sLocus = Locus{loc=sLoc, qty=qt, part=p, degrees=dgrs}
-  genEmStFromLocus sLocus
+  (sLocus, ) <$> genEmStFromLocus sLocus
 
+extendState
+  :: ( Has (Gensym Emitter) sig m
+     , Has (Gensym Var) sig m
+     , Has (State TState) sig m
+     , Has Trace sig m
+     )
+  => Partition -> QTy -> [Int] -> m (EmitData, [(Range, EmitData)])
+extendState p q d = snd <$> extendState' p q d

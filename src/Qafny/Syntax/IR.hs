@@ -23,7 +23,6 @@ import           Qafny.Syntax.AST
 import           Qafny.TTG
 import           Qafny.Syntax.EmitBinding
 
-
 --------------------------------------------------------------------------------
 -- High-Order Types
 --------------------------------------------------------------------------------
@@ -98,6 +97,8 @@ data TEnv = TEnv
 type RangeOrLoc = Range :+: Loc
 type EmitState = Map.Map RangeOrLoc EmitData
 
+
+
 data TState = TState
   { _sSt    :: Map.Map Loc (Partition, (QTy, [Int])) -- partition type state
   , _xSt    :: Map.Map Var [(Range, Loc)]            -- range reference state
@@ -151,16 +152,13 @@ data CastScheme = CastScheme
   deriving Show
 
 data MergeScheme
-  = MJoin JoinStrategy  -- ^ Join a 'Range' into an existing 'Range'
+  = MJoin  JoinStrategy  -- ^ Join a 'Range' into an existing 'Range'
   | MMove
   | MEqual EqualStrategy -- ^ Join two copies of data of the same range
   deriving Show
 
-data EqualStrategy = EqualStrategy
-  { esRange :: Range     -- ^ range
-  , esQTy   :: QTy       -- ^ QTy of the corresponding range
-  , esVMain :: (Var, Ty) -- ^ the var to stay
-  , esVAux  :: (Var, Ty) -- ^ the var to be absorbed
+newtype EqualStrategy = EqualStrategy
+  { esEdIntoFrom :: [(LocusEmitData, LocusEmitData)]
   }
   deriving Show
 

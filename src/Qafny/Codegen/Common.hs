@@ -11,9 +11,15 @@ import           Qafny.Syntax.EmitBinding
 --------------------------------------------------------------------------------
 -- * EmitData Utils
 --------------------------------------------------------------------------------
-codegenAssignEmitData :: [EmitData] -> [EmitData] -> [Stmt']
-codegenAssignEmitData eds1 eds2 =
-  concat $ zipWith go eds1 eds2
+codegenAssignEmitData :: [(EmitData, EmitData)] -> [Stmt']
+codegenAssignEmitData eds = uncurry go `concatMap` eds 
   where
     go = zipWith perVar `on` extractEmitables
     perVar (v1, _) (v2, _) = v1 ::=: EVar v2
+
+codegenAssignEmitData' :: [(EmitData, EmitData)] -> [(Stmt', Var)]
+codegenAssignEmitData' eds = uncurry go `concatMap` eds 
+  where
+    go = zipWith perVar `on` extractEmitables
+    perVar (v1, _) (v2, _) = (v1 ::=: EVar v2, v1)
+

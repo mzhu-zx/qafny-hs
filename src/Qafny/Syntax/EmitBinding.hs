@@ -1,7 +1,7 @@
 {-# LANGUAGE
     FlexibleInstances
-  , TypeOperators
   , PatternSynonyms
+  , TypeOperators
   #-}
 
 module Qafny.Syntax.EmitBinding where
@@ -9,7 +9,6 @@ module Qafny.Syntax.EmitBinding where
 
 import           Control.Applicative
     (Alternative (..))
-import qualified Data.Map.Strict     as Map
 import           Data.Maybe
     (catMaybes)
 import           Data.Sum
@@ -21,6 +20,9 @@ import           Qafny.Syntax.AST
 -- | 'EmitData' stores emit variables (a.k.a. data variables) that's supposed to
 -- be mapped from either a 'Loc' or a 'Range'
 --
+type LocusEmitData = LocusTEmitData []
+type LocusTEmitData t = (EmitData, t (Range, EmitData))
+
 data EmitData = EmitData
   { evPhaseRef :: Maybe (PhaseRef, Ty)   -- ^ the ref & type of the phase
   , evBasis    :: Maybe (Var, Ty)        -- ^ the var & type of its kets
@@ -80,7 +82,7 @@ data Emitter
 --   EmitData { evPhaseRef = Just (PhaseRef{prBase=pvRepr, prRepr=pvBase}, pvPhaseTy)
 --            , evBasis = Nothing
 --            , evAmp = Nothing
---            } 
+--            }
 
 -- pattern RangeEm :: Range -> Var -> Ty -> (Range, EmitData)
 -- pattern RangeEm{prRange, pvKet, pvKetTy} =

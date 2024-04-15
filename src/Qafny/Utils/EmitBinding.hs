@@ -20,13 +20,15 @@ module Qafny.Utils.EmitBinding
   , visitEm, visitEms, visitEmBasis, visitEmsBasis
   , findVisitEm, findVisitEms
   , findEmitBasesByRanges, findEmitBasisByRange
-  , findEmsByLocus
+  , findEmsByLocus, findEmInEmitState, findEmsByLocusInEmitState
     -- * Deletion
   , deleteEm, deleteEms, deleteEmPartition
     -- * Update
   , appendEmSt
     -- * Helper
   , fsts, extractEmitablesFromLocus, extractEmitablesFromEds, eraseRanges
+  , eraseMatchedRanges, findThenGenLocus
+    -- * Type
   )
 where
 
@@ -53,7 +55,7 @@ import           Qafny.Syntax.IR
 import           Qafny.Typing.Utils
     (tyAmp, tyKetByQTy, typingPhaseEmitReprN)
 import           Qafny.Utils.Utils
-    (errTrace)
+    (errTrace, zipWithExactly)
 
 --------------------------------------------------------------------------------
 -- * Gensym Utils
@@ -66,7 +68,6 @@ import           Qafny.Utils.Utils
 --------------------------------------------------------------------------------
 
 -- ** Basics
-
 gensymBinding :: (Has (Gensym Emitter) sig m) => Var -> Ty -> m (Var, Ty)
 gensymBinding v t = (,t) <$> gensym (EmAnyBinding v t)
 
@@ -203,16 +204,27 @@ genEmStUpdateKets qty ranges = do
 
 
 -- ** Getters
-findEm :: StateMayFail sig m => RangeOrLoc -> m EmitData
-findEm rl = do
-  ed <- use emitSt <&> (^. at rl)
-  maybe (complain =<< use emitSt) return ed
+findEmInEmitState :: MayFail sig m => EmitState -> RangeOrLoc -> m EmitData
+findEmInEmitState es rl = do
+  maybe (complain es) return (es ^. at rl)
   where
     complain st = throwError $
-      rl <+> "cannot be found in emitSt" <!> line <+> indent 4 st
+      rl <+> "cannot be found in emitSt" <!> line <+> incr4 st
+
+findEm :: StateMayFail sig m => RangeOrLoc -> m EmitData
+findEm rl = use emitSt >>= (`findEmInEmitState` rl)
 
 findEms :: StateMayFail sig m => [RangeOrLoc] -> m [EmitData]
 findEms = mapM findEm
+
+findEmsByLocusInEmitState
+  :: ( MayFail sig m , Traversable t)
+  => EmitState -> LocusT t -> m (EmitData, t (Range, EmitData))
+findEmsByLocusInEmitState es Locus{loc, part=Partition{ranges}, qty, degrees} =
+  liftM2 (,) (findEm' (inj loc)) (mapM perRange ranges)
+  where
+    findEm' = findEmInEmitState es
+    perRange r = (r,) <$> findEm' (inj r)
 
 findEmsByLocus :: ( StateMayFail sig m , Traversable t)
                => LocusT t -> m (EmitData, t (Range, EmitData))
@@ -289,10 +301,17 @@ deleteEmPartition l rs =
   deleteEm (inj l) >>
   deleteEms (inj <$> rs)
 
+
+-- ** Together
+findThenGenLocus
+  :: GensymEmitterWithStateError sig m
+  => Locus -> m (LocusEmitData, LocusEmitData)
+findThenGenLocus locus =
+  liftA2 (,) (findEmsByLocus locus) (genEmStFromLocus locus)
+
 -- ** Helpers
 fsts :: [(a, b)] -> [a]
 fsts = (fst <$>)
-
 
 extractEmitablesFromLocus :: StateMayFail sig m => Locus -> m [(Var, Ty)]
 extractEmitablesFromLocus Locus{loc, part} = do
@@ -306,3 +325,13 @@ extractEmitablesFromEds eds rEds =
 
 eraseRanges :: (EmitData, [(Range, EmitData)]) -> [EmitData]
 eraseRanges (ed, eds) = ed : (snd <$> eds)
+
+eraseMatchedRanges
+  :: MayFail sig m
+  => [(LocusEmitData, LocusEmitData)] -> m [(EmitData, EmitData)]
+eraseMatchedRanges = (concat <$>) . mapM (uncurry go)
+  where
+    -- go :: LocusEmitData -> LocusEmitData -> m [(EmitData, EmitData)]
+    go led1 led2 = zipWithExactly' (,) (eraseRanges led1) (eraseRanges led2)
+    zipWithExactly' = zipWithExactly pp pp
+

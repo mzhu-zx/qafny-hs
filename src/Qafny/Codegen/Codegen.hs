@@ -35,7 +35,7 @@ import           Qafny.Gensym
 import           Control.Lens
     (at, non, (%~), (?~), (^.))
 import           Control.Monad
-    (forM_)
+    (forM_, void)
 import           Qafny.Utils.Common
 
 import           Data.List.NonEmpty
@@ -63,10 +63,10 @@ import           Qafny.Syntax.EmitBinding
 import           Qafny.Syntax.IR
 import           Qafny.Typing
     (appkEnvWithBds, castScheme, checkSubtype, collectConstraints,
-    matchEmitStatesVars, matchStateCorrLoop, mergeCandidateHad,
-    mergeMatchedTState, mergeScheme, removeTStateByLocus, resolvePartition,
-    resolvePartitions, splitScheme, splitSchemePartition, splitThenCastScheme,
-    tStateFromPartitionQTys, typingExp, typingGuard, typingPartition)
+    mergeCandidateHad, mergeMatchedTState, mergeScheme, removeTStateByLocus,
+    resolvePartition, resolvePartitions, splitScheme, splitSchemePartition,
+    splitThenCastScheme, tStateFromPartitionQTys, typingExp, typingGuard,
+    typingPartition)
 import           Qafny.Typing.Utils
     (emitTypeFromDegree, isEn)
 
@@ -94,6 +94,8 @@ import           Qafny.Typing.Method
     resolveMethodApplicationRets)
 import           Qafny.Typing.Predicates
     (dropSignatureSpecs, wfSignatureFromPredicates)
+import           Qafny.Typing.Typing
+    (matchLocusEmitData, matchLocusEmitDataFromTStates)
 import           Qafny.Utils.EmitBinding
 import           Qafny.Utils.TraceF
     (Traceable (tracef))
@@ -594,7 +596,7 @@ codegenStmt'For (SFor idx boundl boundr eG invs (Just seps) body) = do
     -- | Generate code and state for the precondition after which
     -- | we only need to concern those mentioned by the loop invariants
     codegenInit infoInv infoInvPre = do
-      (lPreCasted, stmtsPreGuard) <- unzip <$> infoInvPre `forM` \(sInv, qtInv, _) -> do
+      (lociPreLoop, stmtsPreGuard) <- unzip <$> infoInvPre `forM` \(sInv, qtInv, _) -> do
         lInv <- resolvePartition sInv
         case sInv of
           Partition [rInv] -> do
@@ -608,15 +610,14 @@ codegenStmt'For (SFor idx boundl boundr eG invs (Just seps) body) = do
       statePreLoop <- get @TState
 
       -- | Do type inference with the loop invariant typing state
-      stateLoop <- tStateFromPartitionQTys infoInv
+      (stateLoop, lociLoop) <- tStateFromPartitionQTys infoInv
       -- trace $ printf "statePreLoop: %s\nstateLoop: %s"  (show statePreLoop) (show stateLoop)
-
       -- | pass preLoop variables to loop ones
-      matchedVarTys <- matchStateCorrLoop statePreLoop stateLoop [(idx, boundl)]
-      let stmtsEquiv = (\(e1, e2) -> mkAssignment (fst e1) (fst e2))
-            <$> matchedVarTys
-
-      return ( lPreCasted
+      matchedLocusEds <- matchLocusEmitData
+        (_emitSt statePreLoop) (_emitSt stateLoop) (zip lociPreLoop lociLoop)
+      stmtsEquiv <-
+        codegenAssignEmitData <$> eraseMatchedRanges matchedLocusEds
+      return ( lociPreLoop
              , concat stmtsPreGuard ++ stmtsEquiv
              , statePreLoop
              , stateLoop)
@@ -723,7 +724,8 @@ codegenFor'Body idx boundl boundr eG body stSep@(Locus{qty=qtSep}) newInvs = do
       stG' <- resolvePartition (part stGSplited)
       stmtsCGHad <- codegenStmt'For'Had stB stG' idx body
       dumpSt "the end of Had for loop"
-      stmtsMatchLoopBeginEnd <- codegenMatchLoopBeginEnd . inferTsLoopEnd $ stateIterBegin ^. emitSt
+      stmtsMatchLoopBeginEnd <-
+        codegenMatchLoopBeginEnd (inferTsLoopEnd stateIterBegin)
 
       return ( stmtsCastB -- ++ stmtsDupG -- ++ stmtsInitG
              , stmtsSplitG ++ stmtsCGHad ++ stmtsMatchLoopBeginEnd
@@ -736,15 +738,16 @@ codegenFor'Body idx boundl boundr eG body stSep@(Locus{qty=qtSep}) newInvs = do
 
       -- 1. save the "false" part to a new variable
       -- FIXME: write general function to replicate EmitData from Locus instead.
-      edsFalse <- findEmsByLocus stG
-      edsSaved@(edSavedL, edsSavedR) <- genEmStFromLocus stG
+      ledsdFalseNSaved@(_, (edSavedL, edsSavedR)) <- findThenGenLocus stG
+      -- edsFalse  <- findEmsByLocus stG
+      -- edsSaved@(edSavedL, edsSavedR) <- genEmStFromLocus stG
       -- vsEmitG <- findEmitBasesByRanges $ unpackPart sG
       -- redFalseG <- genEmStByRanges qtG (ranges sG)
       -- vsEmitGFalse <- mapM (visitEmBasis . snd) redFalseG
       -- let stmtsSaveFalse = uncurry (stmtAssignSlice (ENum 0) eSep)
       --       <$> zip (fsts vsEmitGFalse) (fsts vsEmitG)
-      let stmtsSaveFalse =
-            codegenAssignEmitData (eraseRanges edsSaved) (eraseRanges edsFalse)
+      stmtsSaveFalse <-
+        codegenAssignEmitData <$> eraseMatchedRanges [ledsdFalseNSaved]
       -- let stmtsFocusTrue = stmtAssignSelfRest eSep <$> fsts vsEmitG
 
       -- save the current emit symbol table for
@@ -758,7 +761,7 @@ codegenFor'Body idx boundl boundr eG body stSep@(Locus{qty=qtSep}) newInvs = do
 
       -- compile for the 'false' branch with non-essential statements suppressed
       (tsFalse, (stmtsFalse, vsFalse)) <- runState stateIterBegin $ do
-        installEmits ((inj (loc stG), edSavedL) : (first inj <$> edsSavedR))
+        void $ installEmits ((inj (loc stG), edSavedL) : (first inj <$> edsSavedR))
         local (const False) $ codegenHalf psBody
 
       -- compile the for body for the 'true' branch
@@ -772,7 +775,8 @@ codegenFor'Body idx boundl boundr eG body stSep@(Locus{qty=qtSep}) newInvs = do
       -- I need a way to merge two typing state here.
       put tsFalse
 
-      stmtsMatchLoopBeginEnd <- codegenMatchLoopBeginEnd . inferTsLoopEnd $ stateIterBegin ^. emitSt
+      stmtsMatchLoopBeginEnd <-
+        codegenMatchLoopBeginEnd (inferTsLoopEnd stateIterBegin)
 
       -- 4. put stashed part back
       return ( []
@@ -816,18 +820,16 @@ codegenFor'Body idx boundl boundr eG body stSep@(Locus{qty=qtSep}) newInvs = do
 
       return (inBlock stmtsBody ++ stmtsMerge, vsEmitMerge)
 
-    codegenMatchLoopBeginEnd emitStBegin = do
+    codegenMatchLoopBeginEnd stBegin = do
       -- Next, I need to collect ranges/partitions from the invariant with
       --   [ i := i + 1 ]
       -- Match those ranges with those in [ i := i ] case to compute the
       -- corresponding emitted variables
       --
       -- Use collected partitions and merge it with the absorbed typing state.
-      emitStEnd <- (^. emitSt) <$> get @TState
-      corrBeginEnd <- matchEmitStatesVars emitStBegin emitStEnd
-      let matchedVarsBE = both fst . snd <$> corrBeginEnd
-      -- I don't remember the purpose of this line, purely sanity check?
-      pure $ uncurry mkAssignment <$> matchedVarsBE
+      stEnd <- get @TState
+      matchedleds <- matchLocusEmitDataFromTStates stBegin stEnd
+      codegenAssignEmitData <$> eraseMatchedRanges matchedleds
 
 
     errNoSep = "Insufficient knowledge to perform a separation for a EN01 partition "

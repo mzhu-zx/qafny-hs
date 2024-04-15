@@ -42,7 +42,7 @@ import           Qafny.Typing.Typing
     (typingPartitionQTy)
 import           Qafny.Utils.EmitBinding
     (eraseRanges, extractEmitablesFromEds, findEmsByLocus, genEmStFromLocus,
-    gensymBinding)
+    gensymBinding, eraseMatchedRanges, findThenGenLocus)
 import           Qafny.Utils.Utils
     (fst2)
 
@@ -116,17 +116,14 @@ codegenMethodReturns MethodType{ mtSrcReturns=srcReturns
       qVars = [ (v, Range v 0 card) | MTyQuantum v card <- srcReturns ]
       inst = receiver $ Map.fromList qVars
   -- perform type checking
-  loci <- forM (fst2 <$> inst) (uncurry typingPartitionQTy)
-  eds <- mapM findEmsByLocus loci
-  edsRet <- mapM genEmStFromLocus loci
-  let stmtsAssign = (codegenAssignEmitData `on` compactEds) eds edsRet
-
+  loci   <- forM (fst2 <$> inst) (uncurry typingPartitionQTy)
+  lastAndRetLocusEds <- mapM findThenGenLocus loci
+  stmtsAssign <- codegenAssignEmitData <$> eraseMatchedRanges lastAndRetLocusEds
   return ( stmtsAssign
-         , pureBds ++ bindEmitables edsRet)
+         , pureBds ++ bindEmitables lastAndRetLocusEds)
   where
-    compactEds = concatMap eraseRanges
     bindEmitables =
-      (uncurry Binding <$>) . concatMap (uncurry extractEmitablesFromEds)
+      (uncurry Binding <$>) . concatMap (uncurry extractEmitablesFromEds . snd)
 
 codegenPhaseBinding :: PhaseRef -> Ty -> [Binding']
 codegenPhaseBinding PhaseRef{prBase, prRepr} ty =

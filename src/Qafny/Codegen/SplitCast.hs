@@ -4,14 +4,10 @@
   #-}
 
 module Qafny.Codegen.SplitCast where
-
-
 import           Control.Arrow
     (Arrow (second))
 import           Control.Monad
     (liftM2)
-import           Data.List
-    (uncons)
 import qualified Data.List.NonEmpty       as NE
 import           Data.Maybe
     (maybeToList)
@@ -26,15 +22,10 @@ import           Qafny.Syntax.Emit
 import           Qafny.Syntax.EmitBinding
 import           Qafny.Syntax.IR
 import           Qafny.Typing
-    (castScheme, resolvePartition, retypePartition)
+    (castScheme, resolvePartition)
 import           Qafny.Utils.EmitBinding
 import           Qafny.Utils.Utils
     (both)
-import           Text.Printf
-    (printf)
-
-
-
 
 throwError'
   :: ( Has (Error Builder) sig m )

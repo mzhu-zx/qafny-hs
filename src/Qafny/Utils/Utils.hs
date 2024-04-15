@@ -24,10 +24,6 @@ import           Data.Sum
 import           Effect.Gensym
     (Gensym, gensym)
 
---
-import           Control.Applicative
-    (Applicative (liftA2))
-
 -- Qafny
 import           Qafny.Error
     (QError (UnknownVariableError))
@@ -38,6 +34,7 @@ import           Qafny.Utils.TraceF
     (Traceable (tracef))
 import           Qafny.Variable
     (Variable (variable))
+import Qafny.Effect (MayFail)
 
 --------------------------------------------------------------------------------
 -- * 3-Tuples
@@ -195,3 +192,17 @@ hasNoDup (x:xs) = foldr go True xs
 
 tracep :: (Has Trace sig m, DafnyPrinter s) => s -> m ()
 tracep = trace . showEmit0
+
+
+zipWithExactly
+  :: MayFail sig m
+  => (a -> Builder) -> (b -> Builder) -> (a -> b -> c) -> [a] -> [b] -> m [c]
+zipWithExactly ppa ppb f l1 l2 = go l1 l2
+  where
+    go []     []     = pure []
+    go (x:xs) (y:ys) = (f x y :) <$> go xs ys
+    go _      _      = throwError $ vsep
+      [ pp "The follwoing two lists are of difference lengths."
+      , incr4 $ align (vsep [ list (ppa <$> l1)
+                            , list (ppb <$> l2)]) 
+      ]
