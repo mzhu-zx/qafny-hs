@@ -27,7 +27,7 @@ module Qafny.Utils.EmitBinding
   , appendEmSt
     -- * Helper
   , fsts, extractEmitablesFromLocus, extractEmitablesFromEds, eraseRanges
-  , eraseMatchedRanges, findThenGenLocus
+  , eraseMatchedRanges, findThenGenLocus, extractMatchedEmitables
     -- * Type
   )
 where
@@ -335,3 +335,22 @@ eraseMatchedRanges = (concat <$>) . mapM (uncurry go)
     go led1 led2 = zipWithExactly' (,) (eraseRanges led1) (eraseRanges led2)
     zipWithExactly' = zipWithExactly pp pp
 
+
+extractMatchedEmitables
+  :: MayFail sig m => EmitData -> EmitData -> m [((Var, Ty), (Var, Ty))]
+extractMatchedEmitables ed1 ed2 = do
+  b <- one2one (evBasis ed1)  (evBasis ed2)
+  a <- one2one (evAmp ed1)    (evAmp ed2)
+  p <- one2one (evP ed1)      (evP ed2)
+  return $ b ++ a ++ (uncurry zip `concatMap` p)
+  where
+    one2one (Just a) (Just b) = pure [(a, b)]
+    one2one Nothing  Nothing  = pure []
+    one2one a1 a2 = throwError $ vsep
+      [ pp "Non 1-1 conrrespondence between the following two EmitData's."
+      , incr4 ed1
+      , incr4 ed2]
+
+    evP = (uncurry extractRef <$>) .  evPhaseRef
+    extractRef PhaseRef{prBase, prRepr} ty =
+      [(prBase, TNat), (prRepr, ty)]

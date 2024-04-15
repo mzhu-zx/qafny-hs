@@ -4,22 +4,25 @@
 
 module Qafny.Codegen.Common where
 
-import           Data.Function
-    (on)
+import           Qafny.Effect
 import           Qafny.Syntax.AST
 import           Qafny.Syntax.EmitBinding
+import           Qafny.Utils.EmitBinding
+    (extractMatchedEmitables)
+
 --------------------------------------------------------------------------------
 -- * EmitData Utils
 --------------------------------------------------------------------------------
-codegenAssignEmitData :: [(EmitData, EmitData)] -> [Stmt']
-codegenAssignEmitData eds = uncurry go `concatMap` eds 
+codegenAssignEmitData' :: MayFail sig m => [(EmitData, EmitData)] -> m [(Stmt', Var)]
+codegenAssignEmitData' eds = concat <$> mapM go eds
   where
-    go = zipWith perVar `on` extractEmitables
+    go = ((uncurry perVar <$>) <$>) . uncurry extractMatchedEmitables
+    perVar (v1, _) (v2, _) = (v1 ::=: EVar v2, v1)
+
+codegenAssignEmitData :: MayFail sig m => [(EmitData, EmitData)] -> m [Stmt']
+codegenAssignEmitData eds = concat <$> mapM go eds
+  where
+    go = ((uncurry perVar <$>) <$>) . uncurry extractMatchedEmitables
     perVar (v1, _) (v2, _) = v1 ::=: EVar v2
 
-codegenAssignEmitData' :: [(EmitData, EmitData)] -> [(Stmt', Var)]
-codegenAssignEmitData' eds = uncurry go `concatMap` eds 
-  where
-    go = zipWith perVar `on` extractEmitables
-    perVar (v1, _) (v2, _) = (v1 ::=: EVar v2, v1)
 

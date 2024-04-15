@@ -12,18 +12,18 @@ import opened Power
 import opened DivMod
 
 method GHZ (q_seq'nat'_0__emit : seq<nat>)
-  // returns ( loc__loc__receiver_3_seq'unsupported'_25__emit : seq<real>
-  //         , q_seq'seq'nat''_24__emit : seq<seq<nat>>
-  //         , q_seq'nat'_26__emit : seq<nat> )
+  returns ( loc__loc__receiver_3_seq'unsupported'_25__emit : seq<real>
+          , q_seq'seq'nat''_24__emit : seq<seq<nat>>
+          , q_seq'nat'_26__emit : seq<nat> )
   requires |q_seq'nat'_0__emit| == 15
   requires (forall i : nat | 0 <= i < 15 :: q_seq'nat'_0__emit[i] == 0)
-  // ensures |loc__loc__receiver_3_seq'unsupported'_25__emit| == 2
-  // ensures |q_seq'seq'nat''_24__emit| == 2
-  // ensures (forall j : nat | 0 <= j < 2 :: |q_seq'seq'nat''_24__emit[j]| == 10)
-  // ensures (forall j : nat | 0 <= j < 2 ::
-  //   (forall k : nat | 0 <= k < 10 :: q_seq'seq'nat''_24__emit[j][k] == j))
-  // ensures |q_seq'nat'_26__emit| == 5
-  // ensures (forall i : nat | 0 <= i < 5 :: q_seq'nat'_26__emit[i] == 0)
+  ensures |loc__loc__receiver_3_seq'unsupported'_25__emit| == 2
+  ensures |q_seq'seq'nat''_24__emit| == 2
+  ensures (forall j : nat | 0 <= j < 2 :: |q_seq'seq'nat''_24__emit[j]| == 10)
+  ensures (forall j : nat | 0 <= j < 2 ::
+    (forall k : nat | 0 <= k < 10 :: q_seq'seq'nat''_24__emit[j][k] == j))
+  ensures |q_seq'nat'_26__emit| == 5
+  ensures (forall i : nat | 0 <= i < 5 :: q_seq'nat'_26__emit[i] == 0)
 {
   var q_seq'nat'_0__emit_seq'nat'_1__emit : seq<nat> := q_seq'nat'_0__emit;
   // Forward Declaration
@@ -73,9 +73,11 @@ method GHZ (q_seq'nat'_0__emit : seq<nat>)
                  (((Pow2(|q_seq'seq'nat''_6__emit|)) as real)) ) );
   q_seq'nat'_11__emit := q_seq'nat'_3__emit[9..14];
   q_seq'nat'_10__emit := q_seq'nat'_3__emit[0..9];
-  q_seq'seq'nat''_12__emit := q_seq'seq'nat''_6__emit;
-  q_seq'nat'_14__emit := q_seq'nat'_10__emit;
-  q_seq'nat'_15__emit := q_seq'nat'_11__emit;
+  loc__loc__receiver_0_phase_base_7__emit :=
+    loc__loc__receiver_3_seq'unsupported'_13__emit;
+  q_seq'seq'nat''_6__emit := q_seq'seq'nat''_12__emit;
+  q_seq'nat'_10__emit := q_seq'nat'_14__emit;
+  q_seq'nat'_11__emit := q_seq'nat'_15__emit;
   for i := 0 to 9
     invariant |loc__loc__receiver_3_seq'unsupported'_13__emit| == 2
     invariant |q_seq'seq'nat''_12__emit| == 2
@@ -88,9 +90,9 @@ method GHZ (q_seq'nat'_0__emit : seq<nat>)
     invariant |q_seq'nat'_15__emit| == 5
     invariant (forall i : nat | 0 <= i < 5 :: q_seq'nat'_15__emit[i] == 0)
   {
-    loc__loc__receiver_3_seq'unsupported'_17__emit :=
-      loc__loc__receiver_3_seq'unsupported'_13__emit;
-    q_seq'seq'nat''_16__emit := q_seq'seq'nat''_12__emit;
+    loc__loc__receiver_3_seq'unsupported'_13__emit :=
+      loc__loc__receiver_3_seq'unsupported'_17__emit;
+    q_seq'seq'nat''_12__emit := q_seq'seq'nat''_16__emit;
     // begin false
     q_seq'nat'_19__emit := q_seq'nat'_14__emit[1..9 - i];
     q_seq'nat'_18__emit := q_seq'nat'_14__emit[0..1];
@@ -110,16 +112,16 @@ method GHZ (q_seq'nat'_0__emit : seq<nat>)
          , q_seq'seq'nat''_16__emit );
     // end true
     // begin true-false
-    q_seq'seq'nat''_20__emit :=
-      q_seq'seq'nat''_20__emit + q_seq'seq'nat''_23__emit;
+    loc__loc__receiver_3_seq'unsupported'_17__emit :=
+      loc__loc__receiver_3_seq'unsupported'_17__emit;
+    q_seq'seq'nat''_20__emit := q_seq'seq'nat''_23__emit;
     // end true-false
     // Match Begin-End
-    q_seq'seq'nat''_16__emit := q_seq'seq'nat''_20__emit;
-    q_seq'nat'_14__emit := q_seq'nat'_19__emit;
+    q_seq'nat'_15__emit := q_seq'nat'_15__emit;
   }
-  // loc__loc__receiver_3_seq'unsupported'_13__emit :=
-  //   loc__loc__receiver_3_seq'unsupported'_25__emit;
-  // q_seq'seq'nat''_12__emit := q_seq'seq'nat''_24__emit;
-  // q_seq'nat'_15__emit := q_seq'nat'_26__emit;
+  loc__loc__receiver_3_seq'unsupported'_13__emit :=
+    loc__loc__receiver_3_seq'unsupported'_25__emit;
+  q_seq'seq'nat''_12__emit := q_seq'seq'nat''_24__emit;
+  q_seq'nat'_15__emit := q_seq'nat'_26__emit;
 }
 }

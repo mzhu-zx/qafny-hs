@@ -118,7 +118,7 @@ codegenMethodReturns MethodType{ mtSrcReturns=srcReturns
   -- perform type checking
   loci   <- forM (fst2 <$> inst) (uncurry typingPartitionQTy)
   lastAndRetLocusEds <- mapM findThenGenLocus loci
-  stmtsAssign <- codegenAssignEmitData <$> eraseMatchedRanges lastAndRetLocusEds
+  stmtsAssign <- codegenAssignEmitData =<< eraseMatchedRanges lastAndRetLocusEds
   return ( stmtsAssign
          , pureBds ++ bindEmitables lastAndRetLocusEds)
   where

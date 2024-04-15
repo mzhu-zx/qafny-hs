@@ -616,7 +616,7 @@ codegenStmt'For (SFor idx boundl boundr eG invs (Just seps) body) = do
       matchedLocusEds <- matchLocusEmitData
         (_emitSt statePreLoop) (_emitSt stateLoop) (zip lociPreLoop lociLoop)
       stmtsEquiv <-
-        codegenAssignEmitData <$> eraseMatchedRanges matchedLocusEds
+        codegenAssignEmitData =<< eraseMatchedRanges matchedLocusEds
       return ( lociPreLoop
              , concat stmtsPreGuard ++ stmtsEquiv
              , statePreLoop
@@ -747,7 +747,7 @@ codegenFor'Body idx boundl boundr eG body stSep@(Locus{qty=qtSep}) newInvs = do
       -- let stmtsSaveFalse = uncurry (stmtAssignSlice (ENum 0) eSep)
       --       <$> zip (fsts vsEmitGFalse) (fsts vsEmitG)
       stmtsSaveFalse <-
-        codegenAssignEmitData <$> eraseMatchedRanges [ledsdFalseNSaved]
+        codegenAssignEmitData =<< eraseMatchedRanges [ledsdFalseNSaved]
       -- let stmtsFocusTrue = stmtAssignSelfRest eSep <$> fsts vsEmitG
 
       -- save the current emit symbol table for
@@ -829,7 +829,7 @@ codegenFor'Body idx boundl boundr eG body stSep@(Locus{qty=qtSep}) newInvs = do
       -- Use collected partitions and merge it with the absorbed typing state.
       stEnd <- get @TState
       matchedleds <- matchLocusEmitDataFromTStates stBegin stEnd
-      codegenAssignEmitData <$> eraseMatchedRanges matchedleds
+      codegenAssignEmitData =<< eraseMatchedRanges matchedleds
 
 
     errNoSep = "Insufficient knowledge to perform a separation for a EN01 partition "
