@@ -4,3 +4,6 @@
 [submodule "external/dafny"]
 	path = external/dafny
 	url = https://github.com/dafny-lang/dafny.git
+[submodule "qafny-hs-examples"]
+	path = qafny-hs-examples
+	url = git@github.com:liyili2/qafny-hs-examples.git
