@@ -41,6 +41,10 @@ import           Data.Functor
     ((<&>))
 import           Data.List
     (sort)
+import           Data.Sum
+    (Injection (inj))
+import           Qafny.Analysis.Normalize
+    (Normalizable (normalize))
 import           Qafny.Analysis.Partial
     (Reducible (reduce))
 import           Qafny.Codegen.Utils
@@ -80,15 +84,15 @@ codegenAssertion'
 codegenAssertion' (ESpec s qt espec) = do
   st@Locus{part, degrees=dgrs} <- typingPartitionQTy s qt
   -- FIXME: do something seriously when (part /= s)
-  when (sort (ranges part) /= sort (ranges s)) $
+  when (sort (ranges (denorm part)) /= sort (ranges s)) $
     throwError' ("Assertion:"<+>part<+>"is inconsistent with"<+>s<+>".")
-  (locusEd, rangesEd) <- findEmsByLocus st
+  led <- findEmsByLocus st
   tracep . vsep $
     [ pp "codegenAssertion'"
     , incr4 $ vsep [ pp qt, list espec ]
     ]
   wfRels <- wfQTySpecs qt espec
-  codegenSpecExp locusEd rangesEd wfRels
+  codegenSpecExp led wfRels
 codegenAssertion' e = return [e]
   -- FIXME: what to do if [e] contains an assertion?
 
@@ -99,18 +103,18 @@ codegenAssertion' e = return [e]
 codegenSpecExp
   :: forall sig m .
      ( MayFail sig m, HasPContext sig m )
-  => EmitData -> [(Range, EmitData)] -> SRel -> m [Exp']
-codegenSpecExp locusEd rangesEd srel = do
+  => LocusEmitData -> SRel -> m [Exp']
+codegenSpecExp (locusEd, rangesEd) srel = do
   lub1' <- instLubIntv
   go lub1' srel
   where
     go :: ([Intv] -> Maybe Intv) -> SRel -> m [Exp']
     go _ (RNor specs) = do
-      (range, ed) <- onlyOne throwError' rangesEd
+      (nr, ed) <- onlyOne throwError' rangesEd
       vKet <- fst <$> visitEmBasis ed
       return $
-        assertReprLengthIsRangeSize vKet range
-        : (codegenSpecExpNor vKet (predFromRange range) <$> specs)
+        assertReprLengthIsRangeSize vKet nr
+        : (codegenSpecExpNor vKet (predFromRange nr) <$> specs)
     go _ (RHad specs) = do
       (range, _) <- onlyOne throwError' rangesEd
       return $ case evPhaseRef locusEd of
@@ -149,10 +153,10 @@ codegenSpecExp locusEd rangesEd srel = do
       mkCard vKet `eEq` reduce er
 
     assertReprLengthIsRangeSize vKet r =
-      mkCard vKet `eEq` rangeSize r
+      mkCard vKet `eEq` rangeSize (denorm r)
 
     predFromRange r =
-      let bound = Intv 0 (rangeSize r)
+      let bound = Intv 0 (rangeSize (denorm r))
       in predFromIntv  bound
 
     errUndecidableDynBound bs = throwError' $ vsep
@@ -171,7 +175,7 @@ codegenSpecExpHad pr pred SpecHadF{hadVar, hadPhase} =
   codegenPhaseSpec pr hadVar pred hadPhase
 
 codegenSpecExpEn
-  :: Var -> Maybe PhaseRef -> [(Range, Maybe Var)] -> SpecEn -> [Exp']
+  :: Var -> Maybe PhaseRef -> [(r, Maybe Var)] -> SpecEn -> [Exp']
 codegenSpecExpEn vAmp prMaybe rvKets
   SpecEnF{enVarSup, enIntvSup, enAmpCoef, enPhaseCoef, enKets} =
   ampPred ++ phasePreds ++ ketPreds
@@ -189,7 +193,7 @@ codegenSpecExpEn vAmp prMaybe rvKets
     perKetExp (_, Just v) eKet = mkForallEq enVarSup predIntv v eKet
 
 codegenSpecExpEn01
-  :: Var -> Maybe PhaseRef -> [(Range, Maybe Var)] -> SpecEn01 -> [Exp']
+  :: Var -> Maybe PhaseRef -> [(Normalized Range, Maybe Var)] -> SpecEn01 -> [Exp']
 codegenSpecExpEn01 vAmp prMaybe rvKets
   SpecEn01F{en01VarSup, en01IntvSup, en01AmpCoef, en01PhaseCoef
            ,en01VarQbit, en01Kets, en01IntvQbit} =
@@ -209,8 +213,8 @@ codegenSpecExpEn01 vAmp prMaybe rvKets
       pure $ EBool True
     perKetExp (_, Nothing) _    =
       pure $ EBool False -- EMMMMM, I should warn instead
-    perKetExp (r, Just v)  eKet =
-      [ mkForallCardEq en01VarSup predIntv v (rangeSize r)
+    perKetExp (nr, Just v)  eKet =
+      [ mkForallCardEq en01VarSup predIntv v (rangeSize (denorm nr))
       , mkForallEq2 en01VarSup predIntv en01VarQbit predIntvQ v eKet
       ]
 
@@ -245,7 +249,7 @@ codegenPhaseSpec PhaseRef{prRepr, prBase} vIdx predIdx = go
 codegenRequires
   :: forall m sig .
      ( GensymEmitterWithStateError sig m
-     , HasPContext sig m 
+     , HasPContext sig m
      , GensymMeta sig m
      , Has Trace sig m
      )
@@ -260,7 +264,7 @@ codegenRequires rqs = do
     go (p, qt, ds, specs) (retEs, retEds)= do
       eds <- extendState p qt (toList ds)
       wfRels <- wfQTySpecs qt specs
-      es <- runReader True $ uncurry codegenSpecExp eds wfRels
+      es <- runReader True $ codegenSpecExp eds wfRels
       return (es ++ retEs, eraseRanges eds ++ retEds)
 
 codegenEnsures
@@ -281,4 +285,6 @@ codegenRangeRepr
      )
   => Range -> m (Var, Ty)
 codegenRangeRepr r =
-  resolvePartition (Partition [r]) >> findEmitBasisByRange r
+  resolvePartition (Partition [r])
+  >> findEm (inj (normalize r))
+  >>= visitEmBasis

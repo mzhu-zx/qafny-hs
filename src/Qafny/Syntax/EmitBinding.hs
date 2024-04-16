@@ -20,10 +20,6 @@ import           Qafny.Syntax.AST
 -- | 'EmitData' stores emit variables (a.k.a. data variables) that's supposed to
 -- be mapped from either a 'Loc' or a 'Range'
 --
-type LocusEmitData = LocusTEmitData []
-newtype LocusEmitData' =  LocusEmitData' (LocusTEmitData [])
-type LocusTEmitData t = (EmitData, t (Range, EmitData))
-
 data EmitData = EmitData
   { evPhaseRef :: Maybe (PhaseRef, Ty)   -- ^ the ref & type of the phase
   , evBasis    :: Maybe (Var, Ty)        -- ^ the var & type of its kets

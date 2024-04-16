@@ -7,8 +7,9 @@
 module Data.Sum where
 
 import           Data.Maybe
-    (mapMaybe, isJust)
-import Text.Printf (printf)
+    (isJust, mapMaybe)
+import           Text.Printf
+    (printf)
 
 data (f :+: g)
   = Inl f

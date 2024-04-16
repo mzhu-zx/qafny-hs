@@ -8,6 +8,8 @@ import           Data.Maybe
     (fromMaybe)
 import           Data.Sum
 
+import           Qafny.Analysis.Normalize
+    (Normalizable (normalize))
 import           Qafny.Syntax.AST
 import           Qafny.Syntax.EmitBinding
 import           Qafny.Syntax.IR
@@ -102,6 +104,9 @@ instance Substitutable (Map.Map (Range :+: Loc) EmitData) where
   subst = substMapKeys
   fVars = fVarMapKeys
 
+instance (Substitutable a, Normalizable a) => Substitutable (Normalized a) where
+  subst aenv = normalize . subst aenv . denorm
+  fVars = fVars . denorm
 
 instance Substitutable TState where
   subst a (TState{ _sSt = s, _xSt = x, _emitSt = es }) =

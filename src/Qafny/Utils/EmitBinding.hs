@@ -9,7 +9,8 @@
 module Qafny.Utils.EmitBinding
   ( -- * Gensyms
     gensymBinding
-  , genEmStUpdatePhase, genEmStByRange, genEmStByRanges, genEmStFromLocus
+  , genEmStUpdatePhase, genEmStByRange, genEmStByRanges
+  , genEmFromLocus, genEmStFromLocus
   , genEmStUpdatePhaseFromLocus
   , genEmStUpdateKets
   , regenEmStByLocus
@@ -17,7 +18,7 @@ module Qafny.Utils.EmitBinding
   , genEmByRange
     -- * Query
   , findEm, findEms
-  , visitEm, visitEms, visitEmBasis, visitEmsBasis
+  , visitEm, visitEms , visitEmBasis, visitEmsBasis
   , findVisitEm, findVisitEms
   , findEmitBasesByRanges, findEmitBasisByRange
   , findEmsByLocus, findEmInEmitState, findEmsByLocusInEmitState
@@ -27,7 +28,8 @@ module Qafny.Utils.EmitBinding
   , appendEmSt
     -- * Helper
   , fsts, extractEmitablesFromLocus, extractEmitablesFromEds, eraseRanges
-  , eraseMatchedRanges, findThenGenLocus, extractMatchedEmitables
+  , eraseMatchedRanges, eraseMatchedRanges'
+  , findThenGenLocus, extractMatchedEmitables
     -- * Type
   )
 where
@@ -57,7 +59,7 @@ import           Qafny.Syntax.IR
 import           Qafny.Typing.Utils
     (tyAmp, tyKetByQTy, typingPhaseEmitReprN)
 import           Qafny.Utils.Utils
-    (errTrace, zipWithExactly)
+    (errTrace, zipWithExactly, onlyOne)
 
 --------------------------------------------------------------------------------
 -- * Gensym Utils
@@ -112,10 +114,11 @@ genAmp qty l =
 -- ** Basics but Stateful
 
 -- | Generate a /complete/ 'EmitData' of a Range and manage it within the 'emitSt'
-genEmStByRange ::  GensymEmitterWithState sig m => QTy -> Range -> m EmitData
+genEmStByRange
+  :: GensymEmitterWithState sig m => QTy -> Normalized Range -> m EmitData
 genEmStByRange qt r = do
-  ed <- genEmByRange qt r
-  emitSt %= (at (inj (normalize r)) ?~ ed)
+  ed <- genEmByRange qt (denorm r)
+  emitSt %= (at (inj r) ?~ ed)
   return ed
 
 genEmByRange :: (Has (Gensym Emitter) sig m) => QTy -> Range -> m EmitData
@@ -127,12 +130,22 @@ genEmByRange qt r = do
                      }
   return ed
 
+
+
+-- | Generate EmitData for a list of ranges
+genEmByRanges
+  :: ( GensymEmit sig m, MayFail sig m, Traversable t)
+  => QTy -> t (Normalized Range) -> m (t (Normalized Range, EmitData))
+genEmByRanges qt = mapM go
+  where
+    go r = (r, ) <$> genEmByRange qt (denorm r)
+
 -- | Generate EmitData for a list of ranges and manage it in state.
 genEmStByRanges
   :: ( GensymEmitterWithState sig m
      , Traversable t
      )
-  => QTy -> t Range -> m (t (Range, EmitData))
+  => QTy -> t (Normalized Range) -> m (t (Normalized Range, EmitData))
 genEmStByRanges qt = mapM go
   where
     go r = (r,) <$> genEmStByRange qt r
@@ -141,24 +154,36 @@ genEmStByRanges qt = mapM go
 -- | Remove the previous EmitData, and generate an `EmitData` from a Locus
 -- including both amplitude, range and phase.
 regenEmStByLocus
-  :: ( GensymEmitterWithState sig m, Traversable t)
-  => LocusT t -> LocusT t -> m (EmitData, t (Range, EmitData))
+  :: ( GensymEmitterWithStateError sig m, Traversable t)
+  => LocusT t -> LocusT t -> m (EmitData, t (Normalized Range, EmitData))
 regenEmStByLocus prevLocus newLocus =
   deleteEmByLocus prevLocus >> genEmStFromLocus newLocus
 
 -- | Generate an `EmitData` from a Locus including both amplitude, range and
 -- phase. The newly generated entries simply overwrites the previous ones.
 genEmStFromLocus
-  :: ( GensymEmitterWithState sig m
+  :: ( GensymEmitterWithStateError sig m
      , Traversable t
      )
-  => LocusT t -> m (EmitData, t (Range, EmitData))
-genEmStFromLocus Locus{loc, part=Partition{ranges}, qty, degrees} = do
-  rEms <- genEmStByRanges qty ranges
-  evPhaseRef <- genPhase qty (head degrees) loc
+  => LocusT t -> m (EmitData, t (Normalized Range, EmitData))
+genEmStFromLocus Locus{loc, part=NPartition{nranges}, qty, degrees} = do
+  rEms <- genEmStByRanges qty nranges
+  degree <- onlyOne throwError degrees
+  evPhaseRef <- genPhase qty degree loc
   evAmp <- genAmp qty loc
   let edL = mtEmitData { evPhaseRef, evAmp }
   emitSt %= (at (inj loc) ?~ edL)
+  return ( edL , rEms )
+
+genEmFromLocus
+  :: ( Has (Gensym Emitter) sig m, MayFail sig m , Traversable t)
+  => LocusT t -> m (EmitData, t (Normalized Range, EmitData))
+genEmFromLocus Locus{loc, part=NPartition{nranges}, qty, degrees} = do
+  rEms <- genEmByRanges qty nranges
+  degree <- onlyOne throwError degrees
+  evPhaseRef <- genPhase qty degree loc
+  evAmp <- genAmp qty loc
+  let edL = mtEmitData { evPhaseRef, evAmp }
   return ( edL , rEms )
 
 {-# DEPRECATED genEmStUpdatePhaseFromLocus
@@ -170,15 +195,15 @@ genEmStUpdatePhaseFromLocus
      , Has (Error Builder) sig m
      )
   => Locus -> m [EmitData]
-genEmStUpdatePhaseFromLocus Locus{loc, part=Partition{ranges=rs}, qty, degrees} =
+genEmStUpdatePhaseFromLocus Locus{loc, qty, degrees} =
   zipWithM (genEmStUpdatePhase qty) degrees [loc]
 
 -- | Append the given `EmitData` to the given entry.
 appendEmSt
   :: StateMayFail sig m
-  => RangeOrLoc -> EmitData -> m EmitData
+  => Normalized RangeOrLoc -> EmitData -> m EmitData
 appendEmSt rl ed = do
-  emitSt %= Map.adjust (<> ed) (normalize rl)
+  emitSt %= Map.adjust (<> ed) rl
   findEm rl
 
 {-# DEPRECATED genEmStUpdatePhase
@@ -192,46 +217,49 @@ genEmStUpdatePhase qt i l  = errTrace (pp "`genEmStUpdatePhase`") $ do
   evPhaseRef  <- genPhase qt i l
   appendEmSt (inj l) (mtEmitData {evPhaseRef})
 
-{-# DEPRECATED genEmStUpdateKets
-    "What's the differnce between update and overwrite?"
-  #-}
+-- {-# DEPRECATED genEmStUpdateKets
+--     "What's the differnce between update and overwrite?"
+--   #-}
 genEmStUpdateKets
   :: GensymEmitterWithStateError sig m
-  => QTy -> [Range] -> m [Var]
-genEmStUpdateKets qty ranges = do
-  vtys <- genKetsByQTy qty ranges
+  => QTy -> [Normalized Range] -> m [Var]
+genEmStUpdateKets qty nranges = do
+  vtys <- genKetsByQTy qty (denorm <$> nranges)
   zipWithM_ (\r evBasis -> appendEmSt (inj r) (mtEmitData{evBasis}))
-    ranges vtys
+    nranges vtys
   return (fsts (catMaybes vtys))
 
 
 -- ** Getters
-findEmInEmitState :: MayFail sig m => EmitState -> RangeOrLoc -> m EmitData
+findEmInEmitState
+  :: MayFail sig m => EmitState -> Normalized RangeOrLoc -> m EmitData
 findEmInEmitState es rl = do
   maybe (complain es) return (es ^. at rl)
   where
     complain st = throwError $
       rl <+> "cannot be found in emitSt" <!> line <+> incr4 st
 
-findEm :: StateMayFail sig m => RangeOrLoc -> m EmitData
+findEm :: StateMayFail sig m => Normalized RangeOrLoc -> m EmitData
 findEm rl = use emitSt >>= (`findEmInEmitState` rl)
 
-findEms :: StateMayFail sig m => [RangeOrLoc] -> m [EmitData]
+findEms
+  :: (Traversable t, StateMayFail sig m)
+  => t (Normalized RangeOrLoc) -> m (t EmitData)
 findEms = mapM findEm
 
 findEmsByLocusInEmitState
   :: ( MayFail sig m , Traversable t)
-  => EmitState -> LocusT t -> m (EmitData, t (Range, EmitData))
-findEmsByLocusInEmitState es Locus{loc, part=Partition{ranges}, qty, degrees} =
-  liftM2 (,) (findEm' (inj loc)) (mapM perRange ranges)
+  => EmitState -> LocusT t -> m (EmitData, t (Normalized Range, EmitData))
+findEmsByLocusInEmitState es Locus{loc, part=NPartition{nranges}, qty, degrees} =
+  liftM2 (,) (findEm' (inj loc)) (mapM perRange nranges)
   where
     findEm' = findEmInEmitState es
     perRange r = (r,) <$> findEm' (inj r)
 
 findEmsByLocus :: ( StateMayFail sig m , Traversable t)
-               => LocusT t -> m (EmitData, t (Range, EmitData))
-findEmsByLocus Locus{loc, part=Partition{ranges}, qty, degrees} = do
-  liftM2 (,) (findEm (inj loc)) (mapM perRange ranges)
+               => LocusT t -> m (EmitData, t (Normalized Range, EmitData))
+findEmsByLocus Locus{loc, part=NPartition{nranges}, qty, degrees} = do
+  liftM2 (,) (findEm (inj loc)) (mapM perRange nranges)
   where
     perRange r = (r,) <$> findEm (inj r)
 
@@ -250,12 +278,12 @@ visitEms f = mapM (visitEm f)
 
 findVisitEm
   :: StateMayFail sig m
-  => (EmitData -> Maybe c) -> RangeOrLoc -> m c
+  => (EmitData -> Maybe c) -> Normalized RangeOrLoc -> m c
 findVisitEm evF = findEm >=> visitEm evF
 
 findVisitEms
-  :: StateMayFail sig m
-  => (EmitData -> Maybe c) -> [RangeOrLoc] -> m [c]
+  :: (Traversable t, StateMayFail sig m)
+  => (EmitData -> Maybe c) -> t (Normalized RangeOrLoc) -> m (t c)
 findVisitEms f = errTrace (pp "findVisitEms") .
   mapM (findVisitEm f)
 
@@ -267,19 +295,19 @@ visitEmBasis = visitEm evBasis
 visitEmsBasis :: Has (Error Builder) sig m => [EmitData] -> m [(Var, Ty)]
 visitEmsBasis = mapM visitEmBasis
 
-findVisitEmsBasis
-  :: StateMayFail sig m
-  => [RangeOrLoc] -> m [(Var, Ty)]
-findVisitEmsBasis = findVisitEms evBasis
+-- findVisitEmsBasis
+--   :: (Traversable t, StateMayFail sig m)
+--   => t (Normalized RangeOrLoc)[RangeOrLoc] -> m [(Var, Ty)]
+-- findVisitEmsBasis = findVisitEms evBasis
 
 findEmitBasisByRange
   :: StateMayFail sig m
-  => Range -> m (Var, Ty)
+  => Normalized Range -> m (Var, Ty)
 findEmitBasisByRange = findVisitEm evBasis . inj
 
 findEmitBasesByRanges
   :: StateMayFail sig m
-  => [Range] -> m [(Var, Ty)]
+  => [Normalized Range] -> m [(Var, Ty)]
 findEmitBasesByRanges = findVisitEms evBasis . (inj <$>)
 
 -- ** Destructor
@@ -289,19 +317,20 @@ deleteEm rl = emitSt %= sans (normalize rl)
 deleteEmByLocus
   :: (Has (State TState) sig m, Traversable t)
   => LocusT t -> m ()
-deleteEmByLocus Locus{loc, part=Partition{ranges}} =
-  deleteEmPartition loc ranges
+deleteEmByLocus Locus{loc, part=NPartition{nranges}} =
+  deleteEmPartition loc nranges
 
 deleteEms
-  :: (Has (State TState) sig m, Traversable t) => t RangeOrLoc -> m ()
-deleteEms s = emitSt %= (`Map.withoutKeys` Set.fromList (toList (normalize <$> s)))
+  :: (Has (State TState) sig m, Traversable t)
+  => t (Normalized RangeOrLoc) -> m ()
+deleteEms s =
+  emitSt %= (`Map.withoutKeys` Set.fromList (toList s))
 
 deleteEmPartition
   :: (Has (State TState) sig m, Traversable t)
-  => Loc -> t Range -> m ()
+  => Loc -> t (Normalized Range) -> m ()
 deleteEmPartition l rs =
-  deleteEm (inj l) >>
-  deleteEms (inj <$> rs)
+  deleteEm (inj l) >> deleteEms (inj <$> rs)
 
 
 -- ** Together
@@ -318,20 +347,25 @@ fsts = (fst <$>)
 extractEmitablesFromLocus :: StateMayFail sig m => Locus -> m [(Var, Ty)]
 extractEmitablesFromLocus Locus{loc, part} = do
   emLoc <- findEm (inj loc)
-  emRanges <- (findEm . inj) `mapM` ranges part
+  emRanges <- (findEm . inj) `mapM` nranges part
   return $ concatMap extractEmitables (emLoc : emRanges)
 
-extractEmitablesFromEds :: EmitData -> [(Range, EmitData)] -> [(Var, Ty)]
+extractEmitablesFromEds :: EmitData -> [(r, EmitData)] -> [(Var, Ty)]
 extractEmitablesFromEds eds rEds =
   concatMap extractEmitables (eds : (snd <$> rEds))
 
-eraseRanges :: (EmitData, [(Range, EmitData)]) -> [EmitData]
+eraseRanges :: (EmitData, [(r, EmitData)]) -> [EmitData]
 eraseRanges (ed, eds) = ed : (snd <$> eds)
 
 eraseMatchedRanges
-  :: MayFail sig m
+  :: (MayFail sig m)
   => [(LocusEmitData, LocusEmitData)] -> m [(EmitData, EmitData)]
-eraseMatchedRanges = (concat <$>) . mapM (uncurry go)
+eraseMatchedRanges = (concat <$>) . eraseMatchedRanges'
+
+eraseMatchedRanges'
+  :: (MayFail sig m, Traversable t)
+  => t (LocusEmitData, LocusEmitData) -> m (t [(EmitData, EmitData)])
+eraseMatchedRanges' = mapM (uncurry go)
   where
     -- go :: LocusEmitData -> LocusEmitData -> m [(EmitData, EmitData)]
     go led1 led2 = zipWithExactly' (,) (eraseRanges led1) (eraseRanges led2)

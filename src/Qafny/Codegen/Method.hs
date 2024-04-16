@@ -65,14 +65,14 @@ genEmitSt = do
 
 replicateEmitEntry
   :: GensymEmitterWithState sig m
-  => RangeOrLoc -> EmitData -> m [Stmt']
+  => Normalized RangeOrLoc -> EmitData -> m [Stmt']
 replicateEmitEntry rl
   ed@EmitData{evBasis, evPhaseRef, evAmp} =
   do evBasis'    <- evBasisM
      evPhaseRef' <- evPhaseRefM
      let refs = liftM2 (,) evPhaseRef' evPhaseRef
      -- let evPhase' = uncurry mkPhaseRef <$> prVars
-     emitSt %= (at (normalize rl) ?~ ed{evBasis=evBasis', evPhaseRef=evPhaseRef'})
+     emitSt %= (at rl ?~ ed{evBasis=evBasis', evPhaseRef=evPhaseRef'})
      return $
        toList (liftM2 (uncurry mkDeclAssign) evBasis' (evBasis <&> fst))
        ++ concat (toList (refs <&> replicatePhases))

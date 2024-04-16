@@ -25,13 +25,11 @@ import           Data.Bifunctor
     (Bifunctor (second))
 import qualified Data.List.NonEmpty       as NE
 import qualified Data.Map.Strict          as Map
+import           Data.Maybe
+    (maybeToList)
 import           Data.Sum
 import           Qafny.Analysis.Interval
     (Interval (..))
-import Data.Maybe (maybeToList)
-
-
-
 
 -------------------- Builder --------------------
 type Builder = P.Doc TS.Text
@@ -414,6 +412,9 @@ instance DafnyPrinter MTy where
   pp (MTy (Inr m)) =
     byComma (mtSrcParams m) <+> "↪" <+> byComma (mtSrcReturns m)
 
+instance DafnyPrinter a => DafnyPrinter (Normalized a) where
+  pp = debugOnly' . pp . denorm
+
 -- | Warning: don't emit parentheses in `ppOp2` because `EOpChained` relies
 -- on this function not to be parenthesized
 -- TODO: I want to get the precedence right here.
@@ -488,7 +489,7 @@ prettyIO = putDoc True . pp
 instance DafnyPrinter [Int] where
   pp = list
 
-ppSst :: (Partition, (QTy, [Int])) -> Builder
+ppSst :: DafnyPrinter a => (a, (QTy, [Int])) -> Builder
 ppSst (p, (q, i)) = p <+> "::" <+> q <+> "~" <+> list i
 
 instance DafnyPrinter TState where

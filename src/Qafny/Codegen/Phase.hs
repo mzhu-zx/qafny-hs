@@ -89,7 +89,7 @@ codegenPromote'0'1
      , Has (State TState) sig m
      , Has (Error Builder) sig m
      )
-  => QTy -> [Range] -> [PhaseRef] -> (Exp', Exp') -> m [Stmt']
+  => QTy -> [Normalized Range] -> [PhaseRef] -> (Exp', Exp') -> m [Stmt']
 codegenPromote'0'1 qt rs prefs (i, n) = do
   vRs <- fsts <$> findVisitEms evBasis (inj <$> rs)
   let eCardVRs = mkCard <$> vRs
@@ -164,7 +164,7 @@ codegenQft
 codegenQft locusEn locusQft = do
   edLocus <- findEm iloc      -- for amp+phase purpose
   (edRApplied, edRsRest) <-   -- for kets purpose
-    ensuresNonEmptyEms <$> findEms (inj <$> ranges)
+    ensuresNonEmptyEms <$> findEms (inj <$> nranges)
   ((vIdxK, _), (vIdxI, _)) <-            -- indices
     liftM2 (,) (gensymBinding "k" TNat) (gensymBinding "i" TNat)
 
@@ -182,18 +182,18 @@ codegenQft locusEn locusQft = do
   vsKetFresh <-
     if qty locusEn == qty locusQft
     then return vsKetRest
-    else genEmStUpdateKets (qty locusQft) ranges
+    else genEmStUpdateKets (qty locusQft) nranges
 
   return $ codegenQftPure
     (vpEn, vpFresh) vKetApplied
     (vsKetRest, vsKetFresh) vIdxK vIdxI nQft
     (vbEn, vbFresh)
   where
-    Locus {loc, part=Partition{ranges}, degrees=qftDegrees} = locusQft
+    Locus {loc, part=NPartition{nranges}, degrees=qftDegrees} = locusQft
     iloc = inj loc              -- inject to RangeOrLoc
     qftDegree = head qftDegrees -- safe to ignore the rest
     nQft =                      -- compute Qft
-      let Range _ rl rr = head ranges
+      let Normalized (Range _ rl rr) = head nranges
       in mkPow2(rr - rl)
     ensuresNonEmptyEms eds = fromMaybe (error "unreachable") $ uncons eds
 

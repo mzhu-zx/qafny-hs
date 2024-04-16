@@ -5,7 +5,7 @@
 
 module Qafny.Codegen.SplitCast where
 import           Control.Arrow
-    (Arrow (second))
+    (Arrow (second, first))
 import           Control.Monad
     (liftM2)
 import qualified Data.List.NonEmpty       as NE
@@ -26,6 +26,9 @@ import           Qafny.Typing
 import           Qafny.Utils.EmitBinding
 import           Qafny.Utils.Utils
     (both)
+import Qafny.Codegen.Common (codegenAssignEmitData, codegenAssignEmitData')
+import Data.Functor.Identity (Identity(Identity, runIdentity))
+import Data.Tuple (swap)
 
 throwError'
   :: ( Has (Error Builder) sig m )
@@ -41,18 +44,19 @@ codegenSplitEmitMaybe = maybe [] codegenSplitEmit
 -- | Generate emit variables and split operations from a given split scheme.
 codegenSplitEmit :: SplitScheme -> [Stmt']
 codegenSplitEmit
-  SplitScheme { schEdAffected=(rAffected@(Range _ elAff erAff)
-                              ,edAffL, edAffR )
+  SplitScheme { schEdAffected=( nrAffected@(Normalized (Range _ elAff erAff))
+                              , edAffL
+                              , edAffR )
               , schEdSplit=(rSplit ,edSplitR)
               , schEdRemainders
               } =
   concatMap stmtsSplitRem $ NE.toList schEdRemainders ++ [(rSplit, edAffL, edSplitR)]
   where
-    stmtsSplitRem (Range _ elRem erRem, edRemL, edRemR) =
-      let off  = elRem - elAff
-          size = erRem - elRem
+    stmtsSplitRem (Normalized (Range _ elRem erRem), edRemL, edRemR) =
+      let off  = reduce (elRem - elAff)
+          size = reduce (erRem - elRem)
       in codegenSplitEd edRemL edAffL off size ++
-         codegenSplitEd edRemR edAffR   off size
+         codegenSplitEd edRemR edAffR off size
 
 
 codegenSplitEd :: EmitData -> EmitData -> Exp' -> Exp' -> [Stmt']
@@ -120,8 +124,10 @@ codegenCastEmit
   :: ( Has (Error Builder) sig m)
   => CastScheme -> m [Stmt']
 codegenCastEmit
-  CastScheme{ schEdsFrom=edsFrom@(lEdFrom, rsEdFrom), schEdsTo=edsTo@(lEdTo, rsEdTo)
-            , schQtFrom , schQtTo
+  CastScheme{ schEdsFrom=edsFrom@(lEdFrom, nrsEdFrom)
+            , schEdsTo  =edsTo@(lEdTo, nrsEdTo)
+            , schQtFrom
+            , schQtTo
             } =
   case rules schQtFrom schQtTo of
     Nothing -> throwError' $ vsep
@@ -131,6 +137,9 @@ codegenCastEmit
       ]
     Just s  -> return s
   where
+    rsEdFrom = first denorm <$> nrsEdFrom
+    rsEdTo   = first denorm <$> nrsEdTo
+
     rules :: QTy -> QTy -> Maybe [Stmt']
     -- "nor < *"
     rules TNor TEn = do
@@ -243,23 +252,16 @@ castPartitionEN' st@Locus{loc=locS, part=s, qty=qtS} = do
 -- modifying the existing bindings!
 --
 dupState
-  :: ( GensymEmitterWithStateError sig m
-     , Has (Reader IEnv) sig m
-     , Has Trace sig m
-     )
-  => Partition -> m ([Stmt'], [((Var, Ty), (Var, Ty))])
-dupState s' = do
-  Locus{loc=locS, part=s, qty=qtS, degrees=ptys} <- resolvePartition s'
-  let rs = ranges s
-  -- generate a set of fresh emit variables as the stashed partition
-  -- do not manipulate the `emitSt` here
-  vsEmitFresh <- genEmByRange qtS `mapM` rs >>= visitEmsBasis
-  -- the only place where state is used!
-  vsEmitPrev  <- findEmitBasesByRanges rs
+  :: ( GensymEmitterWithStateError sig m )
+  => Locus -> m ([Stmt'], [(EmitData, EmitData)])
+dupState l = do
+  -- l@Locus{loc=locS, part=s, qty=qtS, degrees=ptys} <- resolvePartition s'
+  ledNow <- findEmsByLocus l
+  ledDup <- genEmFromLocus l
   let comm = qComment "Duplicate"
-  let stmts = [ (::=:) vEmitFresh (EVar vEmitPrev)
-              | ((vEmitFresh, _), (vEmitPrev, _)) <- zip vsEmitFresh vsEmitPrev ]
-  return (comm : stmts, zip vsEmitPrev vsEmitFresh)
+  matchedEds <- runIdentity <$> eraseMatchedRanges' (Identity (ledNow, ledDup))
+  stmts <- codegenAssignEmitData False (swap <$> matchedEds)
+  return (comm : stmts, matchedEds)
 
 -- | Assemble a partition collected from the guard with bounds and emit a
 -- verification time assertions that checks the partition is indeed within the

@@ -9,7 +9,7 @@ module Qafny.Effect
   , module Effect.Gensym
   , GensymEmitterWithState, GensymEmitterWithStateError, StateMayFail
   , GensymMeta
-  , HasResolution, GenConditionally, MayFail, HasPContext
+  , HasResolution, GenConditionally, MayFail, HasPContext, GensymEmit
   ) where
 
 -- | Re-export useful effects to avoid cluttered imports in other modules
@@ -42,6 +42,9 @@ type GensymEmitterWithStateError sig m =
 
 type GensymMeta sig m =
   Has (Gensym Var) sig m
+
+type GensymEmit sig m =
+  Has (Gensym Emitter) sig m
 
 type StateMayFail sig m =
   (Has (Error Builder) sig m , Has (State TState) sig m)

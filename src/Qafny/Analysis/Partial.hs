@@ -20,7 +20,6 @@ import           Data.Bifunctor
     (Bifunctor (first))
 import           Qafny.Syntax.AST
 import           Qafny.Syntax.IR
-import           Qafny.Syntax.Subst
 
 --------------------------------------------------------------------------------
 -- $doc
@@ -115,19 +114,6 @@ instance Reducible a => Reducible (a :+: b) where
   reduce (Inl r) = inj $ reduce r
   reduce b       = b
 
-
-instance Reducible TState where
-  reduce (TState{ _sSt = s, _xSt = x, _emitSt = es }) =
-    TState { _sSt = first reduce <$> s
-           , _xSt = (first reduce <$>) <$> x
-           , _emitSt = Map.mapKeys reduce es
-           }
-
-
--- instance Reducible EmitBinding where
---   reduce (RBinding b) = RBinding $ first reduce b
---   reduce v            = v
-
 -- | Union two residual maps with the given operator and remove zero-coefficient
 -- variables
 evalResidue
@@ -154,7 +140,3 @@ hasResidue = isJust . staticValue . evalP
 
 sizeOfRangeP :: Range -> Maybe Int
 sizeOfRangeP (Range _ el er) = evalPStatic (er - el)
-
-
-substReduce :: (Reducible a, Substitutable a) => AEnv -> a -> a
-substReduce aenv = reduce . subst aenv

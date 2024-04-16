@@ -11,12 +11,14 @@ import           Control.Exception
     (assert)
 import           Data.Sum
     (Injection (inj))
+import           Qafny.Analysis.Normalize
+    (Normalizable (normalize))
 import           Qafny.Codegen.Merge
     (codegenMergeScheme)
 import           Qafny.Codegen.Phase
     (codegenPhaseLambda, codegenPromotion)
 import           Qafny.Codegen.SplitCast
-    (castPartitionEN, codegenSplitThenCastEmit, castPartitionEN')
+    (castPartitionEN, castPartitionEN', codegenSplitThenCastEmit)
 import           Qafny.Codegen.Utils
     (putOpt)
 import           Qafny.Effect
@@ -134,7 +136,7 @@ codegenUnaryLambda rLhs rResolved locus qtLambda
 
   -- | It's important not to use the fully resolved `s` here because the OP
   -- should only be applied to the sub-partition specified in the annotation.
-  (vEmit, _) <- findEmitBasisByRange rLhs
+  (vEmit, _) <- findEmitBasisByRange (normalize rLhs)
   ((stmts ++) . (stmtsPhase ++) <$>) . putOpt $ case qtLambda of
     TEn -> return [ vEmit ::=: callMap lamSansPhase vEmit ]
     TEn01 -> do
@@ -180,7 +182,7 @@ codegenUnaryLambda rLhs rResolved locus qtLambda
 codegenLambdaEntangle
   :: GensymEmitterWithStateError sig m => [Range] -> Lambda -> m [Stmt']
 codegenLambdaEntangle rs (LambdaF{ bBases, eBases }) = do
-  vReprs <- fsts <$> findEmitBasesByRanges rs
+  vReprs <- fsts <$> findEmitBasesByRanges (normalize <$> rs)
   unless (lenBbases == lenEbases && length vReprs == lenEbases) $
     throwError' errInconsistentLength
   (iVar, _) <- gensymBinding "i" TNat

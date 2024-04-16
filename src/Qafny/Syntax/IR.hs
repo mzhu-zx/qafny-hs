@@ -3,16 +3,16 @@
   , FlexibleInstances
   , GADTs
   , LambdaCase
+  , PatternSynonyms
+  , StrictData
   , TemplateHaskell
   , TypeApplications
   , TypeOperators
-  , StrictData
+  , ViewPatterns
   #-}
 module Qafny.Syntax.IR where
 
 import           Control.Lens
-import           Data.Bifunctor
-import           Data.Functor.Identity
 import           Data.List
     (intercalate)
 import           Data.List.NonEmpty
@@ -20,18 +20,52 @@ import           Data.List.NonEmpty
 import qualified Data.Map.Strict          as Map
 import           Data.Sum
 import           Qafny.Syntax.AST
-import           Qafny.TTG
 import           Qafny.Syntax.EmitBinding
+import           Qafny.TTG
+
+-- * Normalization
+newtype Normalized a = Normalized { denorm :: a }
+  deriving (Ord, Eq)
+
+instance Show a  => Show (Normalized a) where
+  show = show . denorm
+
+instance Injection (Normalized f) (Normalized (f :+: g)) where
+  inj = Normalized . inj . denorm
+
+instance Injection Loc (Normalized (f :+: Loc)) where
+  inj = Normalized . inj
+
+viewNormalizedRanges
+  :: Functor t => Normalized (PartitionT t) -> t (Normalized Range)
+viewNormalizedRanges = (Normalized <$>) . ranges . denorm
+
+
+npart
+  :: Functor t => t (Normalized Range) -> Normalized (PartitionT t)
+npart = Normalized . Partition . (denorm <$>)
+
+pattern NPartition
+  :: (Functor t => t (Normalized Range) -> Normalized (PartitionT t))
+pattern NPartition{nranges} <- (viewNormalizedRanges -> nranges) 
+{-# COMPLETE NPartition #-}
+
+-- ** LoucsEmitData
+-- This is also normalized.
+
+type LocusEmitData = LocusTEmitData []
+newtype LocusEmitData' =  LocusEmitData' (LocusTEmitData [])
+type LocusTEmitData t = (EmitData, t (Normalized Range, EmitData))
 
 --------------------------------------------------------------------------------
 -- High-Order Types
 --------------------------------------------------------------------------------
 -- TODO: Migrate to Locus representation
 data LocusT t =
-  Locus { loc     :: Loc           -- ^ identifier for the locus
-        , part    :: PartitionT t  -- ^ partition
-        , qty     :: QTy           -- ^ entanglement type
-        , degrees :: [Int]         -- ^ degrees of phase info
+  Locus { loc     :: Loc                        -- ^ identifier for the locus
+        , part    :: Normalized (PartitionT t)  -- ^ partition
+        , qty     :: QTy                        -- ^ entanglement type
+        , degrees :: [Int]                      -- ^ degrees of phase info
         }
 
 type Locus = LocusT []
@@ -95,13 +129,13 @@ data TEnv = TEnv
   }
 
 type RangeOrLoc = Range :+: Loc
-type EmitState = Map.Map RangeOrLoc EmitData
-
-
+type EmitState = Map.Map (Normalized RangeOrLoc) EmitData
 
 data TState = TState
-  { _sSt    :: Map.Map Loc (Partition, (QTy, [Int])) -- partition type state
-  , _xSt    :: Map.Map Var [(Range, Loc)]            -- range reference state
+  { _sSt    :: Map.Map Loc (Normalized Partition, (QTy, [Int]))
+    -- ^ partition type state
+  , _xSt    :: Map.Map Var [(Normalized Range, Loc)]
+    -- ^ range reference state
   , _emitSt :: EmitState
   }
 $(makeLenses ''TState)
@@ -132,19 +166,19 @@ initTState = TState
   }
 
 data SplitScheme = SplitScheme
-  { schEdAffected   :: (Range, EmitData, EmitData)
+  { schEdAffected   :: (Normalized Range, EmitData, EmitData)
     -- ^ Both locus and range `EmitData` for the affected range
-  , schEdSplit      :: (Range, EmitData)
+  , schEdSplit      :: (Normalized Range, EmitData)
     -- ^ The range `EmitData` for the split range. The affected one shares the
     -- same locus as the split one.
-  , schEdRemainders :: NonEmpty (Range, EmitData, EmitData)
+  , schEdRemainders :: NonEmpty (Normalized Range, EmitData, EmitData)
     -- ^ Both locus and range `EmitData` for each (singleton) remainders
   }
   deriving Show
 
 data CastScheme = CastScheme
-  { schEdsFrom :: (EmitData, [(Range, EmitData)])
-  , schEdsTo   :: (EmitData, [(Range, EmitData)])
+  { schEdsFrom :: LocusEmitData
+  , schEdsTo   :: LocusEmitData
   , schQtFrom  :: QTy
   , schQtTo    :: QTy
   -- , schRsCast  :: [Range] -- | casted ranges
@@ -163,10 +197,10 @@ newtype EqualStrategy = EqualStrategy
   deriving Show
 
 data JoinStrategy = JoinStrategy
-  { jsRMain    :: Range
+  { jsRMain    :: Normalized Range
   , jsQtMain   :: QTy
-  , jsRResult  :: Range
-  , jsRMerged  :: Range
+  , jsRResult  :: Normalized Range
+  , jsRMerged  :: Normalized Range
   , jsQtMerged :: QTy
   }
   deriving Show
@@ -185,3 +219,4 @@ type SRel  = SRelT []
 
 deriving instance (Show SRel1)
 deriving instance (Show SRel)
+

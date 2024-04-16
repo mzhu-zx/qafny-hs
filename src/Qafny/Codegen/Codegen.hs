@@ -42,7 +42,7 @@ import           Data.List.NonEmpty
     (NonEmpty (..))
 import qualified Data.Map.Strict              as Map
 import           Data.Maybe
-    (mapMaybe)
+    (mapMaybe, catMaybes)
 import qualified Data.Sum                     as Sum
 import           Text.Printf
     (printf)
@@ -54,7 +54,7 @@ import           Qafny.Codegen.Utils
 import           Qafny.Analysis.Interval
     (Interval (Interval))
 import           Qafny.Analysis.Partial
-    (Reducible (reduce), substReduce)
+    (Reducible (reduce))
 import           Qafny.Config
 import           Qafny.Syntax.AST
 import           Qafny.Syntax.ASTFactory
@@ -74,8 +74,10 @@ import           Data.Sum
     (Injection (inj))
 import           Data.Tuple
     (swap)
+import           Qafny.Analysis.Normalize
+    (Normalizable (normalize))
 import           Qafny.Codegen.Common
-    (codegenAssignEmitData)
+    (codegenAssignEmitData, codegenAssignEmitDataF)
 import           Qafny.Codegen.Had
     (codegenNorToHad)
 import           Qafny.Codegen.Lambda
@@ -103,7 +105,6 @@ import           Qafny.Utils.TraceF
     (Traceable (tracef))
 import           Qafny.Utils.Utils
     (both, bothM, dumpSt, gensymLoc, getMethodType, tracep)
-import Qafny.Analysis.Normalize (Normalizable(normalize))
 
 --------------------------------------------------------------------------------
 -- * Introduction
@@ -268,8 +269,14 @@ codegenToplevel'Method q@(QMethod vMethod bds rts rqs ens (Just block)) = runWit
       return (es, codegenMethodParams mty eds, stmtsCopy)
 
     codegenMethodBody =
-      runReader TEn .  -- | resolve λ to EN on default
+      runReader TEn .  -- | resolve λ to EN on default  -- | resolve λ to EN on default  -- | resolve λ to EN on default  -- | resolve λ to EN on default
+        -- | resolve λ to EN on default
       runReader True .
+      -- ((,) <$> genEmitSt <*>) .
+      -- ((,) <$> genEmitSt <*>) .
+      -- ((,) <$> genEmitSt <*>) .
+      -- ((,) <$> genEmitSt <*>) .
+      
       -- ((,) <$> genEmitSt <*>) .
       (dumpSt "begin block" >>) .
       codegenBlock
@@ -387,11 +394,12 @@ codegenStmt' (SIf e seps b) = do
   (stmtsCastB, stB) <- case qtB of
     TEn -> return ([], stB')
     _   ->
-      (,) . (annotateCastB :) <$> castPartitionEN stB' <*> resolvePartition sB
+      (,) . (annotateCastB :)
+      <$> castPartitionEN stB' <*> resolvePartition (denorm sB)
   -- act based on the type of the guard
   stmts <- case qtG of
-    THad -> codegenStmt'If'Had stG stB b
-    _    -> undefined
+    THad    -> codegenStmt'If'Had stG stB b
+    _nothad -> undefined
   return $ stmtsSplit ++ stmtsCastB ++ stmts
 
 codegenStmt' s@(SFor {}) =
@@ -489,7 +497,8 @@ codegenStmt'If (SIf e _ b) = do
         printf "Cast Body Partition %s => %s" (show qtB) (show TEn)
   (stmtsCastB, stB) <- case qtB of
     TEn -> return ([], stB')
-    _   -> (,) . (annotateCastB :) <$> castPartitionEN stB' <*> resolvePartition sB
+    _   -> (,) . (annotateCastB :)
+      <$> castPartitionEN stB' <*> resolvePartition (denorm sB)
   -- act based on the type of the guard
   stmts <- case qtG of
     THad -> codegenStmt'If'Had stG stB b
@@ -514,20 +523,20 @@ codegenStmt'If'Had
   -> m [Stmt']
 codegenStmt'If'Had stG stB' b = do
   -- 0. extract partition, this will not be changed
-  let sB = part stB'
   -- 1. duplicate the body partition
-  (stmtsDupB, corr) <- dupState sB
+  (stmtsDupB, corrNowFresh) <- dupState stB'
   -- 2. codegen the body
   stmtB <- SEmit . SBlock <$> codegenBlock b
   -- TODO: left vs right merge strategy
-  (cardMain', cardStash') <- codegenEnReprCard2 corr
-  ((stmtCard, cardMain), (stmtStash, cardStash)) <-
-    bothM saveCard (cardMain', cardStash')
+  cardsNowFresh <- codegenEnReprCard2 corrNowFresh
+  stmtsSaveCards <-
+    bothM saveCard `mapM` cardsNowFresh
   -- 3. merge duplicated body partitions and merge the body with the guard
-  stB <- resolvePartition sB
-  stmtsG <- mergeHadGuard stG stB cardMain cardStash
-  let stmtsMerge = mergeEmitted corr []
-  return $ stmtsDupB ++ [stmtB] ++ [stmtCard, stmtStash] ++ stmtsMerge ++ stmtsG
+  stB <- resolvePartition (denorm (part stG))
+  -- stmtsG <- mergeHadGuard stG stB cardMain cardStash
+  -- let stmtsMerge = mergeEmitted corr []
+  -- return $ stmtsDupB ++ [stmtB] ++ [stmtCard, stmtStash] ++ stmtsMerge ++ stmtsG
+  undefined
   where
     saveCard e = do
       v <- gensym "card"
@@ -656,7 +665,7 @@ codegenStmt'For (SFor idx boundl boundr eG invs (Just seps) body) = do
     --
     codegenFinish tsLoop = do
       trace $ show (idx, boundr)
-      put . reduce $ subst [(idx, boundr)] tsLoop
+      put $ subst [(idx, boundr)] tsLoop
 
 codegenStmt'For _ = throwError' "What could possibly go wrong?"
 
@@ -699,7 +708,7 @@ codegenFor'Body idx boundl boundr eG body stSep@(Locus{qty=qtSep}) newInvs = do
       (stmtsCastB, stB) <- case qtB of
         _ | isEn qtB -> return ([], stB')
         _            ->
-          (,) <$> castPartitionEN stB' <*> resolvePartition (part stB')
+          (,) <$> castPartitionEN stB' <*> resolvePartition (denorm (part stB'))
 
       -- what to do with the guard partition is unsure...
       -- TODO: This comment seems out-of-date
@@ -726,7 +735,7 @@ codegenFor'Body idx boundl boundr eG body stSep@(Locus{qty=qtSep}) newInvs = do
       --       [ qComment "Retype from Had to EN and initialize with 0"
       --       , (::=:) vEmitG $
       --           EEmit $ EMakeSeq TNat cardVEmitG $ constExp $ ENum 0 ]
-      stG' <- resolvePartition (part stGSplited)
+      stG' <- resolvePartition (denorm (part stGSplited))
       stmtsCGHad <- codegenStmt'For'Had stB stG' idx body
       dumpSt "the end of Had for loop"
       stmtsMatchLoopBeginEnd <-
@@ -756,7 +765,7 @@ codegenFor'Body idx boundl boundr eG body stSep@(Locus{qty=qtSep}) newInvs = do
       -- TODO: I need one way to duplicate generated emit symbols in the split
       -- and cast semantics so that executing the computation above twice will
       -- solve the problem.
-      vsEmitSep <-  findEmitBasesByRanges rsSep
+      vsEmitSep <-  findEmitBasesByRanges nrsSep
 
       -- compile for the 'false' branch with non-essential statements suppressed
       (tsFalse, (stmtsFalse, vsFalse)) <- runState stateIterBegin $ do
@@ -800,8 +809,8 @@ codegenFor'Body idx boundl boundr eG body stSep@(Locus{qty=qtSep}) newInvs = do
   return $ stmtsPrelude ++ [innerFor]
   where
     installEmits = mapM (uncurry appendEmSt)
-    rsSep = ranges $ part stSep
-    inferTsLoopEnd =  substReduce [(idx, EVar idx + 1)]
+    nrsSep = nranges (part stSep)
+    inferTsLoopEnd =  subst [(idx, EVar idx + 1)]
     codegenHalf psBody = do
       -- 2. generate the body statements with the hint that lambda should
       -- resolve to EN01 now
@@ -859,9 +868,8 @@ codegenStmt'For'Had
   -> m [Stmt']
 codegenStmt'For'Had stB stG vIdx b = do
   -- 0. extract partition, this will not be changed
-  let sB = part stB
   -- 1. duplicate the body
-  (stmtsDupB, corrB) <- dupState sB
+  (stmtsDupB, corrNowFresh) <- dupState stB
   () <- tracef ">>>>> \n%s" (showEmitI 4 (vsep stmtsDupB))
   -- 3. codegen the body
   stmtB <- SEmit . SBlock <$> codegenBlock b
@@ -882,8 +890,7 @@ codegenStmt'For'Had stB stG vIdx b = do
   (stmtsMergeG, vsSkip) <- unzip <$> codegenMergeScheme mayMerge
 
   -- 4. merge the main body with the stashed
-  let stmtsMergeB = mergeEmitted corrB vsSkip
-
+  stmtsMergeB <- mergeEmitted corrNowFresh vsSkip
 
   return $ stmtsDupB ++ [stmtB] ++ stmtsMergeB ++ stmtsMergeG
 
@@ -956,22 +963,26 @@ hadGuardMergeExp vEmit tEmit cardMain cardStash eBase =
 -- correspondence
 codegenEnReprCard2
   :: ( Has (Error Builder) sig m )
-  => [((Var, Ty), (Var, Ty))]
-  -> m (Exp', Exp')
-codegenEnReprCard2 (((vStash, _) ,(vMain, _)) : _) =
-  return ( EEmit . ECard . EVar $ vStash
-         , EEmit . ECard . EVar $ vMain)
-codegenEnReprCard2 a =
-  throwError' "State cardinality of an empty correspondence is undefined!"
+  => [(EmitData, EmitData)]
+  -> m [(Exp', Exp')]
+codegenEnReprCard2 =
+  (catMaybes <$>) . codegenAssignEmitDataF False go
+  where
+    -- go :: (Var, Ty) -> (Var, Ty) -> [(Exp', Exp')]
+    go (v1, TSeq _) (v2, TSeq _) = Just (mkCard v1, mkCard v2)
+    go _ _ = Nothing
+-- codegenEnReprCard2 a =
+--   throwError' "State cardinality of an empty correspondence is undefined!"
 
 
 -- Merge the two partitions in correspondence
-mergeEmitted :: [((Var, Ty), (Var, Ty))] -> [Var] -> [Stmt']
-mergeEmitted corr excluded =
-  [ vMain ::=: EOp2 OAdd (EVar vStash) (EVar vMain)
-  | ((vMain, _), (vStash, _)) <- corr
-  , vMain `notElem` excluded ]
-
+mergeEmitted :: MayFail sig m => [(EmitData, EmitData)] -> [Var] -> m [Stmt']
+mergeEmitted corrNowFresh excluded =
+  catMaybes <$> codegenAssignEmitDataF False go corrNowFresh
+  where
+    go (v1, t1) (v2, t2) | v1 `notElem` excluded =  Just $
+      v1 ::=: EOp2 OAdd (EVar v2) (EVar v1)
+                         | otherwise  = Nothing
 
 -- | Generate statements that allocate qubits if it's Nor; otherwise, keep the
 -- source statement as is.
@@ -984,12 +995,13 @@ codegenAlloc
   => Var -> Exp' -> Ty -> m Stmt'
 codegenAlloc v e@(EOp2 ONor e1 e2) t@(TQReg _) = do
   let eEmit = EEmit $ EMakeSeq TNat e1 $ constLambda e2
-  let rV = normalize $ Range v (ENum 0) e1
-      part = partition1 rV
+  let nrV@(Normalized rV) = normalize $ Range v (ENum 0) e1
+      partI = Normalized (partition1 rV)
+      part = normalize $ Partition [rV]
   loc <- gensymLoc v
-  xSt %= (at v . non [] %~ ((rV, loc) :))
-  sSt %= (at loc ?~ (Partition [rV], (TNor, [0])))
-  let locus = Locus{ loc, part, qty=TNor, degrees=[] }
+  xSt %= (at v . non [] %~ ((nrV, loc) :))
+  sSt %= (at loc ?~ (part, (TNor, [0])))
+  let locus = Locus{ loc, part=partI, qty=TNor, degrees=[] }
   (edL, Identity (_, edR)) <- genEmStFromLocus locus
   (vEmit, _) <- visitEmBasis edR
   return $ vEmit ::=: eEmit

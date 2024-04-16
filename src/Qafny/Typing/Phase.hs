@@ -57,7 +57,7 @@ data PromotionScheme = PromotionScheme
   }
 
 data Promotion
-  = Promote'0'1 (Exp', Exp') [Range] QTy
+  = Promote'0'1 (Exp', Exp') [Normalized Range] QTy
 
 -- | Promote phases to another level
 -- - The degree of the binder should agree with the degree of the tuple
@@ -95,7 +95,7 @@ promotionScheme st@Locus{loc, part, qty, degrees=dgrsSt} pb pe =
     dgrBind = analyzePhaseSpecDegree pb
     dgrSpec = analyzePhaseSpecDegree pe
 
-    rs = ranges part
+    rs = nranges part
 
     -- Promote 0 to 1
     promote'0'1
@@ -172,7 +172,7 @@ allocAndUpdatePhaseType
      , Has (Error Builder) sig m
      )
   => Locus -> m [Maybe (PhaseRef, Ty)]
-allocAndUpdatePhaseType s@Locus{loc, part=Partition{ranges}, qty, degrees} = do
+allocAndUpdatePhaseType s = do
   updateMetaStByLocus s
   (evPhaseRef <$>) <$> genEmStUpdatePhaseFromLocus s
 
@@ -182,13 +182,13 @@ queryPhase
      , Has (Error Builder) sig m
      )
   => Locus -> m [Maybe (PhaseRef, Ty)]
-queryPhase Locus{loc, part=Partition{ranges}, qty, degrees}
+queryPhase Locus{loc, part, qty, degrees}
   | isEn qty = do
       dgr <- onlyOne (throwError' . ("1" <+>)) degrees
       singleton . evPhaseRef <$> findEm (inj loc)
   | otherwise = do
-      haveSameLength "queryPhase" ranges degrees
-      sequence [ evPhaseRef <$> findEm (inj r) | r <- ranges ]
+      haveSameLength "queryPhase" (nranges part) degrees
+      sequence [ evPhaseRef <$> findEm (inj r) | r <- nranges part ]
 
 -- | Query in the emit state the phase types of the given Locus
 queryPhaseRef
@@ -196,13 +196,13 @@ queryPhaseRef
      , Has (Error Builder) sig m
      )
   => Locus -> m [Maybe (PhaseRef, Ty)]
-queryPhaseRef Locus{loc, part=Partition{ranges}, qty, degrees}
+queryPhaseRef Locus{loc, part=NPartition{nranges}, qty, degrees}
   | isEn qty = do
       dgr <- onlyOne (throwError' . ("2" <+>)) degrees
       singleton . evPhaseRef <$> findEm (inj loc)
   | otherwise = do
-      haveSameLength "queryPhaseRef" ranges degrees
-      sequence [ evPhaseRef <$> findEm (inj r) | r <- ranges ]
+      haveSameLength "queryPhaseRef" nranges degrees
+      sequence [ evPhaseRef <$> findEm (inj r) | r <- nranges ]
 
 -- * Degree
 

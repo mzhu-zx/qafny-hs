@@ -46,7 +46,7 @@ import           Control.Lens
 import           Control.Monad
     (forM, forM_, liftM2, unless, when, zipWithM, (>=>))
 import           Data.Bifunctor
-    (Bifunctor (second))
+    (Bifunctor (first, second))
 import           Data.Bool
     (bool)
 import           Data.Functor
@@ -187,10 +187,10 @@ resolvePartition' se' = do
 removeTStateByLocus
   :: (Has (State TState) sig m)
   => Locus -> m ()
-removeTStateByLocus st@(Locus{loc, part=p, qty}) = do
+removeTStateByLocus st@(Locus{loc, part, qty}) = do
   sSt %= flip Map.withoutKeys (Set.singleton loc)
   xSt %= Map.map (filter ((/= loc) . snd))
-  deleteEmPartition loc (unpackPart p)
+  deleteEmPartition loc (nranges part)
 
 -- | Query all ranges related to the given range.
 -- Return a list of tuple standing for
@@ -208,7 +208,7 @@ resolveRange r@(Range name _ _) = do
   (⊑//) <- (⊑/) -- specialize the predicate using the current constraints
   rlocs <- use (xSt . at name) `rethrowMaybe` UnknownRangeError r
   return [ (r, r', r ⊑// r', loc)
-         | (r', loc) <- rlocs ]
+         | (Normalized r', loc) <- rlocs ]
 
 -- | Resolve the ranges using the Range name state and the current constraint
 -- environment.  It is strict in that the resolution is considered strict if all
@@ -222,11 +222,11 @@ resolveRangesStrict rs = do
   zipWithM (go (∀⊑//)) rs rslocs
   where
     go cmp rGiven rlFound =
-      case filter (cmp rGiven . fst) rlFound of
-        [(rFound, lFound)] ->
+      case filter (cmp rGiven . denorm . fst) rlFound of
+        [(Normalized rFound, lFound)] ->
           pure (rGiven, rFound, lFound)
         []    -> errUnknownRange rGiven
-        found -> errAmbiguousRange rGiven found
+        found -> errAmbiguousRange rGiven (first denorm <$> found)
     errUnknownRange = throwError' . pp .UnknownRangeError
     errAmbiguousRange rGiven found =
       throwError' (pp (AmbiguousRange rGiven found))
@@ -312,16 +312,17 @@ contractRange
   :: ( Has (Error Builder) sig m
      , Has (Reader IEnv) sig m
      )
-  => Range -> m (Maybe Range)
-contractRange r = do
+  => Normalized Range -> m (Maybe (Normalized Range))
+contractRange nr = do
   botHuh <- ($ r) <$> isBotI
   case botHuh of
     _ | all (== Just True) botHuh -> return Nothing
     _ | all isJust botHuh         ->
         -- may or may not be, therefore leave it there
-        return (Just r)
-    _                             -> err botHuh
+        return (Just nr)
+    _iDontKnow                    -> err botHuh
   where
+    r = denorm nr
     err reason = do
       ienv <- ask @IEnv
       throwError' $ vsep
@@ -343,7 +344,7 @@ splitScheme'
   => Locus
   -> Range
   -> m (Locus, Maybe SplitScheme)
-splitScheme' s@(Locus{loc, part, qty, degrees}) rSplitTo@(Range to rstL rstR) = do
+splitScheme' s@(Locus{loc, part, qty, degrees}) rSplitTo'  = do
   -- FIXME: Type checking of `qt` should happen first because splitting an EN
   -- typed partition should not be allowed.
   -- TODO: Is this correct?
@@ -357,12 +358,10 @@ splitScheme' s@(Locus{loc, part, qty, degrees}) rSplitTo@(Range to rstL rstR) = 
   case NE.nonEmpty (rsRsRemainder rangeSplit) of
     Nothing -> -- | No split!
       return (s, Nothing)
-
     Just rsRemainder -> do
-
-      let psRemainder = Partition . Identity <$> rsRemainder
-          psRemainder' = Partition . List.singleton <$> rsRemainder
-          pSplitInto  = Partition [rSplitTo]
+      let psRemainder = npart . Identity <$> rsRemainder
+          psRemainder' = npart . List.singleton <$> rsRemainder
+          pSplitInto  = npart [rSplitTo]
       -- | ill-formed partition
       unless (null rsRsUnchanged) $
         throwError'' errInconsistentRemainder
@@ -379,9 +378,9 @@ splitScheme' s@(Locus{loc, part, qty, degrees}) rSplitTo@(Range to rstL rstR) = 
       xRangeLocs <- use (xSt . at to) `rethrowMaybe` errXST
       let xrl =
             -- "split range -> old loc"
-            [ (normalize rSplitTo, loc) ] ++
+            [ (rSplitTo, loc) ] ++
             -- "quotient ranges -> new loci"
-            [ (normalize rRemainder, locRem)
+            [ (rRemainder, locRem)
             | rRemainder <- NE.toList rsRemainder
             | locRem <- NE.toList lociRem
             ] ++
@@ -412,8 +411,9 @@ splitScheme' s@(Locus{loc, part, qty, degrees}) rSplitTo@(Range to rstL rstR) = 
       return $ ( locusSplitInto
                , Just SplitScheme { schEdAffected, schEdSplit, schEdRemainders })
   where
+    rSplitTo@(Normalized (Range to rstL rstR)) = normalize rSplitTo'
     updateLocPartOfS l p = s{loc=l, part=p}
-    rangeVar (Range x _ _) = x
+    rangeVar (Normalized (Range x _ _)) = x
     -- infoSS :: String = printf
     --   "[splitScheme] from (" <!> X <!> ") to (" <!> X <!> ")" (show s) (show rSplitTo)
     throwError'' s' = throwError' ("[split]" <+> s')
@@ -441,17 +441,17 @@ splitScheme' s@(Locus{loc, part, qty, degrees}) rSplitTo@(Range to rstL rstR) = 
 
 
 data RangeSplits = RangeSplits
-  { rsRLeft       :: Maybe Range
+  { rsRLeft       :: Maybe (Normalized Range)
     -- ^ left remainder
-  , rsRRight      :: Maybe Range
+  , rsRRight      :: Maybe (Normalized Range)
     -- ^ right remainder
-  , rsRSplitInto  :: Range
+  , rsRSplitInto  :: Normalized Range
     -- ^ resulting range
-  , rsRAffected   :: Range
+  , rsRAffected   :: Normalized Range
     -- ^ original range that is affected
-  , rsRsUnchanged :: [Range]
+  , rsRsUnchanged :: [Normalized Range]
     -- ^ other ranges untouched
-  , rsRsRemainder :: [Range]
+  , rsRsRemainder :: [Normalized Range]
     -- ^ remainders introduced by breaking the affected range (left + right)
   }
 
@@ -467,44 +467,51 @@ getRangeSplits
      , Has (Reader IEnv) sig m
      , Has Trace sig m
      )
-  => Locus -> Range -> m RangeSplits
-getRangeSplits s@(Locus{loc, part=p, degrees}) rSplitTo@(Range to rstL rstR) = do
+  => Locus -> Normalized Range -> m RangeSplits
+getRangeSplits
+  s@(Locus{loc, part=p, degrees})
+  nrSplitTo@(Normalized (Range to rstL rstR)) = do
   trace $ showEmit0
-    ("splitInto:" <+> "from" <+> p <+> "to" <+> rSplitTo)
-  botHuh <- ($ rSplitTo) <$> isBotI
+    ("splitInto:" <+> "from" <+> p <+> "to" <+> nrSplitTo)
+  botHuh <- ($ (denorm nrSplitTo)) <$> isBotI
   case botHuh of
     _ | all (== Just True)  botHuh -> throwError' errBotRx
     _ | all (== Just False) botHuh -> return ()
     _ -> do ienv <- ask @IEnv
             throwError' $ vsep
-              [ "Cannot decide if" <+> rSplitTo <+> "is empty."
+              [ "Cannot decide if" <+> nrSplitTo <+> "is empty."
               , "Env:" <+> ppIEnv ienv ]
   (⊑??) <- (∀⊑/)
   case matched (⊑??) of
     Nothing -> throwError' errImproperRx
-    Just (rRemL, _, rRemR, rOrigin, idx)  -> do
+    Just (rRemL, _, rRemR, rOrigin, idx) -> do
       rRemLeft  <- contractRange rRemL
       rRemRight <- contractRange rRemR
-      let rsRest = removeNth idx (unpackPart p)
+      let rsRest = removeNth idx (nranges p)
       return $ RangeSplits
         { rsRLeft       = rRemLeft
         , rsRRight      = rRemRight
-        , rsRSplitInto  = rSplitTo
+        , rsRSplitInto  = nrSplitTo
         , rsRAffected   = rOrigin
         , rsRsUnchanged = rsRest
         , rsRsRemainder = catMaybes [rRemLeft, rRemRight]
         }
   where
     removeNth n l = let (a, b) = splitAt n l in a ++ tail b
-    errBotRx = "The range " <!> rSplitTo <!> " contains no qubit!"
+    errBotRx = "The range " <!> nrSplitTo <!> " contains no qubit!"
     errImproperRx =
-      "The range " <!> rSplitTo <!> " is not a part of the partition " <!> s <!> "!"
+      "The range " <!> nrSplitTo <!> " is not a part of the partition " <!> s <!> "!"
     matched (⊑??) = listToMaybe -- logically, there should be at most one partition!
-      [ (Range y yl rstL, rSplitTo, Range y rstR yr, rRef, idx)
-      | (rRef@(Range y yl yr), idx) <- zip (unpackPart p) [0..]
+      [ ( Normalized (Range y yl rstL)
+        , nrSplitTo
+        , Normalized (Range y rstR yr)
+        , nrRef, idx)
+      | (nrRef@(Normalized (Range y yl yr)), idx) <- zip (nranges p) [0..]
         -- ^ choose a range in the environment
-      , to == y           -- | must be in the same register file!
-      , rSplitTo ⊑?? rRef -- | must be a sub-interval
+      , to == y
+        -- ^ must be of the same register label!
+      , (denorm nrSplitTo) ⊑?? (denorm nrRef)
+        -- ^ must be a sub-interval
       ]
 
 
@@ -533,10 +540,11 @@ splitThenCastScheme s'@Locus{ loc, part, qty=qt1, degrees } qt2 rSplitTo =
       -- do check to see if a split in range is also not needed
       RangeSplits { rsRAffected
                   , rsRsRemainder
-                  } <- getRangeSplits s' rSplitTo
+                  } <- getRangeSplits s' nrSplitTo
       case rsRsRemainder of
         [] -> return (s', Nothing, Nothing)
-        _  -> throwError $ SplitENError s' rSplitTo rsRAffected rsRsRemainder
+        __ -> throwError $ SplitENError
+          s' rSplitTo (denorm rsRAffected) (denorm <$> rsRsRemainder)
     (_ , _) | not (isEn qt1) && isEn qt2 -> do
       -- casting a smaller type to a larger type
       (sSplit, maySchemeS) <- splitScheme s' rSplitTo
@@ -549,8 +557,10 @@ splitThenCastScheme s'@Locus{ loc, part, qty=qt1, degrees } qt2 rSplitTo =
     _ ->
       throwError' errUndef
    where
+     nrSplitTo = normalize rSplitTo
      errUndef =
-       "split-then-cast-scheme is undefined for " <!> qt1 <!> " to " <!> qt2 <!> " type"
+       "split-then-cast-scheme is undefined for"
+       <+> qt1 <+> "to" <+> qt2 <+> "type"
 
 --------------------------------------------------------------------------------
 -- * Aux Typing
@@ -592,7 +602,7 @@ typingPartition
   => Partition -> m Locus
 typingPartition s = do
   st@Locus{part=pResolved, qty=qtResolved} <- resolvePartition s
-  when (List.sort (unpackPart s) /= List.sort (unpackPart pResolved)) $
+  when (List.sort (denorm <$> nranges pResolved) /= List.sort (ranges s)) $
     throwError' $ errIncompletePartition st
   return st
   where
@@ -703,7 +713,7 @@ matchLociInTState TState{_sSt=st1} TState{_sSt=st2} =
   where
     merge part t1 t2 = both (uncurry3 (`Locus` part)) (t1, t2)
     mkTree = Map.foldlWithKey' go Map.empty
-    go mp l (p, (qt, ds)) = Map.insert (normalize p) (l, qt, ds) mp
+    go mp l (p, (qt, ds)) = Map.insert p (l, qt, ds) mp
 
 -- | Match Locus emit data from two typing state by their partition.
 matchLocusEmitDataFromTStates
@@ -740,37 +750,38 @@ mergeScheme
   -> m [MergeScheme]
 mergeScheme
   stM'@Locus{loc=locMain, qty=qtMain, degrees=ptysMain}
-  stA@Locus{loc=locAux, part=sAux@(Partition rsAux), qty=qtAux, degrees=ptysAuz} = do
+  stA@Locus{loc=locAux, part=sAux@(NPartition nrsAux), qty=qtAux, degrees=ptysAuz} = do
 
   sSt %= (`Map.withoutKeys` Set.singleton locAux) -- GC aux's loc
-  forM rsAux $ \rAux@(Range _ _ erAux) -> do
+  forM nrsAux $ \nrAux@(Normalized (Range _ _ erAux)) -> do
     -- fetch the latest 'rsMain'
     let fetchMain = uses sSt (^. at locMain)
-    (Partition rsMain, _) <- rethrowMaybe fetchMain "WTF?"
+    nrsMain <- rethrowMaybe fetchMain "WTF?" <&>
+      \(NPartition nrsMain, _) -> nrsMain
     -- decide how to merge based on the if there's an adjacent range match
-    rsMergeTo <- lookupAdjacentRange rsMain rAux
+    rsMergeTo <- lookupAdjacentRange (denorm <$> nrsMain) (denorm nrAux)
     case rsMergeTo of
       [] -> do
         -- | Merge the standalone range into the Main partition and update range
         -- reference record in 'xSt' and the partition informaton of Main in
         -- 'sSt'
-        let pM = Partition $ rAux : rsMain
+        let pM = npart $ nrAux : nrsMain
         xSt %= Map.map redirectX
         sSt %= (at locMain ?~ (pM, (qtMain, ptysMain))) -- update main's partition
         return MMove
-      [rCandidate@(Range x elCandidate _)] -> do
+      [nrCandidate@(Normalized (Range x elCandidate _))] -> do
         -- | Merge the range into an existing range
         -- We know that the upperbound of the candidate is the same as the
         -- lowerbound of the aux range
-        let rNew = Range x elCandidate erAux
-        let pM = Partition $ (\r -> bool r rNew (r == rCandidate)) <$> rsMain
-        xSt %= Map.map (revampX (normalize rCandidate) (normalize rAux) (normalize rNew))
-        sSt %= (at locMain ?~ (normalize pM, (qtMain, ptysMain)))
+        let nrNew = normalize (Range x elCandidate erAux)
+        let pM = npart $ (\nr -> bool nr nrNew (nr == nrCandidate)) <$> nrsMain
+        xSt %= Map.map (revampX nrCandidate nrAux nrNew)
+        sSt %= (at locMain ?~ (pM, (qtMain, ptysMain)))
         return $ MJoin JoinStrategy
-          { jsRMain = rCandidate
-          , jsRMerged = rAux
-          , jsRResult = rNew
-          , jsQtMain = qtMain
+          { jsRMain    = nrCandidate
+          , jsRMerged  = nrAux
+          , jsRResult  = nrNew
+          , jsQtMain   = qtMain
           , jsQtMerged = qtAux
           }
       _ -> throwError' "Whoops! A lot of candidates to go, which one to go?"
@@ -789,10 +800,10 @@ mergeScheme
 lookupAdjacentRange
   :: ( Has (Reader IEnv) sig m
      )
-  => [Range] -> Range -> m [Range]
+  => [Range] -> Range -> m [Normalized Range]
 lookupAdjacentRange rs r@(Range _ el er) = do
   (≡?) <- (allI .:) <$> liftIEnv2 (≡)
-  return  [ r' | r'@(Range x' el' er') <- rs, er' ≡? el ]
+  return  [ normalize r' | r'@(Range x' el' er') <- rs, er' ≡? el ]
 
 -- | Given two Loci in EN type where the first is for the body partition and
 -- the other one is for the guard partition.
@@ -803,18 +814,18 @@ mergeLociHadEN
      )
   => Locus -> Locus -> m ()
 mergeLociHadEN
-  stM@Locus{loc=locMain, part=sMain@(Partition rsMain), qty=qtMain, degrees=ptysMain}
-  stA@Locus{loc=locAux , part=sAux@(Partition rsAux)  , qty=qtAux , degrees=ptysAux} =
+  stM@Locus{loc=locMain, part=(NPartition nrsMain), qty=qtMain, degrees=ptysMain}
+  stA@Locus{loc=locAux , part=(NPartition nrsAux)  , qty=qtAux , degrees=ptysAux} =
   do
     -- Sanity Check
     unless (qtMain == qtAux && qtAux == TEn) $
       throwError $ stM <+> "and" <+> stA <!> "have different Q types!"
 
     -- start merge
-    let newPartition = Partition $ rsMain ++ rsAux
+    let newPartition = npart $ nrsMain ++ nrsAux
     xSt %= Map.map
-      (\rLoc -> [ (normalize r, loc')
-                | (r, loc) <- rLoc,
+      (\rLoc -> [ (nr, loc')
+                | (nr, loc) <- rLoc,
                   let loc' = if loc == locAux then locMain else loc])
     sSt %=
       (`Map.withoutKeys` Set.singleton locAux) . -- GC aux's loc
@@ -876,17 +887,16 @@ mergeCandidateHad
      , Has Trace sig m
      )
   => Locus -> m Locus
-mergeCandidateHad st@(Locus{part, qty=THad, degrees}) = do
+mergeCandidateHad st@(Locus{part=Normalized(Partition [r]), qty=THad, degrees}) = do
   ps <- use sSt <&> Map.elems
   matched <- catMaybes <$> forM ps matchMergeable
   case matched of
-    [p'] -> resolvePartition p'
+    [p'] -> resolvePartition (denorm p')
     _    -> throwError' $ ambiguousCandidates matched
   where
-    [r] = ranges part
-    matchMergeable (p'@(Partition rs), (TEn, ptysEN)) = do
-      rsAdjacent <- lookupAdjacentRange rs r
-      pure $ case rsAdjacent of
+    matchMergeable (p'@(Normalized (Partition rs)), (TEn, ptysEN)) = do
+      nrsAdjacent <- lookupAdjacentRange rs r
+      pure $ case nrsAdjacent of
         [] -> Nothing
         _  -> Just p'
     matchMergeable _ = pure Nothing
@@ -923,28 +933,28 @@ tStateFromPartitionQTys pqts = runState initTState $ do
 -- symbols for every range in the partition and return all emit data
 -- the same order as those ranges.
 extendState'
-  :: ( Has (Gensym Emitter) sig m
-     , Has (Gensym Var) sig m
-     , Has (State TState) sig m
+  :: ( GensymEmitterWithStateError sig m
+     , GensymMeta sig m
      , Has Trace sig m
      )
-  => Partition -> QTy -> [Int] -> m (Locus, (EmitData, [(Range, EmitData)]))
-extendState' p@Partition{ranges} qt dgrs = do
+  => Partition -> QTy -> [Int] -> m (Locus, LocusEmitData)
+extendState' p' qt dgrs = do
   trace "* extendState"
   sLoc <- gensymLoc "receiver"
   -- "receive" a new locus
-  sSt %= (at sLoc ?~ (normalize p, (qt, dgrs)))
+  sSt %= (at sLoc ?~ (np, (qt, dgrs)))
   -- update range state
-  let xMap = [ (v, [(normalize r, sLoc)]) | r@(Range v _ _) <- ranges ]
+  let xMap = [ (v, [(nr, sLoc)]) | nr@(Normalized (Range v _ _)) <- nranges ]
   xSt %= Map.unionWith (++) (Map.fromListWith (++) xMap)
-  let sLocus = Locus{loc=sLoc, qty=qt, part=p, degrees=dgrs}
+  let sLocus = Locus{loc=sLoc, qty=qt, part=np, degrees=dgrs}
   (sLocus, ) <$> genEmStFromLocus sLocus
+  where
+    np@(NPartition nranges) = normalize p'
 
 extendState
-  :: ( Has (Gensym Emitter) sig m
-     , Has (Gensym Var) sig m
-     , Has (State TState) sig m
+  :: ( GensymEmitterWithStateError sig m
+     , GensymMeta sig m
      , Has Trace sig m
      )
-  => Partition -> QTy -> [Int] -> m (EmitData, [(Range, EmitData)])
+  => Partition -> QTy -> [Int] -> m LocusEmitData
 extendState p q d = snd <$> extendState' p q d

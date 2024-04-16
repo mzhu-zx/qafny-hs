@@ -4,6 +4,8 @@ import           Control.Monad
     (guard)
 import           Data.List
     (delete)
+import           Qafny.Analysis.Normalize
+    (Normalizable (normalize))
 import           Qafny.Effect
 import           Qafny.Syntax.AST
 import           Qafny.Syntax.Emit
@@ -36,12 +38,13 @@ typingQft rApplied locus = do
 locusAfterQftPure :: Range -> Locus -> Maybe Locus
 locusAfterQftPure rApplied l = guard requires >> return newLocus
   where
-    Locus {loc, part=Partition{ranges}, qty, degrees} = l
-    requires = (rApplied `elem` ranges) && qty == TEn && degrees == [1]
+    nrApplied = normalize rApplied
+    Locus {loc, part=NPartition{nranges}, qty, degrees} = l
+    requires = (nrApplied `elem` nranges) && qty == TEn && degrees == [1]
     newLocus =
-      let rRemainder = delete rApplied ranges
-          rsReorder  = rApplied : rRemainder
-          part       = Partition rsReorder
+      let rRemainder = delete nrApplied nranges
+          rsReorder  = nrApplied : rRemainder
+          part       = npart rsReorder
           l'         = l { loc, part }
       in case rRemainder of
            -- Qft over singleton partition simply promotes the phase degree
@@ -56,10 +59,10 @@ Note [Qft Type Invariants]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 The new `Locus` evolved by a Qft operator may only differ from the original one
-in the `part`, `qty`, and `degrees` part. In particular, 
+in the `part`, `qty`, and `degrees` part. In particular,
 
   - `part` only differs in the order: the range to which Qft applies is moved to
-    the front  
+    the front
   - `qty` either stays the same or be promoted to `TQft`
   - `degrees` shall be promoted by one always.
 -}
