@@ -282,12 +282,12 @@ instance DafnyPrinter (Exp ()) where
   pp (ELambda el) = pp el
   pp e = "//" <!> viaShow e <!> " should not be in emitted form!"
 
-instance (Show f, DafnyPrinter f) => DafnyPrinter (LambdaF f) where
+instance (DafnyPrinter f) => DafnyPrinter (LambdaF f) where
   pp e@(LambdaF{ bPhase, bBases, ePhase, eBases }) =
     case (bPhase, ePhase) of
       (PhaseWildCard, PhaseWildCard) ->
         P.group $ tupled bBases <+> "=>" <%> align (tupled eBases)
-      (_, _) -> debugOnly e $
+      (_, _) -> debugOnly' $
         bPhase <+>
         "~" <+> tupled bBases <+>
         "=>" <+>
@@ -302,33 +302,47 @@ instance DafnyPrinter s => DafnyPrinter (Interval s) where
     brackets $ e1 <+> ".." <+> e2
 
 
-instance (DafnyPrinter f, Show f) => DafnyPrinter (SpecExpF f) where
-  pp s = debugOnly s ppSubterm
+instance (DafnyPrinter f) => DafnyPrinter (SpecExpF f) where
+  pp s = debugOnly' ppSubterm
     where
       ppSubterm = case s of
         SEWildcard -> pp "_"
-        SESpecNor (SpecNorF v1 e2) -> "⊗" <+> v1 <+> '.' <+> e2
-        SESpecHad (SpecHadF v1 p) -> "⊗" <+> v1 <+> '.' <+> p
-        SESpecEn (SpecEnF v1 intv a p es) ->
-          "Σ" <+> v1 <+> "∈" <+> intv <+> '.' <+> a <+> p <+> tupled es
-        SESpecEn01 (SpecEn01F v1 intv1 a p v2 intv2 e5) ->
-          "Σ" <+> v1 <+> "∈" <+> intv1 <+> '.' <+>
-          "⊗" <+> v2 <+> "∈" <+> intv2 <+> '.' <+>
-          a <+> p <+> tupled e5
+        SESpecNor n -> pp n
+        SESpecHad h -> pp h
+        SESpecEn e -> pp e
+        SESpecEn01 e -> pp e
+
+instance DafnyPrinter f => DafnyPrinter (SpecNorF f) where
+  pp (SpecNorF v1 e2) = "⊗" <+> v1 <+> '.' <+> e2
+
+instance DafnyPrinter f => DafnyPrinter (SpecHadF f) where
+  pp (SpecHadF v1 p) = "⊗" <+> v1 <+> '.' <+> p
+
+instance DafnyPrinter f => DafnyPrinter (SpecEnF f) where
+  pp (SpecEnF v1 intv a p es) =
+    "Σ" <+> v1 <+> "∈" <+> intv <+> '.' <+> a <+> p <+> tupled es
+  
+instance DafnyPrinter f => DafnyPrinter (SpecEn01F f) where
+  pp (SpecEn01F v1 intv1 a p v2 intv2 e5) =
+    "Σ" <+> v1 <+> "∈" <+> intv1 <+> '.' <+>
+    "⊗" <+> v2 <+> "∈" <+> intv2 <+> '.' <+>
+    a <+> p <+> tupled e5
+
+
 
 instance DafnyPrinter f => DafnyPrinter (Maybe f) where
   pp Nothing  = pp "_"
   pp (Just x) = pp x
 
-instance (Show f, DafnyPrinter f) => DafnyPrinter (PhaseExpF f) where
-  pp p = debugOnly p $ case p of
+instance (DafnyPrinter f) => DafnyPrinter (PhaseExpF f) where
+  pp p = debugOnly' $ case p of
     PhaseZ                -> pp "1"
     PhaseWildCard         -> pp "_"
     PhaseOmega e1 e2      -> "ω" <!> tupled [e1, e2]
     PhaseSumOmega i e1 e2 -> "Ω" <+> i <+> "." <+> tupled [e1, e2]
 
-instance (Show f, DafnyPrinter f) => DafnyPrinter (AmpExpF f) where
-  pp p = debugOnly p $ case p of
+instance (DafnyPrinter f) => DafnyPrinter (AmpExpF f) where
+  pp p = debugOnly' $ case p of
     ADefault     -> mempty
     AISqrt en ed -> "isqrt" <+> tupled [en, ed]
     ASin e       -> "sin" <!> parens e
@@ -337,7 +351,8 @@ instance (Show f, DafnyPrinter f) => DafnyPrinter (AmpExpF f) where
 
 instance DafnyPrinter EmitExp where
   pp (e1 :@: e2) = e1 <!> "[" <!> e2 <!> "]"
-  pp (e1 :@@: (e2, e3)) = e1 <!> "[" <!> e2 <!> ".." <!> e3 <!> "]"
+  pp (e1 :@@: (e2, e3)) =
+    P.group $ e1 <!> "[" <!> e2 <!> ".." <!> e3 <!> "]"
   pp EMtSeq = pp "[]"
   pp (EMakeSeq ty e ee) =
     "seq<" <!> ty <!> ">" <!> align (tupled [e, ee])
@@ -413,7 +428,13 @@ instance DafnyPrinter MTy where
     byComma (mtSrcParams m) <+> "↪" <+> byComma (mtSrcReturns m)
 
 instance DafnyPrinter a => DafnyPrinter (Normalized a) where
-  pp = debugOnly' . pp . denorm
+  pp = debugOnly' . denorm
+
+instance DafnyPrinter SRel where
+  pp = go
+    where
+      ppl = align . list
+      go  (RNor ns) = ppl ns
 
 -- | Warning: don't emit parentheses in `ppOp2` because `EOpChained` relies
 -- on this function not to be parenthesized

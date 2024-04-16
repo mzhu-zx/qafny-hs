@@ -64,7 +64,7 @@ import           Qafny.Utils.Utils
 throwError'
   :: ( Has (Error Builder) sig m )
   => Builder -> m a
-throwError' = throwError . ("[Codegen/Predicates]" <+>)
+throwError' = throwError . ("[Codegen/Predicates]" <%>)
 
 
 -- | Take in an /assertional/ expression, perform type check and emit
@@ -81,10 +81,10 @@ codegenAssertion'
      , GenConditionally sig m
      )
   => Exp' -> m [Exp']
-codegenAssertion' (ESpec s qt espec) = do
-  st@Locus{part, degrees=dgrs} <- typingPartitionQTy s qt
+codegenAssertion' (ESpec s' qt espec) = do
+  st@Locus{part, degrees=dgrs} <- typingPartitionQTy s' qt
   -- FIXME: do something seriously when (part /= s)
-  when (sort (ranges (denorm part)) /= sort (ranges s)) $
+  when (sort (nranges part) /= sort (nranges s)) $
     throwError' ("Assertion:"<+>part<+>"is inconsistent with"<+>s<+>".")
   led <- findEmsByLocus st
   tracep . vsep $
@@ -93,6 +93,8 @@ codegenAssertion' (ESpec s qt espec) = do
     ]
   wfRels <- wfQTySpecs qt espec
   codegenSpecExp led wfRels
+  where
+    s = normalize s'
 codegenAssertion' e = return [e]
   -- FIXME: what to do if [e] contains an assertion?
 
@@ -104,7 +106,7 @@ codegenSpecExp
   :: forall sig m .
      ( MayFail sig m, HasPContext sig m )
   => LocusEmitData -> SRel -> m [Exp']
-codegenSpecExp (locusEd, rangesEd) srel = do
+codegenSpecExp (locusEd, rangesEd) srel = runWithCallStack srel $ do
   lub1' <- instLubIntv
   go lub1' srel
   where

@@ -48,7 +48,7 @@ import           Control.Effect.Lens
 import           Data.Foldable
     (Foldable (toList))
 import           Data.Maybe
-    (catMaybes)
+    (catMaybes, listToMaybe)
 import           Qafny.Analysis.Normalize
     (Normalizable (normalize))
 import           Qafny.Effect
@@ -77,7 +77,7 @@ gensymBinding v t = (,t) <$> gensym (EmAnyBinding v t)
 
 genKetsByQTy :: Has (Gensym Emitter) sig m => QTy -> [Range] -> m [Maybe (Var, Ty)]
 genKetsByQTy qty ranges =
-  maybe (return (replicate (length ranges) Nothing)) go tyKets
+  maybe (return (Nothing <$ ranges)) go tyKets
   where
     go ty = mapM (go' ty) ranges
     go' ty r = Just . (,ty) <$> gensym (EmBaseSeq r ty)
@@ -93,13 +93,16 @@ genKet qty range =
 -- | Generate a phase representation
 -- TODO: a lot of redundency from changes, refactor this
 genPhase
-  :: Has (Gensym Emitter) sig m
-  => QTy -> Int -> Loc -> m (Maybe (PhaseRef, Ty))
-genPhase TNor _ loc = return Nothing
-genPhase _ 0 _ = return Nothing
-genPhase _ n r
-  | n < 0 = return Nothing
-  | otherwise = do
+  :: (GensymEmit sig m, MayFail sig m )
+  => QTy -> Maybe Int -> Loc -> m (Maybe (PhaseRef, Ty))
+genPhase qt dgr = go qt dgr
+  where
+    err = throwError $ qt <+> "is imcompatible with degree" <+> dgr <+> "."
+    go _     (Just n) _ | n < 0 = return Nothing
+    go TNor  Nothing  _ = return Nothing
+    go TNor  Just{}   _ = err
+    go _     Nothing  _ = err
+    go _     (Just n) r = do
       pr <- liftM2 PhaseRef (gensym (EmPhaseBase r)) (gensym (EmPhaseSeq r n))
       return $ Just (pr, typingPhaseEmitReprN n)
 
@@ -168,8 +171,7 @@ genEmStFromLocus
   => LocusT t -> m (EmitData, t (Normalized Range, EmitData))
 genEmStFromLocus Locus{loc, part=NPartition{nranges}, qty, degrees} = do
   rEms <- genEmStByRanges qty nranges
-  degree <- onlyOne throwError degrees
-  evPhaseRef <- genPhase qty degree loc
+  evPhaseRef <- genPhase qty (listToMaybe degrees) loc
   evAmp <- genAmp qty loc
   let edL = mtEmitData { evPhaseRef, evAmp }
   emitSt %= (at (inj loc) ?~ edL)
@@ -180,8 +182,7 @@ genEmFromLocus
   => LocusT t -> m (EmitData, t (Normalized Range, EmitData))
 genEmFromLocus Locus{loc, part=NPartition{nranges}, qty, degrees} = do
   rEms <- genEmByRanges qty nranges
-  degree <- onlyOne throwError degrees
-  evPhaseRef <- genPhase qty degree loc
+  evPhaseRef <- genPhase qty (listToMaybe degrees) loc
   evAmp <- genAmp qty loc
   let edL = mtEmitData { evPhaseRef, evAmp }
   return ( edL , rEms )
@@ -214,7 +215,7 @@ genEmStUpdatePhase
   :: GensymEmitterWithStateError sig m
   => QTy -> Int -> Loc -> m EmitData
 genEmStUpdatePhase qt i l  = errTrace (pp "`genEmStUpdatePhase`") $ do
-  evPhaseRef  <- genPhase qt i l
+  evPhaseRef  <- genPhase qt (Just i) l
   appendEmSt (inj l) (mtEmitData {evPhaseRef})
 
 -- {-# DEPRECATED genEmStUpdateKets

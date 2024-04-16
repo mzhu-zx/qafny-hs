@@ -602,7 +602,7 @@ typingPartition
   => Partition -> m Locus
 typingPartition s = do
   st@Locus{part=pResolved, qty=qtResolved} <- resolvePartition s
-  when (List.sort (denorm <$> nranges pResolved) /= List.sort (ranges s)) $
+  when (List.sort (nranges pResolved) /= List.sort (nranges (normalize s))) $
     throwError' $ errIncompletePartition st
   return st
   where
