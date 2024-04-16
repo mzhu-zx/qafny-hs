@@ -13,16 +13,18 @@ import           Qafny.Utils.EmitBinding
 --------------------------------------------------------------------------------
 -- * EmitData Utils
 --------------------------------------------------------------------------------
-codegenAssignEmitData' :: MayFail sig m => [(EmitData, EmitData)] -> m [(Stmt', Var)]
-codegenAssignEmitData' eds = concat <$> mapM go eds
+codegenAssignEmitData'
+  :: MayFail sig m => Bool -> [(EmitData, EmitData)] -> m [(Stmt', Var)]
+codegenAssignEmitData' leftJoin eds = concat <$> mapM go eds
   where
-    go = ((uncurry perVar <$>) <$>) . uncurry extractMatchedEmitables
+    go = ((uncurry perVar <$>) <$>) . uncurry (extractMatchedEmitables leftJoin)
     perVar (v1, _) (v2, _) = (v1 ::=: EVar v2, v1)
 
-codegenAssignEmitData :: MayFail sig m => [(EmitData, EmitData)] -> m [Stmt']
-codegenAssignEmitData eds = concat <$> mapM go eds
+codegenAssignEmitData
+  :: MayFail sig m => Bool -> [(EmitData, EmitData)] -> m [Stmt']
+codegenAssignEmitData leftJoin eds = concat <$> mapM go eds
   where
-    go = ((uncurry perVar <$>) <$>) . uncurry extractMatchedEmitables
+    go = ((uncurry perVar <$>) <$>) . uncurry (extractMatchedEmitables leftJoin)
     perVar (v1, _) (v2, _) = v1 ::=: EVar v2
 
 

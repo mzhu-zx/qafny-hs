@@ -73,11 +73,11 @@ method GHZ (q_seq'nat'_0__emit : seq<nat>)
                  (((Pow2(|q_seq'seq'nat''_6__emit|)) as real)) ) );
   q_seq'nat'_11__emit := q_seq'nat'_3__emit[9..14];
   q_seq'nat'_10__emit := q_seq'nat'_3__emit[0..9];
-  loc__loc__receiver_0_phase_base_7__emit :=
-    loc__loc__receiver_3_seq'unsupported'_13__emit;
-  q_seq'seq'nat''_6__emit := q_seq'seq'nat''_12__emit;
-  q_seq'nat'_10__emit := q_seq'nat'_14__emit;
-  q_seq'nat'_11__emit := q_seq'nat'_15__emit;
+  loc__loc__receiver_3_seq'unsupported'_13__emit :=
+    loc__loc__receiver_0_seq'unsupported'_9__emit;
+  q_seq'seq'nat''_12__emit := q_seq'seq'nat''_6__emit;
+  q_seq'nat'_14__emit := q_seq'nat'_10__emit;
+  q_seq'nat'_15__emit := q_seq'nat'_11__emit;
   for i := 0 to 9
     invariant |loc__loc__receiver_3_seq'unsupported'_13__emit| == 2
     invariant |q_seq'seq'nat''_12__emit| == 2
@@ -90,9 +90,9 @@ method GHZ (q_seq'nat'_0__emit : seq<nat>)
     invariant |q_seq'nat'_15__emit| == 5
     invariant (forall i : nat | 0 <= i < 5 :: q_seq'nat'_15__emit[i] == 0)
   {
-    loc__loc__receiver_3_seq'unsupported'_13__emit :=
-      loc__loc__receiver_3_seq'unsupported'_17__emit;
-    q_seq'seq'nat''_12__emit := q_seq'seq'nat''_16__emit;
+    loc__loc__receiver_3_seq'unsupported'_17__emit :=
+      loc__loc__receiver_3_seq'unsupported'_13__emit;
+    q_seq'seq'nat''_16__emit := q_seq'seq'nat''_12__emit;
     // begin false
     q_seq'nat'_19__emit := q_seq'nat'_14__emit[1..9 - i];
     q_seq'nat'_18__emit := q_seq'nat'_14__emit[0..1];
@@ -119,9 +119,9 @@ method GHZ (q_seq'nat'_0__emit : seq<nat>)
     // Match Begin-End
     q_seq'nat'_15__emit := q_seq'nat'_15__emit;
   }
-  loc__loc__receiver_3_seq'unsupported'_13__emit :=
-    loc__loc__receiver_3_seq'unsupported'_25__emit;
-  q_seq'seq'nat''_12__emit := q_seq'seq'nat''_24__emit;
-  q_seq'nat'_15__emit := q_seq'nat'_26__emit;
+  loc__loc__receiver_3_seq'unsupported'_25__emit :=
+    loc__loc__receiver_3_seq'unsupported'_13__emit;
+  q_seq'seq'nat''_24__emit := q_seq'seq'nat''_12__emit;
+  q_seq'nat'_26__emit := q_seq'nat'_15__emit;
 }
 }

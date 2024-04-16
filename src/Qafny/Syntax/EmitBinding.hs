@@ -21,6 +21,7 @@ import           Qafny.Syntax.AST
 -- be mapped from either a 'Loc' or a 'Range'
 --
 type LocusEmitData = LocusTEmitData []
+newtype LocusEmitData' =  LocusEmitData' (LocusTEmitData [])
 type LocusTEmitData t = (EmitData, t (Range, EmitData))
 
 data EmitData = EmitData

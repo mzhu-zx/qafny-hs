@@ -266,8 +266,17 @@ instance DafnyPrinter (Exp ()) where
       beb (Just eb') = " | " <!> eb'
       beb Nothing    = mempty
   pp e@EHad = debugOnly e "H"
-  pp e@(ESpec p qt specs) = debugOnly e $
-    "{" <+> p <+> ":" <+> qt  <+> "↦" <+> byComma specs <+> "}"
+  pp e@(ESpec p qt specs) = debugOnly e . braces' . pp $
+    (P.group (p <+> ":" <+> qt)
+     <!> P.flatAlt (line<!>"  ") P.space <!> "↦"
+     <!> line<!> P.group(byComma specs))
+    where
+      braces' x = P.group . vsep $
+        [ P.lbrace
+        , P.flatAlt (incr2 x) x
+        , P.rbrace
+        ]
+
   pp e@(EApp v es) = v <!> tupled es
   pp e@(EMeasure s) = debugOnly e $
     "measure" <+> s
@@ -372,14 +381,20 @@ instance DafnyPrinter EmitData where
         [ "phase:" <+> (prRepr, ty)
         , "base:"  <+> prBase ]
 
+instance DafnyPrinter LocusEmitData' where
+  pp (LocusEmitData' (ed, red)) =
+    align (ed <!> line <!> align (list (go <$> red)))
+    where
+      go (r, ed) = r <+> "→" <+> ed
+
 instance (DafnyPrinter a, DafnyPrinter b) => DafnyPrinter (a, b) where
-  pp t'@(a, b) = tupled [pp a, pp b]
+  pp t'@(a, b) = align (tupled [pp a, pp b])
 
 instance ( DafnyPrinter a
          , DafnyPrinter b
          , DafnyPrinter c) => DafnyPrinter (a, b, c) where
   pp t'@(a, b, c) =
-    tupled $ [pp a, pp b, pp c]
+    align (tupled [pp a, pp b, pp c])
 
 -- instance (Show f, DafnyPrinter f) => DafnyPrinter (QSpecF f) where
 --   pp q@QSpecF{amp, phase, spec} = debugOnly q $

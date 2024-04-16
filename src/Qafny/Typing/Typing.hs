@@ -64,6 +64,8 @@ import qualified Data.Set                   as Set
 import           Data.Sum
 import           GHC.Stack
     (HasCallStack)
+import           Qafny.Analysis.Normalize
+    (Normalizable (normalize))
 import           Qafny.Typing.Cast
 import           Qafny.Typing.Error
     (SCError (SplitENError), failureAsSCError)
@@ -377,11 +379,12 @@ splitScheme' s@(Locus{loc, part, qty, degrees}) rSplitTo@(Range to rstL rstR) = 
       xRangeLocs <- use (xSt . at to) `rethrowMaybe` errXST
       let xrl =
             -- "split range -> old loc"
-            [ (rSplitTo, loc) ] ++
+            [ (normalize rSplitTo, loc) ] ++
             -- "quotient ranges -> new loci"
-            [ (rRemainder, locRem) | rRemainder <- NE.toList rsRemainder
-                                   | locRem <- NE.toList lociRem
-                                   ] ++
+            [ (normalize rRemainder, locRem)
+            | rRemainder <- NE.toList rsRemainder
+            | locRem <- NE.toList lociRem
+            ] ++
             -- "the rest with the old range removed"
             List.filter ((/= rsRAffected) . fst) xRangeLocs
       -- update the range name state
@@ -688,7 +691,7 @@ matchLocusEmitData
 matchLocusEmitData esInit esLoop lociInitLoop =
   go `mapM` lociInitLoop
   where
-    go (locusInit, locusLoop) = 
+    go (locusInit, locusLoop) =
       (,)
       <$> findEmsByLocusInEmitState esInit locusInit
       <*> findEmsByLocusInEmitState esLoop locusLoop
@@ -700,7 +703,7 @@ matchLociInTState TState{_sSt=st1} TState{_sSt=st2} =
   where
     merge part t1 t2 = both (uncurry3 (`Locus` part)) (t1, t2)
     mkTree = Map.foldlWithKey' go Map.empty
-    go mp l (p, (qt, ds)) = Map.insert p (l, qt, ds)  mp
+    go mp l (p, (qt, ds)) = Map.insert (normalize p) (l, qt, ds) mp
 
 -- | Match Locus emit data from two typing state by their partition.
 matchLocusEmitDataFromTStates
@@ -761,8 +764,8 @@ mergeScheme
         -- lowerbound of the aux range
         let rNew = Range x elCandidate erAux
         let pM = Partition $ (\r -> bool r rNew (r == rCandidate)) <$> rsMain
-        xSt %= Map.map (revampX rCandidate rAux rNew)
-        sSt %= (at locMain ?~ (pM, (qtMain, ptysMain)))
+        xSt %= Map.map (revampX (normalize rCandidate) (normalize rAux) (normalize rNew))
+        sSt %= (at locMain ?~ (normalize pM, (qtMain, ptysMain)))
         return $ MJoin JoinStrategy
           { jsRMain = rCandidate
           , jsRMerged = rAux
@@ -810,7 +813,7 @@ mergeLociHadEN
     -- start merge
     let newPartition = Partition $ rsMain ++ rsAux
     xSt %= Map.map
-      (\rLoc -> [ (r, loc')
+      (\rLoc -> [ (normalize r, loc')
                 | (r, loc) <- rLoc,
                   let loc' = if loc == locAux then locMain else loc])
     sSt %=
@@ -930,9 +933,9 @@ extendState' p@Partition{ranges} qt dgrs = do
   trace "* extendState"
   sLoc <- gensymLoc "receiver"
   -- "receive" a new locus
-  sSt %= (at sLoc ?~ (p, (qt, dgrs)))
+  sSt %= (at sLoc ?~ (normalize p, (qt, dgrs)))
   -- update range state
-  let xMap = [ (v, [(r, sLoc)]) | r@(Range v _ _) <- ranges ]
+  let xMap = [ (v, [(normalize r, sLoc)]) | r@(Range v _ _) <- ranges ]
   xSt %= Map.unionWith (++) (Map.fromListWith (++) xMap)
   let sLocus = Locus{loc=sLoc, qty=qt, part=p, degrees=dgrs}
   (sLocus, ) <$> genEmStFromLocus sLocus

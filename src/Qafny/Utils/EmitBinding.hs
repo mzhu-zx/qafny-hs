@@ -47,6 +47,8 @@ import           Data.Foldable
     (Foldable (toList))
 import           Data.Maybe
     (catMaybes)
+import           Qafny.Analysis.Normalize
+    (Normalizable (normalize))
 import           Qafny.Effect
 import           Qafny.Syntax.AST
 import           Qafny.Syntax.Emit
@@ -113,7 +115,7 @@ genAmp qty l =
 genEmStByRange ::  GensymEmitterWithState sig m => QTy -> Range -> m EmitData
 genEmStByRange qt r = do
   ed <- genEmByRange qt r
-  emitSt %= (at (inj r) ?~ ed)
+  emitSt %= (at (inj (normalize r)) ?~ ed)
   return ed
 
 genEmByRange :: (Has (Gensym Emitter) sig m) => QTy -> Range -> m EmitData
@@ -176,7 +178,7 @@ appendEmSt
   :: StateMayFail sig m
   => RangeOrLoc -> EmitData -> m EmitData
 appendEmSt rl ed = do
-  emitSt %= Map.adjust (<> ed) rl
+  emitSt %= Map.adjust (<> ed) (normalize rl)
   findEm rl
 
 {-# DEPRECATED genEmStUpdatePhase
@@ -282,7 +284,7 @@ findEmitBasesByRanges = findVisitEms evBasis . (inj <$>)
 
 -- ** Destructor
 deleteEm :: (Has (State TState) sig m) => RangeOrLoc -> m ()
-deleteEm rl = emitSt %= sans rl
+deleteEm rl = emitSt %= sans (normalize rl)
 
 deleteEmByLocus
   :: (Has (State TState) sig m, Traversable t)
@@ -292,7 +294,7 @@ deleteEmByLocus Locus{loc, part=Partition{ranges}} =
 
 deleteEms
   :: (Has (State TState) sig m, Traversable t) => t RangeOrLoc -> m ()
-deleteEms s = emitSt %= (`Map.withoutKeys` Set.fromList (toList s))
+deleteEms s = emitSt %= (`Map.withoutKeys` Set.fromList (toList (normalize <$> s)))
 
 deleteEmPartition
   :: (Has (State TState) sig m, Traversable t)
@@ -336,9 +338,12 @@ eraseMatchedRanges = (concat <$>) . mapM (uncurry go)
     zipWithExactly' = zipWithExactly pp pp
 
 
+-- | Extract matched bindings between two EmitData. Unless the leftJoin
+-- semantics is specified, any "unbalanced" absence of value raises an error.
+-- When leftJoin is `True`, the absence of value on the left is permissible.
 extractMatchedEmitables
-  :: MayFail sig m => EmitData -> EmitData -> m [((Var, Ty), (Var, Ty))]
-extractMatchedEmitables ed1 ed2 = do
+  :: MayFail sig m => Bool -> EmitData -> EmitData -> m [((Var, Ty), (Var, Ty))]
+extractMatchedEmitables leftJoin ed1 ed2 = do
   b <- one2one (evBasis ed1)  (evBasis ed2)
   a <- one2one (evAmp ed1)    (evAmp ed2)
   p <- one2one (evP ed1)      (evP ed2)
@@ -346,6 +351,7 @@ extractMatchedEmitables ed1 ed2 = do
   where
     one2one (Just a) (Just b) = pure [(a, b)]
     one2one Nothing  Nothing  = pure []
+    one2one Nothing _ | leftJoin = pure []
     one2one a1 a2 = throwError $ vsep
       [ pp "Non 1-1 conrrespondence between the following two EmitData's."
       , incr4 ed1

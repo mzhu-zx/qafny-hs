@@ -93,5 +93,5 @@ codegenMergeScheme = (concat <$>) . mapM go
           return [(stmtAdd, vEmitMain)]
         _unsupportedMerge -> throwError' $
           "No idea about " <!> qtMain <!> " to " <!> qtMerged <!> " conversion."
-    go (MEqual EqualStrategy{esEdIntoFrom}) =
-      codegenAssignEmitData' =<< eraseMatchedRanges esEdIntoFrom
+    go (MEqual EqualStrategy{esEdIntoFrom}) = codegenAssignEmitData' False
+      =<< eraseMatchedRanges esEdIntoFrom

@@ -86,7 +86,6 @@ instance PEval Exp' where
 class Reducible a where
   reduce :: a -> a
 
-
 (==&) :: (Eq a, Reducible a) => a -> a -> Bool
 a ==& b = reduce a == reduce b
 
@@ -157,3 +156,5 @@ sizeOfRangeP :: Range -> Maybe Int
 sizeOfRangeP (Range _ el er) = evalPStatic (er - el)
 
 
+substReduce :: (Reducible a, Substitutable a) => AEnv -> a -> a
+substReduce aenv = reduce . subst aenv

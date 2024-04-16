@@ -45,6 +45,8 @@ import           Qafny.Utils.EmitBinding
     gensymBinding, eraseMatchedRanges, findThenGenLocus)
 import           Qafny.Utils.Utils
     (fst2)
+import Data.Tuple (swap)
+import Qafny.Analysis.Normalize (Normalizable(normalize))
 
 -- * Method related definitions
 
@@ -70,7 +72,7 @@ replicateEmitEntry rl
      evPhaseRef' <- evPhaseRefM
      let refs = liftM2 (,) evPhaseRef' evPhaseRef
      -- let evPhase' = uncurry mkPhaseRef <$> prVars
-     emitSt %= (at rl ?~ ed{evBasis=evBasis', evPhaseRef=evPhaseRef'})
+     emitSt %= (at (normalize rl) ?~ ed{evBasis=evBasis', evPhaseRef=evPhaseRef'})
      return $
        toList (liftM2 (uncurry mkDeclAssign) evBasis' (evBasis <&> fst))
        ++ concat (toList (refs <&> replicatePhases))
@@ -118,7 +120,8 @@ codegenMethodReturns MethodType{ mtSrcReturns=srcReturns
   -- perform type checking
   loci   <- forM (fst2 <$> inst) (uncurry typingPartitionQTy)
   lastAndRetLocusEds <- mapM findThenGenLocus loci
-  stmtsAssign <- codegenAssignEmitData =<< eraseMatchedRanges lastAndRetLocusEds
+  stmtsAssign <- codegenAssignEmitData True
+    =<< eraseMatchedRanges (swap <$> lastAndRetLocusEds)
   return ( stmtsAssign
          , pureBds ++ bindEmitables lastAndRetLocusEds)
   where

@@ -54,7 +54,7 @@ import           Qafny.Codegen.Utils
 import           Qafny.Analysis.Interval
     (Interval (Interval))
 import           Qafny.Analysis.Partial
-    (Reducible (reduce))
+    (Reducible (reduce), substReduce)
 import           Qafny.Config
 import           Qafny.Syntax.AST
 import           Qafny.Syntax.ASTFactory
@@ -72,6 +72,8 @@ import           Qafny.Typing.Utils
 
 import           Data.Sum
     (Injection (inj))
+import           Data.Tuple
+    (swap)
 import           Qafny.Codegen.Common
     (codegenAssignEmitData)
 import           Qafny.Codegen.Had
@@ -101,6 +103,7 @@ import           Qafny.Utils.TraceF
     (Traceable (tracef))
 import           Qafny.Utils.Utils
     (both, bothM, dumpSt, gensymLoc, getMethodType, tracep)
+import Qafny.Analysis.Normalize (Normalizable(normalize))
 
 --------------------------------------------------------------------------------
 -- * Introduction
@@ -595,7 +598,10 @@ codegenStmt'For (SFor idx boundl boundr eG invs (Just seps) body) = do
 
     -- | Generate code and state for the precondition after which
     -- | we only need to concern those mentioned by the loop invariants
-    codegenInit infoInv infoInvPre = do
+    codegenInit infoInv infoInvPre = runWithCallStack
+                                     (vsep [ pp "Init", incr4 $ vsep
+                                             [ list infoInvPre
+                                             , list infoInv ]]) $ do
       (lociPreLoop, stmtsPreGuard) <- unzip <$> infoInvPre `forM` \(sInv, qtInv, _) -> do
         lInv <- resolvePartition sInv
         case sInv of
@@ -604,19 +610,18 @@ codegenStmt'For (SFor idx boundl boundr eG invs (Just seps) body) = do
             (sInvSplit, maySplit, mayCast) <- hdlSCError $
               splitThenCastScheme lInv qtInv rInv
             (sInvSplit, ) <$> codegenSplitThenCastEmit maySplit mayCast
-          _                -> pure (lInv, []) -- See [Note: CodegenInit]
+          _unlikelyToSplit -> pure (lInv, []) -- See [Note: CodegenInit]
       -- | This is important because we will generate a new state from the loop
       -- invariant and perform both typing and codegen in the new state!
       statePreLoop <- get @TState
 
       -- | Do type inference with the loop invariant typing state
       (stateLoop, lociLoop) <- tStateFromPartitionQTys infoInv
-      -- trace $ printf "statePreLoop: %s\nstateLoop: %s"  (show statePreLoop) (show stateLoop)
       -- | pass preLoop variables to loop ones
       matchedLocusEds <- matchLocusEmitData
-        (_emitSt statePreLoop) (_emitSt stateLoop) (zip lociPreLoop lociLoop)
-      stmtsEquiv <-
-        codegenAssignEmitData =<< eraseMatchedRanges matchedLocusEds
+         (_emitSt stateLoop) (_emitSt statePreLoop) (zip lociLoop lociPreLoop)
+      stmtsEquiv <- codegenAssignEmitData True
+        =<< eraseMatchedRanges matchedLocusEds
       return ( lociPreLoop
              , concat stmtsPreGuard ++ stmtsEquiv
              , statePreLoop
@@ -739,15 +744,9 @@ codegenFor'Body idx boundl boundr eG body stSep@(Locus{qty=qtSep}) newInvs = do
       -- 1. save the "false" part to a new variable
       -- FIXME: write general function to replicate EmitData from Locus instead.
       ledsdFalseNSaved@(_, (edSavedL, edsSavedR)) <- findThenGenLocus stG
-      -- edsFalse  <- findEmsByLocus stG
-      -- edsSaved@(edSavedL, edsSavedR) <- genEmStFromLocus stG
-      -- vsEmitG <- findEmitBasesByRanges $ unpackPart sG
-      -- redFalseG <- genEmStByRanges qtG (ranges sG)
-      -- vsEmitGFalse <- mapM (visitEmBasis . snd) redFalseG
-      -- let stmtsSaveFalse = uncurry (stmtAssignSlice (ENum 0) eSep)
-      --       <$> zip (fsts vsEmitGFalse) (fsts vsEmitG)
       stmtsSaveFalse <-
-        codegenAssignEmitData =<< eraseMatchedRanges [ledsdFalseNSaved]
+        -- leftJoin semantics is disabled because it is a bug if needed.
+        codegenAssignEmitData False =<< eraseMatchedRanges [swap ledsdFalseNSaved]
       -- let stmtsFocusTrue = stmtAssignSelfRest eSep <$> fsts vsEmitG
 
       -- save the current emit symbol table for
@@ -796,13 +795,13 @@ codegenFor'Body idx boundl boundr eG body stSep@(Locus{qty=qtSep}) newInvs = do
                       ]
              )
     _    -> throwError' $ ""<+>qtG<+>"is not a supported guard type!"
-  tracep $ "[codegen/for]" <+> align (vsep newInvs)
+  tracep $ "[codegen/for]" <!>line<!> incr4 (vsep newInvs)
   let innerFor = SEmit $ SForEmit idx boundl boundr newInvs $ Block stmtsBody
   return $ stmtsPrelude ++ [innerFor]
   where
     installEmits = mapM (uncurry appendEmSt)
     rsSep = ranges $ part stSep
-    inferTsLoopEnd =  subst [(idx, EVar idx + 1)]
+    inferTsLoopEnd =  substReduce [(idx, EVar idx + 1)]
     codegenHalf psBody = do
       -- 2. generate the body statements with the hint that lambda should
       -- resolve to EN01 now
@@ -828,8 +827,14 @@ codegenFor'Body idx boundl boundr eG body stSep@(Locus{qty=qtSep}) newInvs = do
       --
       -- Use collected partitions and merge it with the absorbed typing state.
       stEnd <- get @TState
+      tracep $ vsep [ pp "(codegenMatchLoopBeginEnd) States:"
+                    , incr4 (vsep [stBegin, stEnd])]
       matchedleds <- matchLocusEmitDataFromTStates stBegin stEnd
-      codegenAssignEmitData =<< eraseMatchedRanges matchedleds
+      tracep $ vsep [ pp "(codegenMatchLoopBeginEnd) Matched:"
+                    , incr4 (list (both LocusEmitData' <$> matchedleds))]
+      -- leftJoin because it's safe for the loop invariants to over-approximate
+      -- the resulting state at the end of each iteration.
+      codegenAssignEmitData True =<< eraseMatchedRanges matchedleds
 
 
     errNoSep = "Insufficient knowledge to perform a separation for a EN01 partition "
@@ -979,7 +984,7 @@ codegenAlloc
   => Var -> Exp' -> Ty -> m Stmt'
 codegenAlloc v e@(EOp2 ONor e1 e2) t@(TQReg _) = do
   let eEmit = EEmit $ EMakeSeq TNat e1 $ constLambda e2
-  let rV = Range v (ENum 0) e1
+  let rV = normalize $ Range v (ENum 0) e1
       part = partition1 rV
   loc <- gensymLoc v
   xSt %= (at v . non [] %~ ((rV, loc) :))
