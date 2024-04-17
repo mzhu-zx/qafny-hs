@@ -420,11 +420,14 @@ type AST = [Toplevel ()]
 type LAST = [Toplevel Source]
 
 typeTag :: Ty -> String
-typeTag TNat     = "nat"
-typeTag TInt     = "int"
-typeTag TBool    = "bool"
-typeTag (TSeq t) = "_seqL_" ++ typeTag t ++ "_R_"
-typeTag _        = "unsupported"
+typeTag TNat              = "nat"
+typeTag TInt              = "int"
+typeTag TBool             = "bool"
+typeTag (TSeq t)          = "_seqL_" ++ typeTag t ++ "_R_"
+typeTag (TArrow _ _)      = "_fun_"
+typeTag TMeasured         = "_measured_"
+typeTag (TQReg _)         = "_qreg_"
+typeTag (TEmit (TAny s))  = "_"++s++"_"
 
 --------------------------------------------------------------------------------
 -- * Partition Utils

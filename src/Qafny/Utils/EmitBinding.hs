@@ -98,7 +98,7 @@ genPhase
   => QTy -> Maybe Int -> Loc -> m (Maybe (PhaseRef, Ty))
 genPhase qt dgr = go qt dgr
   where
-    err = throwError $ qt <+> "is imcompatible with degree" <+> dgr <+> "."
+    err = throwError $ qt <+> "is incompatible with degree" <+> dgr <+> "."
     go _     (Just n) _ | n < 0 = return Nothing
     go TNor  Nothing  _ = return Nothing
     go TNor  Just{}   _ = err

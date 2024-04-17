@@ -15,7 +15,6 @@
 module Qafny.Codegen.Codegen (codegenAST) where
 -- | Code Generation through Fused Effects
 
-
 -- Effects
 import qualified Control.Carrier.Error.Church as ErrC
 import qualified Control.Carrier.Error.Either as ErrE
@@ -42,7 +41,7 @@ import           Data.List.NonEmpty
     (NonEmpty (..))
 import qualified Data.Map.Strict              as Map
 import           Data.Maybe
-    (mapMaybe, catMaybes)
+    (catMaybes, mapMaybe)
 import qualified Data.Sum                     as Sum
 import           Text.Printf
     (printf)
@@ -118,8 +117,6 @@ import           Qafny.Utils.Utils
 -- calling typing functions to provide hints and perform type checkings.
 -- $doc
 --------------------------------------------------------------------------------
-
-
 throwError'
   :: ( Has (Error Builder) sig m, DafnyPrinter s )
   => s -> m a
@@ -269,15 +266,8 @@ codegenToplevel'Method q@(QMethod vMethod bds rts rqs ens (Just block)) = runWit
       return (es, codegenMethodParams mty eds, stmtsCopy)
 
     codegenMethodBody =
-      runReader TEn .  -- | resolve λ to EN on default  -- | resolve λ to EN on default  -- | resolve λ to EN on default  -- | resolve λ to EN on default
-        -- | resolve λ to EN on default
+      runReader TEn .                -- | resolve λ to EN on default
       runReader True .
-      -- ((,) <$> genEmitSt <*>) .
-      -- ((,) <$> genEmitSt <*>) .
-      -- ((,) <$> genEmitSt <*>) .
-      -- ((,) <$> genEmitSt <*>) .
-      
-      -- ((,) <$> genEmitSt <*>) .
       (dumpSt "begin block" >>) .
       codegenBlock
 
@@ -639,7 +629,7 @@ codegenStmt'For (SFor idx boundl boundr eG invs (Just seps) body) = do
     -- update the typing state by plugging the right bound into the index
     -- parameter
 
-    -- [ASSIGN A TICKET HERE]
+    -- | [ASSIGN A TICKET HERE]
     -- FIXME: there's a bug here though, if we have something like
     --
     --   for i := 0 to 10
@@ -749,6 +739,8 @@ codegenFor'Body idx boundl boundr eG body stSep@(Locus{qty=qtSep}) newInvs = do
       eSep <- case eG of
         GEPartition _ (Just eSep) -> return eSep
         _                         -> throwError' errNoSep
+      dumpSt "(For EN01 InterBegin)"
+      stateIterBegin <- get @TState
 
       -- 1. save the "false" part to a new variable
       -- FIXME: write general function to replicate EmitData from Locus instead.
@@ -759,7 +751,6 @@ codegenFor'Body idx boundl boundr eG body stSep@(Locus{qty=qtSep}) newInvs = do
       -- let stmtsFocusTrue = stmtAssignSelfRest eSep <$> fsts vsEmitG
 
       -- save the current emit symbol table for
-      stateIterBegin <- get @TState
 
       -- SOLVEm?
       -- TODO: I need one way to duplicate generated emit symbols in the split
@@ -828,7 +819,7 @@ codegenFor'Body idx boundl boundr eG body stSep@(Locus{qty=qtSep}) newInvs = do
       return (inBlock stmtsBody ++ stmtsMerge, vsEmitMerge)
 
     codegenMatchLoopBeginEnd stBegin = do
-      -- Next, I need to collect ranges/partitions from the invariant with
+      -- | Next, I need to collect ranges/partitions from the invariant with
       --   [ i := i + 1 ]
       -- Match those ranges with those in [ i := i ] case to compute the
       -- corresponding emitted variables
@@ -846,9 +837,6 @@ codegenFor'Body idx boundl boundr eG body stSep@(Locus{qty=qtSep}) newInvs = do
 
 
     errNoSep = "Insufficient knowledge to perform a separation for a EN01 partition "
-    -- stmtAssignSlice el er idTo idFrom = idTo ::=: sliceV idFrom el er
-    -- stmtAssignSelfRest eBegin idSelf =
-    --   stmtAssignSlice eBegin (EEmit . ECard . EVar $ idSelf) idSelf idSelf
 
 
 -- | Code Generation of a `For` statement with a Had partition
@@ -956,8 +944,6 @@ hadGuardMergeExp vEmit tEmit cardMain cardStash eBase =
 --       | otherwise -> do
 --           throwError' "Merging phase types of differnt types is unimplemented. "
 
-
-
 -- | Emit two expressions representing the number of kets in two states in
 -- correspondence
 codegenEnReprCard2
@@ -967,12 +953,10 @@ codegenEnReprCard2
 codegenEnReprCard2 =
   (catMaybes <$>) . codegenAssignEmitDataF False go
   where
-    -- go :: (Var, Ty) -> (Var, Ty) -> [(Exp', Exp')]
     go (v1, TSeq _) (v2, TSeq _) = Just (mkCard v1, mkCard v2)
-    go _ _ = Nothing
+    go _ _                       = Nothing
 -- codegenEnReprCard2 a =
 --   throwError' "State cardinality of an empty correspondence is undefined!"
-
 
 -- Merge the two partitions in correspondence
 mergeEmitted :: MayFail sig m => [(EmitData, EmitData)] -> [Var] -> m [Stmt']
@@ -999,7 +983,7 @@ codegenAlloc v e@(EOp2 ONor e1 e2) t@(TQReg _) = do
       part = normalize $ Partition [rV]
   loc <- gensymLoc v
   xSt %= (at v . non [] %~ ((nrV, loc) :))
-  sSt %= (at loc ?~ (part, (TNor, [0])))
+  sSt %= (at loc ?~ (part, (TNor, [])))
   let locus = Locus{ loc, part=partI, qty=TNor, degrees=[] }
   (edL, Identity (_, edR)) <- genEmStFromLocus locus
   (vEmit, _) <- visitEmBasis edR
