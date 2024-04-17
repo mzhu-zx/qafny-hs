@@ -727,8 +727,10 @@ matchLocusEmitDataFromTStates t1 t2 =
 
 -- | Take 2 type states, match emit variables by their ranges and output
 -- merge scheme for each of them.
-mergeMatchedTState :: MayFail sig m => TState -> TState -> m [MergeScheme]
+mergeMatchedTState :: (MayFail sig m, Has Trace sig m) => TState -> TState -> m [MergeScheme]
 mergeMatchedTState ts1 ts2 = do
+  tracep $ vsep [ pp "(mergeMatchedTState) States:"
+                , incr4 (vsep [ts1, ts2])]
   let matchedLoci  = matchLociInTState ts1 ts2
       modifiedLoci = filter ensureEn matchedLoci
   matchedLocusData <- matchLocusEmitData (_emitSt ts1) (_emitSt ts2) modifiedLoci
@@ -771,6 +773,7 @@ mergeScheme
         return MMove
       [nrCandidate@(Normalized (Range x elCandidate _))] -> do
         -- | Merge the range into an existing range
+        -- Everyting but the range is preserved.
         -- We know that the upperbound of the candidate is the same as the
         -- lowerbound of the aux range
         let nrNew = normalize (Range x elCandidate erAux)

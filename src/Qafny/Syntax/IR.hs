@@ -202,6 +202,9 @@ data JoinStrategy = JoinStrategy
   , jsRResult  :: Normalized Range
   , jsRMerged  :: Normalized Range
   , jsQtMerged :: QTy
+  -- , jsLedMain   :: LocusEmitData
+  -- , jsLedMerged :: LocusEmitData
+  -- , jsLedInto   :: LocusEmitData
   }
   deriving Show
 

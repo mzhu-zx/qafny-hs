@@ -25,16 +25,15 @@ import           Effect.Gensym
     (Gensym, gensym)
 
 -- Qafny
+import           Qafny.Effect
+    (MayFail)
 import           Qafny.Error
     (QError (UnknownVariableError))
 import           Qafny.Syntax.AST
 import           Qafny.Syntax.Emit
 import           Qafny.Syntax.IR
-import           Qafny.Utils.TraceF
-    (Traceable (tracef))
 import           Qafny.Variable
     (Variable (variable))
-import Qafny.Effect (MayFail)
 
 --------------------------------------------------------------------------------
 -- * 3-Tuples
@@ -129,15 +128,6 @@ dumpSt str = do
     [ pp "[info] The state after ("<!>str<!>") is:"
     , incr4 s ]
 
-dumpSSt
-  :: ( Has (State TState) sig m
-     , Has Trace sig m
-     )
-  => String -> m ()
-dumpSSt str = do
-  s <- use sSt
-  tracef "[info] Dumped sSt (%s):%s" str (show s)
-
 --------------------------------------------------------------------------------
 -- * Method Types
 
@@ -152,7 +142,7 @@ getMethodType v = do
   case tyM of
     Just mty ->
       case unMTy mty of
-        Inl ty -> throwError $ v <+> "is not a method but a" <+> ty
+        Inl ty  -> throwError $ v <+> "is not a method but a" <+> ty
         Inr mty -> pure mty
     _             -> asks (^. kEnv) >>= throwError . pp . UnknownVariableError v
 
@@ -165,7 +155,7 @@ haveSameLength
   => c -> [a] -> [b] -> m ()
 haveSameLength blame vsEmit eValues =
   unless (length vsEmit == length eValues) $
-    throwError @Builder $ vsep    
+    throwError @Builder $ vsep
       [ ">>"<+>parens blame <+> "the number of elements doesn't agree with each other:"
       , incr4 (list vsEmit)
       , incr4 (list eValues) ]
@@ -204,5 +194,5 @@ zipWithExactly ppa ppb f l1 l2 = go l1 l2
     go _      _      = throwError $ vsep
       [ pp "The follwoing two lists are of difference lengths."
       , incr4 $ align (vsep [ list (ppa <$> l1)
-                            , list (ppb <$> l2)]) 
+                            , list (ppb <$> l2)])
       ]

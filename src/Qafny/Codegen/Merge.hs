@@ -29,11 +29,13 @@ import           Qafny.Codegen.Common
     (codegenAssignEmitData, codegenAssignEmitData')
 import           Qafny.Syntax.Emit
 import           Qafny.Utils.EmitBinding
+import           Qafny.Utils.Utils
+    (tracep)
 
 
 throwError'
-  :: ( Has (Error Builder) sig m )
-  => Builder -> m a
+  :: ( DafnyPrinter b, Has (Error Builder) sig m )
+  => b -> m a
 throwError' = throwError . ("[Codegen/Merge] " <+>)
 
 
@@ -67,6 +69,7 @@ codegenMergeScheme
      , Has (Gensym String) sig m
      , Has (State TState) sig m
      , Has (Error Builder) sig m
+     , Has Trace sig m
      )
   => [MergeScheme] -> m [(Stmt', Var)]
 codegenMergeScheme = (concat <$>) . mapM go
@@ -75,24 +78,25 @@ codegenMergeScheme = (concat <$>) . mapM go
     go (MJoin JoinStrategy { jsQtMain=qtMain, jsQtMerged=qtMerged
                            , jsRResult=rResult, jsRMerged=rMerged, jsRMain=rMain
                            }) = do
-      undefined
-      -- (vEmitMerged, _) <- findEmitBasisByRange rMerged
-      -- (vEmitMain, _)   <- findEmitBasisByRange rMain
-      -- deleteEms $ inj <$> [rMerged, rMain]
-      -- case (qtMain, qtMerged) of
-      --   (TEn01, TNor)     -> do
-      --     -- append the merged value (ket) into each kets in the main value
-      --     -- TODO: use `genEmStFromLocus` for phase compatibility
-      --     (vEmitResult, _) <- genEmStByRange qtMain rResult >>= visitEmBasis
-      --     vBind <- gensym "lambda_x"
-      --     let stmt = vEmitResult ::=: callMap ef vEmitMain
-      --         ef   = simpleLambda vBind (EVar vBind + EVar vEmitMerged)
-      --     return [(stmt, vEmitMain)]
-      --   (TEn, THad)       -> do
-      --     let (Range _ lBound rBound) = rMain
-      --     let stmtAdd = addENHad1 vEmitMain (reduce (rBound - lBound))
-      --     return [(stmtAdd, vEmitMain)]
-      --   _unsupportedMerge -> throwError' $
-      --     "No idea about " <!> qtMain <!> " to " <!> qtMerged <!> " conversion."
+      deleteEms $ inj <$> [rMerged, rMain]
+      case (qtMain, qtMerged) of
+        (TEn01, TNor)     -> do
+          (vEmitMerged, _) <- findEmitBasisByRange rMerged
+          (vEmitMain, _)   <- findEmitBasisByRange rMain
+          deleteEms $ inj <$> [rMerged, rMain]
+          (vEmitResult, _) <- genEmStByRange qtMain rResult >>= visitEmBasis
+          vBind <- gensym "lambda_x"
+          let stmt = vEmitResult ::=: callMap ef vEmitMain
+              ef   = simpleLambda vBind (EVar vBind + EVar vEmitMerged)
+          return [(stmt, vEmitMain)]
+        (TEn, THad)       -> do
+          (vEmitMain, _)   <- findEmitBasisByRange rMain
+          let (Normalized (Range _ lBound rBound)) = rMain
+          let stmtAdd = addENHad1 vEmitMain (reduce (rBound - lBound))
+          (vPhaseMain, _)   <- findEmitBasisByRange rMain
+          throwError' "the phase part is wrong!!!"
+          return [(stmtAdd, vEmitMain)]
+        _unsupportedMerge -> throwError' $
+          "No idea about " <!> qtMain <!> " to " <!> qtMerged <!> " conversion."
     go (MEqual EqualStrategy{esEdIntoFrom}) = codegenAssignEmitData' False
       =<< eraseMatchedRanges esEdIntoFrom

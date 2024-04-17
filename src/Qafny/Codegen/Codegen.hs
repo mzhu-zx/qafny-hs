@@ -808,7 +808,7 @@ codegenFor'Body idx boundl boundr eG body stSep@(Locus{qty=qtSep}) newInvs = do
   let innerFor = SEmit $ SForEmit idx boundl boundr newInvs $ Block stmtsBody
   return $ stmtsPrelude ++ [innerFor]
   where
-    installEmits = mapM (uncurry appendEmSt)
+    installEmits = mapM (uncurry extendEmSt)
     nrsSep = nranges (part stSep)
     inferTsLoopEnd =  subst [(idx, EVar idx + 1)]
     codegenHalf psBody = do
@@ -819,10 +819,9 @@ codegenFor'Body idx boundl boundr eG body stSep@(Locus{qty=qtSep}) newInvs = do
       -- 3. Perform merge with merge scheme
       stmtsAndVsMerge <- (concat <$>) $ forM psBody $ \p -> do
         stP <- resolvePartition p
-        -- dumpSSt "premerge"
+        dumpSt "premerge"
         schemes <- mergeScheme stSep stP
-        -- trace $ printf "What's the merge scheme here?\n %s" (show schemes)
-        -- dumpSSt "postmerge"
+        dumpSt "postmerge"
         codegenMergeScheme schemes
       let (stmtsMerge, vsEmitMerge) = unzip stmtsAndVsMerge
 

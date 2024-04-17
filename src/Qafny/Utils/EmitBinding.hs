@@ -25,7 +25,7 @@ module Qafny.Utils.EmitBinding
     -- * Deletion
   , deleteEm, deleteEms, deleteEmPartition
     -- * Update
-  , appendEmSt
+  , appendEmSt, extendEmSt
     -- * Helper
   , fsts, extractEmitablesFromLocus, extractEmitablesFromEds, eraseRanges
   , eraseMatchedRanges, eraseMatchedRanges'
@@ -60,6 +60,7 @@ import           Qafny.Typing.Utils
     (tyAmp, tyKetByQTy, typingPhaseEmitReprN)
 import           Qafny.Utils.Utils
     (errTrace, zipWithExactly, onlyOne)
+import GHC.Stack (HasCallStack)
 
 --------------------------------------------------------------------------------
 -- * Gensym Utils
@@ -201,11 +202,19 @@ genEmStUpdatePhaseFromLocus Locus{loc, qty, degrees} =
 
 -- | Append the given `EmitData` to the given entry.
 appendEmSt
-  :: StateMayFail sig m
+  :: (StateMayFail sig m, HasCallStack)
   => Normalized RangeOrLoc -> EmitData -> m EmitData
 appendEmSt rl ed = do
   emitSt %= Map.adjust (<> ed) rl
   findEm rl
+
+extendEmSt
+  :: (StateMayFail sig m, HasCallStack)
+  => Normalized RangeOrLoc -> EmitData -> m EmitData
+extendEmSt rl ed = do
+  emitSt %= Map.insertWith (flip (<>)) rl ed
+  findEm rl
+
 
 {-# DEPRECATED genEmStUpdatePhase
     "What's the differnce between update and overwrite?"
@@ -240,7 +249,7 @@ findEmInEmitState es rl = do
     complain st = throwError $
       rl <+> "cannot be found in emitSt" <!> line <+> incr4 st
 
-findEm :: StateMayFail sig m => Normalized RangeOrLoc -> m EmitData
+findEm :: (StateMayFail sig m, HasCallStack) => Normalized RangeOrLoc -> m EmitData
 findEm rl = use emitSt >>= (`findEmInEmitState` rl)
 
 findEms

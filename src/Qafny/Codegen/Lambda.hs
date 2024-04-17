@@ -40,7 +40,7 @@ import           Qafny.Typing.Typing
     (resolveRangesStrictIntoLoci)
 import           Qafny.Utils
     (findEmitBasesByRanges, findEmitBasisByRange, findVisitEm, fsts,
-    gensymBinding, haveSameLength, visitEm)
+    gensymBinding, haveSameLength, visitEm, tracep)
 import           Qafny.Utils.Common
 import           Text.Printf
     (printf)
@@ -77,6 +77,7 @@ codegenLambda s@Partition{ranges} lam@LambdaF{bBases} = do
         splitThenCastScheme locus1 TEn r1Lhs
       (l2, sScheme2, cScheme2) <- hdlSCError $
         splitThenCastScheme locus2 TEn r2Lhs
+      tracep "HERE>>>>>>>>>>>>>>>"
       stmts1 <- codegenSplitThenCastEmit sScheme1 cScheme1
       stmts2 <- codegenSplitThenCastEmit sScheme2 cScheme2
       mScheme <- mergeScheme l1 l2
