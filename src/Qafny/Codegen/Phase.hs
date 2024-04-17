@@ -17,12 +17,10 @@ module Qafny.Codegen.Phase where
 import           Control.Monad
     (forM, liftM2, when)
 
-import           Data.Functor
-    ((<&>))
 import           Data.List
     (nub, uncons)
 import           Data.Maybe
-    (fromJust, fromMaybe, maybeToList)
+    (fromMaybe, maybeToList)
 
 import           Data.Sum
     (Injection (inj))
@@ -43,8 +41,6 @@ import           Qafny.Typing.Qft
 import           Qafny.Utils.EmitBinding
 import           Qafny.Utils.Utils
     (onlyOne)
-import           Text.Printf
-    (printf)
 
 
 

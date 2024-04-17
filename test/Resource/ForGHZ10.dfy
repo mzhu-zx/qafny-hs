@@ -117,7 +117,11 @@ method GHZ (q_seq'nat'_0__emit : seq<nat>)
     q_seq'seq'nat''_20__emit := q_seq'seq'nat''_23__emit;
     // end true-false
     // Match Begin-End
+    loc__loc__receiver_3_seq'unsupported'_17__emit :=
+      loc__loc__receiver_3_seq'unsupported'_17__emit;
+    q_seq'seq'nat''_16__emit := q_seq'seq'nat''_20__emit;
     q_seq'nat'_15__emit := q_seq'nat'_15__emit;
+    q_seq'nat'_14__emit := q_seq'nat'_19__emit;
   }
   loc__loc__receiver_3_seq'unsupported'_25__emit :=
     loc__loc__receiver_3_seq'unsupported'_13__emit;

@@ -197,14 +197,11 @@ newtype EqualStrategy = EqualStrategy
   deriving Show
 
 data JoinStrategy = JoinStrategy
-  { jsRMain    :: Normalized Range
-  , jsQtMain   :: QTy
-  , jsRResult  :: Normalized Range
-  , jsRMerged  :: Normalized Range
+  { jsQtMain   :: QTy
   , jsQtMerged :: QTy
-  -- , jsLedMain   :: LocusEmitData
-  -- , jsLedMerged :: LocusEmitData
-  -- , jsLedInto   :: LocusEmitData
+  , jsLedMain   :: (EmitData, (Normalized Range, EmitData))
+  , jsLedMerged :: (EmitData, (Normalized Range, EmitData))
+  , jsLedInto   :: (EmitData, (Normalized Range, EmitData))
   }
   deriving Show
 

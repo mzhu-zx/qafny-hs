@@ -743,9 +743,8 @@ mergeMatchedTState ts1 ts2 = do
 -- | Merge the second Locus into the first one
 -- FIXME: Check if phase type is correct!
 mergeScheme
-  :: ( Has (State TState) sig m
-     , Has (Error Builder) sig m
-     , Has (Reader IEnv) sig m
+  :: ( HasResolution sig m
+     , GensymEmitterWithStateError sig m
      )
   => Locus -- ^ Main
   -> Locus -- ^ Servent
@@ -780,15 +779,25 @@ mergeScheme
         let pM = npart $ (\nr -> bool nr nrNew (nr == nrCandidate)) <$> nrsMain
         xSt %= Map.map (revampX nrCandidate nrAux nrNew)
         sSt %= (at locMain ?~ (pM, (qtMain, ptysMain)))
+
+        edlMain <- findEm (inj locMain)
+        edlAux  <- findEm (inj locAux)
+
+        jsLedMain   <- liftEd nrCandidate edlMain <$> findEm (inj nrCandidate)
+        jsLedMerged <- liftEd nrAux       edlAux  <$> findEm (inj nrAux)
+        jsLedInto   <- liftEd nrCandidate edlMain <$> genEmStByRange qtMain nrNew
+
+        -- remove everything that will not show up in Into
+        deleteEms [inj locAux, inj nrAux, inj nrCandidate]
+        
         return $ MJoin JoinStrategy
-          { jsRMain    = nrCandidate
-          , jsRMerged  = nrAux
-          , jsRResult  = nrNew
+          { jsLedMain, jsLedMerged, jsLedInto
           , jsQtMain   = qtMain
           , jsQtMerged = qtAux
           }
       _ -> throwError' "Whoops! A lot of candidates to go, which one to go?"
   where
+    liftEd nr edl edr = (edl, (nr, edr))
     redirectX rAndLoc = do
       (r, locR) <- oneOf rAndLoc
       let locRNew = if locR == locAux then locMain else locR
