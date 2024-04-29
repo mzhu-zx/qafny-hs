@@ -22,7 +22,7 @@ import           Qafny.Utils.EmitBinding
 
 ppTerm :: DafnyPrinter a => (Int, [(Emitter, String)], (TState, Either Builder a)) -> IO ()
 ppTerm (i, _, (st, ans)) =
-  prettyIO $ vsep [pp i, pp st, ppAns] <> line
+  prettyIO $ vsep [pp i, pp st, pp "ans:", incr2 ppAns] <> line
   where
     ppAns = either id pp ans
 
