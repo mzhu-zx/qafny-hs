@@ -1,7 +1,7 @@
 module Qafny.Test.Parser where
 
-import           Qafny.AST
-import           Qafny.ParserUtils (unchainExps)
+import           Qafny.Syntax.AST
+import           Qafny.Syntax.ParserUtils (unchainExps)
 import           Test.Tasty
 import           Test.Tasty.HUnit
 

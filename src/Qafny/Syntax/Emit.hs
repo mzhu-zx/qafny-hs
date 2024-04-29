@@ -382,6 +382,7 @@ instance DafnyPrinter PhaseRef where
   pp PhaseRef{prBase, prRepr} =
     prRepr <+> "/" <+> prBase
 
+
 instance DafnyPrinter EmitData where
   pp EmitData{evPhaseRef, evBasis, evAmp} = P.align . list $
     phase ++

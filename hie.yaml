@@ -1,2 +1,13 @@
 cradle:
   stack:
+    - path: "./src"
+      component: "qafny-hs:lib"
+
+    - path: "./app/Main.hs"
+      component: "qafny-hs:exe:qafny-hs-exe"
+
+    - path: "./app/Paths_qafny_hs.hs"
+      component: "qafny-hs:exe:qafny-hs-exe"
+
+    - path: "./test"
+      component: "qafny-hs:test:qafny-hs-test"
