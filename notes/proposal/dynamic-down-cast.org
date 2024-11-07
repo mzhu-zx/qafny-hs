@@ -1,9 +1,0 @@
-* Unsafe Downcast
-
-A saturated =EN= typed locus is actually not entangled at all. Therefore, maybe
-downcasted into a =Had= typed locus if that helps.
-However, this property must be observed at the verfication time.
-
-When a downcast is specified by a user, the typing stage assumes its validity
-with the codegen stage instead generates an assertion to guard that the state
-underhood is indeed saturated. 

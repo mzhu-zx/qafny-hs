@@ -1,9 +1,0 @@
-#+TITLE: Limitations
-
-* Restricted Entanglement and Phase types
-# 
-The second degree phase type and Qft type are two restricted types whose cast
-operations are generally undefined.
-# 
-Those two types can only be using in specification, oracle application, and
-special operations such as Qft and measure.  

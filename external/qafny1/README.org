@@ -1,1 +1,0 @@
-* A Collection of Samples for Qafny 1
